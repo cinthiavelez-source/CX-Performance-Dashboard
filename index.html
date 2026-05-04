@@ -1666,19 +1666,27 @@ function handleTPHFile(input) {
       rows.forEach(r => {
         const email = (r['Agent Email'] || '').toLowerCase();
         if (!email) return;
-        const tickSec = timeToSec(r['Ticket Time (hh:mm:ss)']);
-        const prodSec = timeToSec(r['Productive General Task Time (hh:mm:ss)']);
-        const totalHrs = (tickSec + prodSec) / 3600;
-        const tickets   = parseInt(r['Valid Tickets']) || 0;
-        const tph = totalHrs > 0 ? Math.round((tickets / totalHrs) * 100) / 100 : 0;
-        const ahtSeconds = timeToSec(r['Avg Handle Time (mm:ss)']);
+
+        // TPH denominator: Total Handle Time + Productive General Task Time
+        // We use "Total Handle Time" (not "Ticket Time") because Total Handle Time
+        // equals AHT × tickets — the real time an agent spent working on tickets.
+        // "Ticket Time" is a tiny overhead field (seconds) that causes ÷-near-zero
+        // explosions when Productive General Task Time is also 0.
+        const totalHandleSec = timeToSec(r['Total Handle Time (hh:mm:ss)']);
+        const prodSec        = timeToSec(r['Productive General Task Time (hh:mm:ss)']);
+        const tickSec        = timeToSec(r['Ticket Time (hh:mm:ss)']); // stored for reference
+        const denomSec       = totalHandleSec + prodSec;
+        const totalHrs       = denomSec / 3600;
+        const tickets        = parseInt(r['Valid Tickets']) || 0;
+        const tph            = totalHrs > 0 ? Math.round((tickets / totalHrs) * 100) / 100 : 0;
+        const ahtSeconds     = timeToSec(r['Avg Handle Time (mm:ss)']);
         records.push({
           agentEmail: email,
           agentName: r['Agent Name'] || '',
           date: r['Date'] || '',
           handledTickets: tickets,
-          ticketTimeSec: tickSec,
-          productiveTimeSec: prodSec,
+          ticketTimeSec: totalHandleSec,  // Total Handle Time (used as TPH denominator)
+          productiveTimeSec: prodSec,     // Productive General Task Time
           tph,
           ahtSeconds
         });
