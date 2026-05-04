@@ -1,0 +1,2016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CookUnity CX Performance Dashboard</title>
+
+<!-- Google Identity Services -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<!-- SheetJS for XLSX parsing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+/* ─── RESET & BASE ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:   #4F46E5;
+  --brand2:  #7C3AED;
+  --bg:      #F1F5F9;
+  --card:    #FFFFFF;
+  --text:    #1E293B;
+  --sub:     #64748B;
+  --muted:   #94A3B8;
+  --border:  #E2E8F0;
+  --green:   #10B981;
+  --yellow:  #F59E0B;
+  --red:     #EF4444;
+  --radius:  0.875rem;
+  --shadow:  0 1px 4px rgba(0,0,0,0.08);
+}
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+a { color: var(--brand); text-decoration: none; }
+button { cursor: pointer; border: none; font-family: inherit; }
+input, select { font-family: inherit; }
+h2 { font-size: 1.25rem; font-weight: 700; }
+h3 { font-size: 1rem; font-weight: 600; color: var(--sub); margin-bottom: .5rem; }
+label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; margin-bottom: .25rem; }
+
+/* ─── LOGIN SCREEN ─────────────────────────────────── */
+#login-screen {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+}
+.login-card {
+  background: white; border-radius: 1.5rem; padding: 2.5rem 2rem;
+  text-align: center; max-width: 380px; width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.login-logo { font-size: 2rem; margin-bottom: .5rem; }
+.login-card h1 { font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: .25rem; }
+.login-card p  { color: var(--sub); font-size: .875rem; margin-bottom: 1.75rem; }
+.login-divider { display: flex; align-items: center; gap: .75rem; margin: 1.25rem 0; color: var(--muted); font-size: .8rem; }
+.login-divider::before, .login-divider::after { content:''; flex:1; height:1px; background: var(--border); }
+.login-email-form { display: flex; flex-direction: column; gap: .6rem; }
+.login-email-form input {
+  padding: .65rem .9rem; border: 1.5px solid var(--border); border-radius: .6rem;
+  font-size: .9rem; outline: none; transition: border-color .2s;
+}
+.login-email-form input:focus { border-color: var(--brand); }
+.btn-login-manual {
+  padding: .7rem; background: var(--brand); color: white;
+  border-radius: .6rem; font-weight: 600; font-size: .9rem;
+  transition: background .2s;
+}
+.btn-login-manual:hover { background: var(--brand2); }
+#g_id_onload { display: none; }
+
+/* ─── LOADING OVERLAY ──────────────────────────────── */
+#loading-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(255,255,255,.75); backdrop-filter: blur(3px);
+  z-index: 9999; align-items: center; justify-content: center; flex-direction: column; gap: .75rem;
+}
+#loading-overlay.show { display: flex; }
+.spinner {
+  width: 44px; height: 44px;
+  border: 4px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin .75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading-msg { color: var(--sub); font-size: .9rem; font-weight: 500; }
+
+/* ─── APP SHELL ────────────────────────────────────── */
+#app { display: none; flex-direction: column; min-height: 100vh; }
+
+/* ─── NAVBAR ───────────────────────────────────────── */
+.navbar {
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  padding: 0 1.25rem; display: flex; align-items: center;
+  justify-content: space-between; height: 56px;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 8px rgba(79,70,229,.35);
+}
+.navbar-brand { color: white; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: .5rem; }
+.navbar-tabs { display: flex; gap: .15rem; overflow-x: auto; flex: 1; margin: 0 1rem; }
+.navbar-tabs::-webkit-scrollbar { height: 3px; }
+.nav-tab {
+  color: rgba(255,255,255,.75); background: transparent;
+  padding: .35rem .75rem; border-radius: .4rem; font-size: .8rem; font-weight: 500;
+  white-space: nowrap; transition: all .15s;
+}
+.nav-tab:hover, .nav-tab.active {
+  background: rgba(255,255,255,.18); color: white;
+}
+.navbar-user { display: flex; align-items: center; gap: .6rem; color: white; }
+.user-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .8rem;
+}
+.user-name { font-size: .8rem; font-weight: 500; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-signout { background: rgba(255,255,255,.15); color: white; padding: .3rem .7rem; border-radius: .4rem; font-size: .75rem; transition: background .15s; }
+.btn-signout:hover { background: rgba(255,255,255,.25); }
+
+/* ─── FILTER BAR ───────────────────────────────────── */
+.filter-bar {
+  background: white; border-bottom: 1px solid var(--border);
+  padding: .6rem 1.25rem; display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  position: sticky; top: 56px; z-index: 90;
+}
+.filter-bar label { font-size: .75rem; color: var(--sub); margin: 0; white-space: nowrap; }
+.filter-group { display: flex; align-items: center; gap: .35rem; }
+.filter-bar select, .filter-bar input[type=date] {
+  padding: .3rem .55rem; border: 1.5px solid var(--border); border-radius: .45rem;
+  font-size: .78rem; outline: none; background: var(--bg);
+  transition: border-color .2s;
+}
+.filter-bar select:focus, .filter-bar input[type=date]:focus { border-color: var(--brand); }
+.filter-bar .divider { width: 1px; height: 24px; background: var(--border); }
+.btn-clear-filters {
+  background: var(--bg); color: var(--sub); padding: .3rem .65rem;
+  border-radius: .45rem; font-size: .75rem; border: 1.5px solid var(--border);
+  font-weight: 600; transition: all .15s;
+}
+.btn-clear-filters:hover { border-color: var(--brand); color: var(--brand); }
+.filter-badge {
+  background: var(--brand); color: white; border-radius: 999px;
+  padding: .15rem .45rem; font-size: .7rem; font-weight: 700;
+}
+
+/* ─── MAIN CONTENT ─────────────────────────────────── */
+.main { padding: 1.25rem; flex: 1; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ─── CARDS ────────────────────────────────────────── */
+.card { background: var(--card); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); }
+.card-title { font-size: .8rem; font-weight: 600; color: var(--sub); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .35rem; }
+
+/* ─── KPI CARDS ────────────────────────────────────── */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.kpi-card { background: var(--card); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); border-left: 4px solid var(--brand); }
+.kpi-card.green  { border-left-color: var(--green); }
+.kpi-card.yellow { border-left-color: var(--yellow); }
+.kpi-card.red    { border-left-color: var(--red); }
+.kpi-label { font-size: .75rem; font-weight: 600; color: var(--sub); text-transform: uppercase; letter-spacing: .05em; }
+.kpi-value { font-size: 2rem; font-weight: 800; color: var(--text); line-height: 1.1; margin: .2rem 0; }
+.kpi-sub { font-size: .78rem; color: var(--sub); }
+.kpi-wow { font-size: .8rem; font-weight: 700; margin-top: .25rem; }
+.kpi-wow.up   { color: var(--green); }
+.kpi-wow.down { color: var(--red); }
+.kpi-wow.flat { color: var(--muted); }
+
+/* ─── CHARTS GRID ──────────────────────────────────── */
+.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem; }
+.chart-card { background: var(--card); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); }
+.chart-card canvas { max-height: 200px; }
+
+/* ─── AGENT TABLE ──────────────────────────────────── */
+.table-controls { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.toggle-group { display: flex; border: 1.5px solid var(--border); border-radius: .5rem; overflow: hidden; }
+.toggle-btn {
+  padding: .4rem .9rem; font-size: .8rem; font-weight: 600; background: white; color: var(--sub);
+  border: none; border-right: 1px solid var(--border); transition: all .15s;
+}
+.toggle-btn:last-child { border-right: none; }
+.toggle-btn.active { background: var(--brand); color: white; }
+.kpi-tabs { display: flex; gap: .4rem; }
+.kpi-tab-btn {
+  padding: .35rem .8rem; border-radius: .4rem; font-size: .78rem; font-weight: 600;
+  background: var(--bg); color: var(--sub); border: 1.5px solid var(--border);
+  transition: all .15s;
+}
+.kpi-tab-btn.active { background: var(--brand); color: white; border-color: var(--brand); }
+
+.agent-table-wrap { overflow-x: auto; }
+.agent-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.agent-table th {
+  background: var(--bg); padding: .6rem .9rem; text-align: left;
+  font-size: .73rem; font-weight: 700; color: var(--sub); text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 2px solid var(--border); white-space: nowrap;
+}
+.agent-table td { padding: .55rem .9rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.agent-table tr:hover td { background: #F8FAFC; }
+.agent-name { font-weight: 600; color: var(--text); }
+.agent-role { font-size: .72rem; color: var(--muted); }
+
+/* KPI value cells with color coding */
+.cell-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cell-val.tier1 { color: var(--green); }
+.cell-val.tier2 { color: var(--yellow); }
+.cell-val.tier3 { color: var(--red); }
+.cell-val.empty { color: var(--muted); font-weight: 400; }
+.trend-up   { color: var(--green); font-size: .75rem; }
+.trend-down { color: var(--red);   font-size: .75rem; }
+.trend-flat { color: var(--muted); font-size: .75rem; }
+
+/* ─── PROGRESSION CHARTS ───────────────────────────── */
+.prog-chart-card { background: var(--card); border-radius: var(--radius); padding: 1.5rem; box-shadow: var(--shadow); }
+.prog-chart-card canvas { max-height: 360px; }
+.prog-sub-filters { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.prog-sub-filters select { padding: .35rem .6rem; border: 1.5px solid var(--border); border-radius: .45rem; font-size: .8rem; outline: none; }
+
+/* ─── ADMIN PAGE ───────────────────────────────────── */
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem; }
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  padding: 1.5rem; text-align: center; cursor: pointer; transition: all .2s;
+  background: var(--bg);
+}
+.upload-zone:hover, .upload-zone.drag-over { border-color: var(--brand); background: #EEF2FF; }
+.upload-zone .upload-icon { font-size: 1.75rem; margin-bottom: .5rem; }
+.upload-zone h4 { font-size: .9rem; font-weight: 700; margin-bottom: .25rem; }
+.upload-zone p { font-size: .78rem; color: var(--sub); margin-bottom: .75rem; }
+.file-input { display: none; }
+.btn-upload {
+  background: var(--brand); color: white; padding: .5rem 1.25rem;
+  border-radius: .5rem; font-size: .82rem; font-weight: 600; transition: background .2s;
+}
+.btn-upload:hover { background: var(--brand2); }
+.btn-upload:disabled { background: var(--muted); cursor: not-allowed; }
+.upload-status { font-size: .78rem; margin-top: .5rem; min-height: 1.2em; }
+.upload-status.ok  { color: var(--green); }
+.upload-status.err { color: var(--red); }
+.upload-status.processing { color: var(--yellow); }
+
+/* Week picker for IQS */
+.week-picker { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; font-size: .8rem; color: var(--sub); }
+.week-picker input { padding: .3rem .55rem; border: 1.5px solid var(--border); border-radius: .45rem; font-size: .8rem; outline: none; }
+
+/* Roles table */
+.roles-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: .75rem; }
+.roles-table th { background: var(--bg); padding: .5rem .8rem; text-align: left; font-size: .73rem; font-weight: 700; color: var(--sub); border-bottom: 2px solid var(--border); }
+.roles-table td { padding: .5rem .8rem; border-bottom: 1px solid var(--border); }
+.role-badge { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .7rem; font-weight: 700; }
+.role-badge.admin    { background: #EEF2FF; color: var(--brand); }
+.role-badge.uploader { background: #F0FDF4; color: var(--green); }
+.role-badge.viewer   { background: var(--bg); color: var(--sub); }
+.btn-remove-role { background: #FEF2F2; color: var(--red); padding: .2rem .6rem; border-radius: .35rem; font-size: .72rem; font-weight: 600; }
+.add-role-form { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; align-items: flex-end; }
+.add-role-form input, .add-role-form select {
+  padding: .4rem .65rem; border: 1.5px solid var(--border); border-radius: .45rem;
+  font-size: .8rem; outline: none; flex: 1; min-width: 140px;
+}
+.btn-add-role { background: var(--brand); color: white; padding: .4rem .9rem; border-radius: .45rem; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+
+/* Upload history table */
+.history-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.history-table th { background: var(--bg); padding: .45rem .75rem; text-align: left; font-size: .72rem; font-weight: 700; color: var(--sub); border-bottom: 2px solid var(--border); }
+.history-table td { padding: .45rem .75rem; border-bottom: 1px solid var(--border); color: var(--text); }
+.type-badge { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .7rem; font-weight: 700; }
+.type-badge.TPH  { background: #EEF2FF; color: var(--brand); }
+.type-badge.CSAT { background: #F0FDF4; color: var(--green); }
+.type-badge.IQS  { background: #FFF7ED; color: #D97706; }
+
+/* Unmatched names warning */
+.unmatched-box { background: #FFF7ED; border: 1px solid #FDE68A; border-radius: .6rem; padding: .75rem 1rem; margin-top: .75rem; font-size: .8rem; }
+.unmatched-box h5 { color: #92400E; font-weight: 700; margin-bottom: .35rem; }
+.unmatched-box ul { color: #B45309; padding-left: 1.1em; }
+
+/* ─── EMPTY STATE ──────────────────────────────────── */
+.empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+.empty-state .empty-icon { font-size: 2.5rem; margin-bottom: .75rem; }
+.empty-state p { font-size: .9rem; }
+
+/* ─── TOAST ────────────────────────────────────────── */
+#toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem; color: white;
+  padding: .8rem 1.25rem; border-radius: .75rem; font-weight: 600; font-size: .875rem;
+  transform: translateY(120px); opacity: 0;
+  transition: all .3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 99999; max-width: 340px; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+
+/* ─── MISC UTILS ───────────────────────────────────── */
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.section-header h2 { color: var(--text); }
+.badge { display: inline-block; background: var(--bg); color: var(--sub); border-radius: 999px; padding: .15rem .55rem; font-size: .72rem; font-weight: 600; }
+.btn-secondary { background: var(--bg); color: var(--sub); padding: .4rem .85rem; border-radius: .45rem; font-size: .8rem; font-weight: 600; border: 1.5px solid var(--border); transition: all .15s; }
+.btn-secondary:hover { border-color: var(--brand); color: var(--brand); }
+.btn-danger { background: #FEF2F2; color: var(--red); padding: .4rem .85rem; border-radius: .45rem; font-size: .8rem; font-weight: 600; border: 1.5px solid #FECACA; transition: all .15s; }
+.btn-danger:hover { background: #FEE2E2; }
+.mt-1 { margin-top: .5rem; }
+.mt-2 { margin-top: 1rem; }
+.page-title { font-size: 1.15rem; font-weight: 800; color: var(--text); margin-bottom: 1.25rem; }
+
+@media (max-width: 640px) {
+  .navbar-tabs { gap: 0; }
+  .nav-tab { font-size: .72rem; padding: .3rem .55rem; }
+  .main { padding: .85rem; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .charts-grid, .admin-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════ GOOGLE SSO CONFIG (hidden) ══════════════ -->
+<div id="g_id_onload"
+     data-client_id="298881981727-v8o4nia9gr0ntfuau22p03k207sj6qsp.apps.googleusercontent.com"
+     data-callback="handleGoogleSignIn"
+     data-auto_prompt="false">
+</div>
+
+<!-- ══════════ LOGIN SCREEN ══════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">📊</div>
+    <h1>CX Performance Dashboard</h1>
+    <p>Sign in with your @cookunity.com account</p>
+
+    <!-- Google Sign-In Button (auto-rendered) -->
+    <div class="g_id_signin"
+         data-type="standard"
+         data-size="large"
+         data-text="sign_in_with"
+         data-shape="rectangular"
+         data-logo_alignment="left"
+         data-width="280">
+    </div>
+
+    <div class="login-divider">or enter your email</div>
+
+    <div class="login-email-form">
+      <input id="manual-email" type="email" placeholder="you@cookunity.com" autocomplete="email">
+      <button class="btn-login-manual" onclick="manualLogin()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ LOADING OVERLAY ════════════════════════════ -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div id="loading-msg">Loading data…</div>
+</div>
+
+<!-- ══════════ APP SHELL ══════════════════════════════════ -->
+<div id="app">
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="navbar-brand">📊 CX Dashboard</div>
+    <div class="navbar-tabs" id="navbar-tabs">
+      <button class="nav-tab active" onclick="navTo('dashboard')"  data-page="dashboard">Overview</button>
+      <button class="nav-tab" onclick="navTo('weekly')"    data-page="weekly">4-Week Agents</button>
+      <button class="nav-tab" onclick="navTo('monthly')"   data-page="monthly">4-Month Agents</button>
+      <button class="nav-tab" onclick="navTo('tph-aht')"   data-page="tph-aht">TPH + AHT</button>
+      <button class="nav-tab" onclick="navTo('csat-prog')" data-page="csat-prog">CSAT Trend</button>
+      <button class="nav-tab" onclick="navTo('iqs-prog')"  data-page="iqs-prog">IQS Trend</button>
+      <button class="nav-tab" id="admin-tab" style="display:none" onclick="navTo('admin')" data-page="admin">⚙ Admin</button>
+    </div>
+    <div class="navbar-user">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <span class="user-name" id="user-name-display"></span>
+      <button class="btn-signout" onclick="signOut()">Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="f-from" onchange="applyFilters()">
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="f-to" onchange="applyFilters()">
+    </div>
+    <div class="divider"></div>
+    <div class="filter-group">
+      <label>Supervisor / AM</label>
+      <select id="f-supervisor" onchange="applyFilters()">
+        <option value="">All</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Tenure</label>
+      <select id="f-tenure" onchange="applyFilters()">
+        <option value="">All Tenures</option>
+        <option value="< 90 days">&lt; 90 days</option>
+        <option value="> 90 days">&gt; 90 days</option>
+        <option value="> 180 days">&gt; 180 days</option>
+        <option value="> 365 days">&gt; 365 days</option>
+      </select>
+    </div>
+    <button class="btn-clear-filters" onclick="clearFilters()">✕ Clear</button>
+    <span id="active-filter-badge" style="display:none" class="filter-badge">Filtered</span>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- ── PAGE 1: OVERVIEW DASHBOARD ────────────────────── -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-title">📈 Team Performance Overview</div>
+      <div class="kpi-grid" id="kpi-grid">
+        <!-- KPI cards injected here -->
+      </div>
+      <div class="charts-grid" id="dash-charts">
+        <div class="chart-card">
+          <h3>TPH — Weekly Trend</h3>
+          <canvas id="chart-tph-trend"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>CSAT — Weekly Trend</h3>
+          <canvas id="chart-csat-trend"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>IQS — Weekly Trend</h3>
+          <canvas id="chart-iqs-trend"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>AHT — Weekly Trend (seconds)</h3>
+          <canvas id="chart-aht-trend"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE 2: 4-WEEK AGENT TABLE ────────────────────── -->
+    <div id="page-weekly" class="page">
+      <div class="page-title">👤 Agent Performance — Last 4 Weeks</div>
+      <div class="card">
+        <div class="table-controls">
+          <div class="toggle-group" id="weekly-level-toggle">
+            <button class="toggle-btn active" onclick="setWeeklyLevel('agent')"   data-level="agent">Agent</button>
+            <button class="toggle-btn" onclick="setWeeklyLevel('supervisor')" data-level="supervisor">Supervisor</button>
+            <button class="toggle-btn" onclick="setWeeklyLevel('am')"         data-level="am">Asst. Manager</button>
+          </div>
+          <div class="kpi-tabs" id="weekly-kpi-tabs">
+            <button class="kpi-tab-btn active" onclick="setWeeklyKPI('tph')"  data-kpi="tph">TPH</button>
+            <button class="kpi-tab-btn" onclick="setWeeklyKPI('csat')" data-kpi="csat">CSAT</button>
+            <button class="kpi-tab-btn" onclick="setWeeklyKPI('iqs')"  data-kpi="iqs">IQS</button>
+            <button class="kpi-tab-btn" onclick="setWeeklyKPI('aht')"  data-kpi="aht">AHT</button>
+          </div>
+        </div>
+        <div class="agent-table-wrap" id="weekly-table-container"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE 3: 4-MONTH AGENT TABLE ───────────────────── -->
+    <div id="page-monthly" class="page">
+      <div class="page-title">📅 Agent Performance — Last 4 Months</div>
+      <div class="card">
+        <div class="table-controls">
+          <div class="toggle-group" id="monthly-level-toggle">
+            <button class="toggle-btn active" onclick="setMonthlyLevel('agent')"      data-level="agent">Agent</button>
+            <button class="toggle-btn" onclick="setMonthlyLevel('supervisor')" data-level="supervisor">Supervisor</button>
+            <button class="toggle-btn" onclick="setMonthlyLevel('am')"         data-level="am">Asst. Manager</button>
+          </div>
+          <div class="kpi-tabs" id="monthly-kpi-tabs">
+            <button class="kpi-tab-btn active" onclick="setMonthlyKPI('tph')"  data-kpi="tph">TPH</button>
+            <button class="kpi-tab-btn" onclick="setMonthlyKPI('csat')" data-kpi="csat">CSAT</button>
+            <button class="kpi-tab-btn" onclick="setMonthlyKPI('iqs')"  data-kpi="iqs">IQS</button>
+            <button class="kpi-tab-btn" onclick="setMonthlyKPI('aht')"  data-kpi="aht">AHT</button>
+          </div>
+        </div>
+        <div class="agent-table-wrap" id="monthly-table-container"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE 4: TPH + AHT PROGRESSION ─────────────────── -->
+    <div id="page-tph-aht" class="page">
+      <div class="page-title">⚡ TPH + AHT Weekly Progression</div>
+      <div class="prog-sub-filters">
+        <div class="filter-group">
+          <label>Supervisor</label>
+          <select id="tph-sup-filter" onchange="renderTPHAHTChart()">
+            <option value="">All Supervisors</option>
+          </select>
+        </div>
+      </div>
+      <div class="prog-chart-card">
+        <canvas id="chart-tph-aht" style="max-height:400px"></canvas>
+      </div>
+    </div>
+
+    <!-- ── PAGE 5: CSAT PROGRESSION ──────────────────────── -->
+    <div id="page-csat-prog" class="page">
+      <div class="page-title">😊 CSAT Weekly Progression</div>
+      <div class="prog-sub-filters">
+        <div class="filter-group">
+          <label>Supervisor</label>
+          <select id="csat-sup-filter" onchange="renderCSATProgChart()">
+            <option value="">All Supervisors</option>
+          </select>
+        </div>
+      </div>
+      <div class="prog-chart-card">
+        <canvas id="chart-csat-prog" style="max-height:400px"></canvas>
+      </div>
+      <div class="prog-chart-card mt-2">
+        <h3>Survey Volume — Good vs Bad</h3>
+        <canvas id="chart-csat-volume" style="max-height:250px"></canvas>
+      </div>
+    </div>
+
+    <!-- ── PAGE 6: IQS PROGRESSION ───────────────────────── -->
+    <div id="page-iqs-prog" class="page">
+      <div class="page-title">🏆 IQS Weekly Progression</div>
+      <div class="prog-sub-filters">
+        <div class="filter-group">
+          <label>Supervisor</label>
+          <select id="iqs-sup-filter" onchange="renderIQSProgChart()">
+            <option value="">All Supervisors</option>
+          </select>
+        </div>
+      </div>
+      <div class="prog-chart-card">
+        <canvas id="chart-iqs-prog" style="max-height:400px"></canvas>
+      </div>
+      <div class="prog-chart-card mt-2">
+        <h3>Review Volume</h3>
+        <canvas id="chart-iqs-volume" style="max-height:250px"></canvas>
+      </div>
+    </div>
+
+    <!-- ── ADMIN PAGE ──────────────────────────────────────── -->
+    <div id="page-admin" class="page">
+      <div class="page-title">⚙️ Admin — Data Management</div>
+
+      <!-- Upload Section -->
+      <h3 style="margin-bottom:.75rem">Upload Data Files</h3>
+      <div class="admin-grid">
+
+        <!-- TPH Upload -->
+        <div class="card">
+          <h3>Daily TPH File</h3>
+          <p style="font-size:.8rem;color:var(--sub);margin-bottom:.75rem">
+            Upload the daily agent activity CSV exported from your reporting tool.
+          </p>
+          <div class="upload-zone" id="tph-drop" onclick="document.getElementById('tph-file').click()">
+            <div class="upload-icon">📋</div>
+            <h4>TPH &amp; AHT Data</h4>
+            <p>CSV with Agent Name, Email, Date, Valid Tickets, Avg Handle Time, Ticket Time, Productive Time</p>
+            <button class="btn-upload" type="button">Choose File</button>
+          </div>
+          <input type="file" id="tph-file" class="file-input" accept=".csv" onchange="handleTPHFile(this)">
+          <div id="tph-status" class="upload-status"></div>
+        </div>
+
+        <!-- CSAT Upload -->
+        <div class="card">
+          <h3>CSAT Report</h3>
+          <p style="font-size:.8rem;color:var(--sub);margin-bottom:.75rem">
+            Upload the CSAT satisfaction survey export from Zendesk (.xlsx).
+          </p>
+          <div class="upload-zone" id="csat-drop" onclick="document.getElementById('csat-file').click()">
+            <div class="upload-icon">😊</div>
+            <h4>CSAT Survey Data</h4>
+            <p>XLSX with Update Date, Changes Field/Value, Update Ticket Assignee, Ticket ID</p>
+            <button class="btn-upload" type="button">Choose File</button>
+          </div>
+          <input type="file" id="csat-file" class="file-input" accept=".xlsx,.xls" onchange="handleCSATFile(this)">
+          <div id="csat-unmatched" class="unmatched-box" style="display:none"></div>
+          <div id="csat-status" class="upload-status"></div>
+        </div>
+
+        <!-- IQS Upload -->
+        <div class="card">
+          <h3>Weekly IQS Snapshot</h3>
+          <p style="font-size:.8rem;color:var(--sub);margin-bottom:.75rem">
+            Upload every Sunday — the QA aggregate snapshot per agent.
+          </p>
+          <div class="week-picker">
+            <label style="margin:0">Week of:</label>
+            <input type="date" id="iqs-week-date" value="">
+          </div>
+          <div class="upload-zone" id="iqs-drop" onclick="document.getElementById('iqs-file').click()">
+            <div class="upload-icon">🏆</div>
+            <h4>IQS Data</h4>
+            <p>CSV with Reviewee, Email, IQS%, Reviews, Passed, Failed</p>
+            <button class="btn-upload" type="button">Choose File</button>
+          </div>
+          <input type="file" id="iqs-file" class="file-input" accept=".csv" onchange="handleIQSFile(this)">
+          <div id="iqs-status" class="upload-status"></div>
+        </div>
+
+      </div>
+
+      <!-- Hierarchy Update -->
+      <h3 style="margin-bottom:.75rem;margin-top:1.75rem">Hierarchy Management</h3>
+      <div class="card">
+        <p style="font-size:.82rem;color:var(--sub);margin-bottom:1rem">
+          Upload the TPH Hierarchy CSV to update the agent structure. Historical data is <strong>not affected</strong> —
+          each record stores a snapshot of who the supervisor was at upload time.
+        </p>
+        <div class="admin-grid">
+          <div>
+            <label>Upload New Hierarchy (TPH Hierarchy CSV)</label>
+            <div class="upload-zone" style="margin-top:.35rem" onclick="document.getElementById('hier-file').click()">
+              <div class="upload-icon">🏗️</div>
+              <h4>TPH Hierarchy</h4>
+              <p>Columns: A.Manager, New Supervisor, Hire Date, NAME, C•U Email, ROLE</p>
+              <button class="btn-upload" type="button">Choose File</button>
+            </div>
+            <input type="file" id="hier-file" class="file-input" accept=".csv" onchange="handleHierarchyFile(this)">
+            <div style="margin-top:.5rem">
+              <label>Notes (optional)</label>
+              <input id="hier-notes" type="text" style="width:100%;padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:.45rem;font-size:.8rem;outline:none" placeholder="e.g. Q3 2026 update">
+            </div>
+            <div id="hier-status" class="upload-status mt-1"></div>
+          </div>
+          <div>
+            <label>Upload CSAT Name Map (CSAT Hierarchy CSV)</label>
+            <p style="font-size:.78rem;color:var(--sub);margin:.25rem 0 .5rem">
+              Update when agent display names change in Zendesk.
+              Columns: NAME, C•U Email, Status, ROLE, Team, Supervisor
+            </p>
+            <div class="upload-zone" style="margin-top:.35rem" onclick="document.getElementById('csatmap-file').click()">
+              <div class="upload-icon">🔗</div>
+              <h4>CSAT Name Map</h4>
+              <p>Maps Zendesk display names → agent emails</p>
+              <button class="btn-upload" type="button">Choose File</button>
+            </div>
+            <input type="file" id="csatmap-file" class="file-input" accept=".csv" onchange="handleCSATMapFile(this)">
+            <div id="csatmap-status" class="upload-status mt-1"></div>
+          </div>
+        </div>
+
+        <!-- Hierarchy version log -->
+        <h3 style="margin-top:1.5rem">Hierarchy Version History</h3>
+        <div style="overflow-x:auto">
+          <table class="history-table" id="hier-log-table">
+            <thead><tr><th>Version</th><th>Date</th><th>Uploaded By</th><th>Agents</th><th>Notes</th></tr></thead>
+            <tbody id="hier-log-tbody"><tr><td colspan="5" style="color:var(--muted);padding:.75rem">No versions yet</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Roles Management -->
+      <h3 style="margin-bottom:.75rem;margin-top:1.75rem">User Roles</h3>
+      <div class="card">
+        <p style="font-size:.82rem;color:var(--sub);margin-bottom:.75rem">
+          All @cookunity.com accounts can sign in as <strong>viewer</strong> by default.
+          Grant <strong>uploader</strong> or <strong>admin</strong> roles below.
+        </p>
+        <div class="add-role-form">
+          <input id="new-role-email" type="email" placeholder="agent@cookunity.com">
+          <select id="new-role-select">
+            <option value="uploader">Uploader</option>
+            <option value="admin">Admin</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <button class="btn-add-role" onclick="addRole()">Add / Update Role</button>
+        </div>
+        <table class="roles-table mt-2" id="roles-table">
+          <thead><tr><th>Email</th><th>Role</th><th>Assigned By</th><th>Date</th><th></th></tr></thead>
+          <tbody id="roles-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Upload History -->
+      <h3 style="margin-bottom:.75rem;margin-top:1.75rem">Upload History</h3>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table class="history-table">
+            <thead><tr><th>Type</th><th>Date</th><th>Uploaded By</th><th>Records</th><th>File</th></tr></thead>
+            <tbody id="upload-log-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- end admin page -->
+
+  </div><!-- end main -->
+</div><!-- end app -->
+
+<div id="toast"></div>
+
+<!-- ══════════ JAVASCRIPT ════════════════════════════════════ -->
+<script>'use strict';
+
+// ─────────────────────────────────────────────────────────────
+// CONFIGURATION — Replace with your values after deployment
+// ─────────────────────────────────────────────────────────────
+const SCRIPT_URL         = 'https://script.google.com/macros/s/AKfycbymjvE5aF5KDnTVua7z2i1OTFsFWcOLcT0DvOui7abPdofRPaustlUs2SMcSo1OmC0k/exec';
+const DEFAULT_ADMIN_EMAIL = 'cinthiavelez@cookunity.com';
+const ALLOWED_DOMAIN      = 'cookunity.com';
+
+// ─────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────
+let currentUser = null;
+let cachedRole  = 'viewer';
+let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [] };
+let activeFilters = { dateFrom: '', dateTo: '', supervisor: '', tenure: '' };
+let currentPage   = 'dashboard';
+
+// Tab state
+let weeklyLevel = 'agent', weeklyKPI = 'tph';
+let monthlyLevel = 'agent', monthlyKPI = 'tph';
+
+// Chart instances (kept for destroy on re-render)
+const charts = {};
+
+// ─────────────────────────────────────────────────────────────
+// AUTH — Google SSO
+// ─────────────────────────────────────────────────────────────
+function handleGoogleSignIn(response) {
+  try {
+    const payload = parseJwt(response.credential);
+    if (!payload.email || !payload.email.toLowerCase().endsWith('@' + ALLOWED_DOMAIN)) {
+      alert('Only @' + ALLOWED_DOMAIN + ' accounts are allowed.');
+      return;
+    }
+    currentUser = { email: payload.email.toLowerCase(), name: payload.name || payload.email };
+    localStorage.setItem('cx_user_v2', JSON.stringify(currentUser));
+    startApp();
+  } catch (e) { alert('Sign-in error: ' + e.message); }
+}
+
+function manualLogin() {
+  const emailInput = document.getElementById('manual-email');
+  const email = (emailInput.value || '').trim().toLowerCase();
+  if (!email) { showToast('Please enter your email.', '#F59E0B'); return; }
+  if (!email.endsWith('@' + ALLOWED_DOMAIN)) {
+    showToast('Only @' + ALLOWED_DOMAIN + ' accounts are allowed.', '#EF4444');
+    return;
+  }
+  currentUser = { email, name: email };
+  localStorage.setItem('cx_user_v2', JSON.stringify(currentUser));
+  startApp();
+}
+
+function signOut() {
+  localStorage.removeItem('cx_user_v2');
+  currentUser = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  if (window.google && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+}
+
+function parseJwt(token) {
+  const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+  return JSON.parse(decodeURIComponent(atob(base64).split('').map(c =>
+    '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+  ).join('')));
+}
+
+// ─────────────────────────────────────────────────────────────
+// API
+// ─────────────────────────────────────────────────────────────
+async function apiFetch() {
+  showLoading(true, 'Loading data…');
+  try {
+    const url = `${SCRIPT_URL}?email=${encodeURIComponent(currentUser.email)}`;
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    cachedRole = data.role || 'viewer';
+    cachedData.tph       = data.tphData   || [];
+    cachedData.csat      = data.csatData  || [];
+    cachedData.iqs       = data.iqsData   || [];
+    cachedData.agents    = data.agents    || [];
+    cachedData.csatMap   = data.csatMap   || [];
+    cachedData.uploadLog = data.uploadLog || [];
+    cachedData.hierLog   = data.hierLog   || [];
+
+    updateRoleUI();
+    populateSupervisorFilters();
+  } catch (err) {
+    showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
+    throw err;
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function apiPost(payload) {
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ ...payload, email: currentUser.email }),
+    redirect: 'follow'
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+// ─────────────────────────────────────────────────────────────
+// DATE / WEEK UTILITIES
+// ─────────────────────────────────────────────────────────────
+function isoWeek(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dow = tmp.getUTCDay() || 7;
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - dow);
+    const yr = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    const wk = Math.ceil((((tmp - yr) / 86400000) + 1) / 7);
+    return tmp.getUTCFullYear() + '-W' + String(wk).padStart(2, '0');
+  } catch (e) { return ''; }
+}
+
+function lastNWeeks(n) {
+  const seen = new Set(), weeks = [];
+  const now = new Date();
+  for (let i = n + 2; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i * 7);
+    const w = isoWeek(d.toISOString().split('T')[0]);
+    if (w && !seen.has(w)) { seen.add(w); weeks.push(w); }
+  }
+  return weeks.slice(-n);
+}
+
+function lastNMonths(n) {
+  const months = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  }
+  return months;
+}
+
+function fmtWeek(w) {
+  // YYYY-Wnn → "Wnn YYYY"
+  if (!w) return '';
+  const [yr, wk] = w.split('-');
+  return wk + ' ' + yr;
+}
+
+function fmtMonth(m) {
+  if (!m) return '';
+  const [yr, mo] = m.split('-');
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return names[parseInt(mo, 10) - 1] + ' ' + yr;
+}
+
+function timeToSec(str) {
+  if (!str) return 0;
+  const p = String(str).split(':').map(Number);
+  if (p.length === 2) return p[0] * 60 + p[1];
+  if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+  return 0;
+}
+
+function calcTenureGroup(hireDateStr, refDateStr) {
+  if (!hireDateStr) return 'Unknown';
+  try {
+    const hire = new Date(hireDateStr), ref = refDateStr ? new Date(refDateStr) : new Date();
+    const days = Math.floor((ref - hire) / 86400000);
+    if (isNaN(days) || days < 0) return 'Unknown';
+    if (days < 90)  return '< 90 days';
+    if (days < 180) return '> 90 days';
+    if (days < 365) return '> 180 days';
+    return '> 365 days';
+  } catch (e) { return 'Unknown'; }
+}
+
+// ─────────────────────────────────────────────────────────────
+// DATA FILTERING
+// ─────────────────────────────────────────────────────────────
+function filterTPH() {
+  return cachedData.tph.filter(r => {
+    if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
+    if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
+    if (activeFilters.dateFrom && r.date && r.date < activeFilters.dateFrom) return false;
+    if (activeFilters.dateTo   && r.date && r.date > activeFilters.dateTo)   return false;
+    return true;
+  });
+}
+
+function filterCSAT() {
+  return cachedData.csat.filter(r => {
+    if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
+    if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
+    if (activeFilters.dateFrom && r.date && r.date < activeFilters.dateFrom) return false;
+    if (activeFilters.dateTo   && r.date && r.date > activeFilters.dateTo)   return false;
+    return true;
+  });
+}
+
+function filterIQS() {
+  return cachedData.iqs.filter(r => {
+    if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
+    if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
+    if (activeFilters.dateFrom && r.weekOf && r.weekOf < activeFilters.dateFrom) return false;
+    if (activeFilters.dateTo   && r.weekOf && r.weekOf > activeFilters.dateTo)   return false;
+    return true;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// AGGREGATION HELPERS
+// ─────────────────────────────────────────────────────────────
+function aggTPHByPeriod(records, field) {
+  // field = 'isoWeek' or 'yearMonth'
+  const map = {};
+  records.forEach(r => {
+    const k = r[field]; if (!k) return;
+    if (!map[k]) map[k] = { tickets: 0, tickSec: 0, prodSec: 0, ahtSum: 0, ahtCnt: 0 };
+    map[k].tickets += Number(r.handledTickets) || 0;
+    map[k].tickSec += Number(r.ticketTimeSec)  || 0;
+    map[k].prodSec += Number(r.productiveTimeSec) || 0;
+    const a = Number(r.ahtSeconds);
+    if (a > 0) { map[k].ahtSum += a; map[k].ahtCnt++; }
+  });
+  const result = {};
+  Object.entries(map).forEach(([k, v]) => {
+    const hrs = (v.tickSec + v.prodSec) / 3600;
+    result[k] = {
+      tph: hrs > 0 ? Math.round((v.tickets / hrs) * 100) / 100 : 0,
+      aht: v.ahtCnt > 0 ? Math.round(v.ahtSum / v.ahtCnt) : 0
+    };
+  });
+  return result;
+}
+
+function aggCSATByPeriod(records, field) {
+  const map = {};
+  records.forEach(r => {
+    const k = r[field]; if (!k) return;
+    if (!map[k]) map[k] = { good: 0, total: 0 };
+    map[k].good  += Number(r.goodSurveys)  || 0;
+    map[k].total += Number(r.totalSurveys) || 0;
+  });
+  const result = {};
+  Object.entries(map).forEach(([k, v]) => {
+    result[k] = v.total > 0 ? { score: Math.round((v.good / v.total) * 10000) / 100, good: v.good, bad: v.total - v.good, total: v.total } : null;
+  });
+  return result;
+}
+
+function aggIQSByPeriod(records, field) {
+  // For IQS, field is 'weekOf' (weekly) or we convert weekOf to month
+  const map = {};
+  records.forEach(r => {
+    let k = r[field];
+    if (!k) {
+      // For monthly view, derive month from weekOf
+      if (field === 'month' && r.weekOf) k = String(r.weekOf).substring(0, 7);
+    }
+    if (!k) return;
+    const iqs = Number(r.iqs);
+    if (!iqs) return;
+    if (!map[k]) map[k] = { sum: 0, cnt: 0, reviews: 0 };
+    map[k].sum += iqs;
+    map[k].cnt++;
+    map[k].reviews += Number(r.reviews) || 0;
+  });
+  const result = {};
+  Object.entries(map).forEach(([k, v]) => {
+    result[k] = v.cnt > 0 ? { score: Math.round((v.sum / v.cnt) * 100) / 100, reviews: v.reviews } : null;
+  });
+  return result;
+}
+
+// Aggregate by agent (or supervisor/am) for a given set of period keys
+function buildAgentPeriodTable(level, kpi, periods, periodField) {
+  const tphRecs  = filterTPH();
+  const csatRecs = filterCSAT();
+  const iqsRecs  = filterIQS();
+
+  // Group by identifier (agentEmail, supervisor, or am)
+  const groupKey = r => {
+    if (level === 'supervisor') return r.supervisor || '(unknown)';
+    if (level === 'am')         return r.am || '(unknown)';
+    return r.agentEmail || '(unknown)';
+  };
+
+  const groupLabel = (key, type) => {
+    if (level !== 'agent') return key;
+    if (type === 'iqs') {
+      const rec = cachedData.iqs.find(r => r.agentEmail === key);
+      return rec ? rec.agentName || key : key;
+    }
+    const rec = cachedData.tph.find(r => r.agentEmail === key);
+    if (rec) return rec.agentName || key;
+    const ag = cachedData.agents.find(a => a.email === key);
+    return ag ? ag.name : key;
+  };
+
+  // Build per-period aggregations
+  const kpiMap = {};  // key → { periodKey: value }
+
+  if (kpi === 'tph' || kpi === 'aht') {
+    tphRecs.forEach(r => {
+      const p = r[periodField]; if (!periods.includes(p)) return;
+      const k = groupKey(r);
+      if (!kpiMap[k]) kpiMap[k] = {};
+      if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tickSec: 0, prodSec: 0, ahtSum: 0, ahtCnt: 0 };
+      kpiMap[k][p].tickets += Number(r.handledTickets) || 0;
+      kpiMap[k][p].tickSec += Number(r.ticketTimeSec)  || 0;
+      kpiMap[k][p].prodSec += Number(r.productiveTimeSec) || 0;
+      const a = Number(r.ahtSeconds);
+      if (a > 0) { kpiMap[k][p].ahtSum += a; kpiMap[k][p].ahtCnt++; }
+    });
+  } else if (kpi === 'csat') {
+    csatRecs.forEach(r => {
+      const p = r[periodField]; if (!periods.includes(p)) return;
+      const k = groupKey(r);
+      if (!kpiMap[k]) kpiMap[k] = {};
+      if (!kpiMap[k][p]) kpiMap[k][p] = { good: 0, total: 0 };
+      kpiMap[k][p].good  += Number(r.goodSurveys)  || 0;
+      kpiMap[k][p].total += Number(r.totalSurveys) || 0;
+    });
+  } else if (kpi === 'iqs') {
+    iqsRecs.forEach(r => {
+      let p = r[periodField];
+      if (!p && periodField === 'month' && r.weekOf) p = String(r.weekOf).substring(0, 7);
+      if (!periods.includes(p)) return;
+      const k = groupKey(r);
+      if (!kpiMap[k]) kpiMap[k] = {};
+      if (!kpiMap[k][p]) kpiMap[k][p] = { sum: 0, cnt: 0 };
+      const iqs = Number(r.iqs);
+      if (iqs > 0) { kpiMap[k][p].sum += iqs; kpiMap[k][p].cnt++; }
+    });
+  }
+
+  // Resolve final values and compute trend
+  const rows = [];
+  Object.entries(kpiMap).forEach(([key, perPeriod]) => {
+    const vals = periods.map(p => {
+      const d = perPeriod[p];
+      if (!d) return null;
+      if (kpi === 'tph') {
+        const hrs = (d.tickSec + d.prodSec) / 3600;
+        return hrs > 0 ? Math.round((d.tickets / hrs) * 100) / 100 : null;
+      }
+      if (kpi === 'aht') return d.ahtCnt > 0 ? Math.round(d.ahtSum / d.ahtCnt) : null;
+      if (kpi === 'csat') return d.total > 0 ? Math.round((d.good / d.total) * 10000) / 100 : null;
+      if (kpi === 'iqs')  return d.cnt > 0 ? Math.round((d.sum / d.cnt) * 100) / 100 : null;
+      return null;
+    });
+    const latestTwo = vals.filter(v => v !== null).slice(-2);
+    const trend = latestTwo.length < 2 ? 0 : latestTwo[1] - latestTwo[0];
+    rows.push({ key, label: groupLabel(key, kpi), vals, trend });
+  });
+
+  // Sort by latest non-null value descending
+  rows.sort((a, b) => {
+    const av = a.vals.filter(v => v !== null).pop() || 0;
+    const bv = b.vals.filter(v => v !== null).pop() || 0;
+    return bv - av;
+  });
+
+  return rows;
+}
+
+// Color-tier for a value among all values in the same column
+function colorTier(val, allVals, higherIsBetter) {
+  if (val === null) return 'empty';
+  const clean = allVals.filter(v => v !== null);
+  if (!clean.length) return '';
+  clean.sort((a, b) => a - b);
+  const lo = clean[Math.floor(clean.length * 0.33)];
+  const hi = clean[Math.floor(clean.length * 0.66)];
+  if (higherIsBetter) {
+    if (val >= hi) return 'tier1';
+    if (val > lo)  return 'tier2';
+    return 'tier3';
+  } else {
+    if (val <= lo) return 'tier1';
+    if (val < hi)  return 'tier2';
+    return 'tier3';
+  }
+}
+
+function fmtVal(val, kpi) {
+  if (val === null || val === undefined) return '—';
+  if (kpi === 'csat' || kpi === 'iqs') return val.toFixed(1) + '%';
+  if (kpi === 'tph') return val.toFixed(1);
+  if (kpi === 'aht') return val + 's';
+  return val;
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHART UTILITIES
+// ─────────────────────────────────────────────────────────────
+const COLORS = ['#4F46E5','#10B981','#F59E0B','#EF4444','#8B5CF6','#06B6D4','#EC4899','#84CC16'];
+
+function destroyChart(id) {
+  if (charts[id]) { try { charts[id].destroy(); } catch(e) {} delete charts[id]; }
+}
+
+function makeLineChart(id, labels, datasets, opts = {}) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: { titleFont: { size: 11 }, bodyFont: { size: 11 } }
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' } },
+        y: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' }, ...opts.y },
+        ...(opts.y2 ? { y2: { position: 'right', ticks: { font: { size: 10 } }, grid: { drawOnChartArea: false }, ...opts.y2 } } : {})
+      }
+    }
+  });
+}
+
+function makeBarChart(id, labels, datasets) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } } },
+      scales: {
+        x: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' }, stacked: true },
+        y: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' }, stacked: true }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 1 — DASHBOARD
+// ─────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const weeks = lastNWeeks(8);
+  const tphByWk  = aggTPHByPeriod(filterTPH(),  'isoWeek');
+  const csatByWk = aggCSATByPeriod(filterCSAT(), 'isoWeek');
+  const iqsByWk  = aggIQSByPeriod(filterIQS(),  'weekOf');
+
+  // KPI cards — use last available week
+  const lastTPH  = findLast(weeks, w => tphByWk[w]?.tph);
+  const prevTPH  = findLast(weeks.slice(0, -1), w => tphByWk[w]?.tph);
+  const lastCSAT = findLast(weeks, w => csatByWk[w]?.score);
+  const prevCSAT = findLast(weeks.slice(0, -1), w => csatByWk[w]?.score);
+  const lastIQS  = findLast(weeks, w => iqsByWk[w]?.score);
+  const prevIQS  = findLast(weeks.slice(0, -1), w => iqsByWk[w]?.score);
+  const lastAHT  = findLast(weeks, w => tphByWk[w]?.aht);
+  const prevAHT  = findLast(weeks.slice(0, -1), w => tphByWk[w]?.aht);
+
+  document.getElementById('kpi-grid').innerHTML = [
+    buildKPICard('TPH', lastTPH != null ? tphByWk[lastTPH]?.tph?.toFixed(1) : '—',
+      'tickets / hour', wow(tphByWk[lastTPH]?.tph, tphByWk[prevTPH]?.tph, true), true),
+    buildKPICard('CSAT', lastCSAT != null ? csatByWk[lastCSAT]?.score?.toFixed(1) + '%' : '—',
+      'satisfaction score', wow(csatByWk[lastCSAT]?.score, csatByWk[prevCSAT]?.score, true), true),
+    buildKPICard('IQS', lastIQS != null ? iqsByWk[lastIQS]?.score?.toFixed(1) + '%' : '—',
+      'quality score', wow(iqsByWk[lastIQS]?.score, iqsByWk[prevIQS]?.score, true), true),
+    buildKPICard('AHT', lastAHT != null ? tphByWk[lastAHT]?.aht + 's' : '—',
+      'avg handle time', wow(tphByWk[lastAHT]?.aht, tphByWk[prevAHT]?.aht, false), false)
+  ].join('');
+
+  // Trend charts
+  const wkLabels = weeks.map(fmtWeek);
+  const tphVals  = weeks.map(w => tphByWk[w]?.tph ?? null);
+  const csatVals = weeks.map(w => csatByWk[w]?.score ?? null);
+  const iqsVals  = weeks.map(w => iqsByWk[w]?.score ?? null);
+  const ahtVals  = weeks.map(w => tphByWk[w]?.aht ?? null);
+
+  makeLineChart('chart-tph-trend', wkLabels, [{
+    label: 'TPH', data: tphVals, borderColor: COLORS[0], backgroundColor: COLORS[0] + '18',
+    fill: true, tension: 0.3, spanGaps: true
+  }]);
+  makeLineChart('chart-csat-trend', wkLabels, [{
+    label: 'CSAT %', data: csatVals, borderColor: COLORS[1], backgroundColor: COLORS[1] + '18',
+    fill: true, tension: 0.3, spanGaps: true
+  }], { y: { min: 0, max: 100 } });
+  makeLineChart('chart-iqs-trend', wkLabels, [{
+    label: 'IQS %', data: iqsVals, borderColor: COLORS[4], backgroundColor: COLORS[4] + '18',
+    fill: true, tension: 0.3, spanGaps: true
+  }], { y: { min: 0, max: 100 } });
+  makeLineChart('chart-aht-trend', wkLabels, [{
+    label: 'AHT (s)', data: ahtVals, borderColor: COLORS[3], backgroundColor: COLORS[3] + '18',
+    fill: true, tension: 0.3, spanGaps: true
+  }]);
+}
+
+function buildKPICard(label, value, sub, wowHtml, higherBetter) {
+  return `<div class="kpi-card">
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value">${escH(String(value))}</div>
+    <div class="kpi-sub">${escH(sub)}</div>
+    ${wowHtml}
+  </div>`;
+}
+
+function wow(cur, prev, higherBetter) {
+  if (cur == null || prev == null) return '<div class="kpi-wow flat">— WoW</div>';
+  const diff = cur - prev;
+  const pct  = prev !== 0 ? ((diff / prev) * 100).toFixed(1) : '0';
+  const good = higherBetter ? diff >= 0 : diff <= 0;
+  const cls  = diff === 0 ? 'flat' : good ? 'up' : 'down';
+  const arrow = diff === 0 ? '→' : diff > 0 ? '▲' : '▼';
+  return `<div class="kpi-wow ${cls}">${arrow} ${Math.abs(pct)}% WoW</div>`;
+}
+
+function findLast(arr, pred) {
+  for (let i = arr.length - 1; i >= 0; i--) { if (pred(arr[i])) return arr[i]; }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 2 — WEEKLY TABLE
+// ─────────────────────────────────────────────────────────────
+function setWeeklyLevel(lvl) {
+  weeklyLevel = lvl;
+  document.querySelectorAll('#weekly-level-toggle .toggle-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.level === lvl));
+  renderWeeklyTable();
+}
+function setWeeklyKPI(kpi) {
+  weeklyKPI = kpi;
+  document.querySelectorAll('#weekly-kpi-tabs .kpi-tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.kpi === kpi));
+  renderWeeklyTable();
+}
+
+function renderWeeklyTable() {
+  const periods = lastNWeeks(4);
+  const rows    = buildAgentPeriodTable(weeklyLevel, weeklyKPI, periods, 'isoWeek');
+  const higherIsBetter = weeklyKPI !== 'aht';
+  renderPeriodTable('weekly-table-container', rows, periods, weeklyKPI, higherIsBetter, fmtWeek);
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 3 — MONTHLY TABLE
+// ─────────────────────────────────────────────────────────────
+function setMonthlyLevel(lvl) {
+  monthlyLevel = lvl;
+  document.querySelectorAll('#monthly-level-toggle .toggle-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.level === lvl));
+  renderMonthlyTable();
+}
+function setMonthlyKPI(kpi) {
+  monthlyKPI = kpi;
+  document.querySelectorAll('#monthly-kpi-tabs .kpi-tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.kpi === kpi));
+  renderMonthlyTable();
+}
+
+function renderMonthlyTable() {
+  const periods = lastNMonths(4);
+  // For monthly IQS, we need to aggregate IQS records by month
+  const rows    = buildAgentPeriodTableMonthly(monthlyLevel, monthlyKPI, periods);
+  const higherIsBetter = monthlyKPI !== 'aht';
+  renderPeriodTable('monthly-table-container', rows, periods, monthlyKPI, higherIsBetter, fmtMonth);
+}
+
+function buildAgentPeriodTableMonthly(level, kpi, periods) {
+  // For monthly, TPH/CSAT use yearMonth field; IQS derives month from weekOf
+  const tphRecs  = filterTPH();
+  const csatRecs = filterCSAT();
+  const iqsRecs  = filterIQS();
+
+  const groupKey = r => {
+    if (level === 'supervisor') return r.supervisor || '(unknown)';
+    if (level === 'am')         return r.am || '(unknown)';
+    return r.agentEmail || '(unknown)';
+  };
+
+  const kpiMap = {};
+
+  if (kpi === 'tph' || kpi === 'aht') {
+    tphRecs.forEach(r => {
+      const p = r.yearMonth; if (!periods.includes(p)) return;
+      const k = groupKey(r);
+      if (!kpiMap[k]) kpiMap[k] = {};
+      if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tickSec: 0, prodSec: 0, ahtSum: 0, ahtCnt: 0 };
+      kpiMap[k][p].tickets += Number(r.handledTickets) || 0;
+      kpiMap[k][p].tickSec += Number(r.ticketTimeSec)  || 0;
+      kpiMap[k][p].prodSec += Number(r.productiveTimeSec) || 0;
+      const a = Number(r.ahtSeconds);
+      if (a > 0) { kpiMap[k][p].ahtSum += a; kpiMap[k][p].ahtCnt++; }
+    });
+  } else if (kpi === 'csat') {
+    csatRecs.forEach(r => {
+      const p = r.yearMonth; if (!periods.includes(p)) return;
+      const k = groupKey(r);
+      if (!kpiMap[k]) kpiMap[k] = {};
+      if (!kpiMap[k][p]) kpiMap[k][p] = { good: 0, total: 0 };
+      kpiMap[k][p].good  += Number(r.goodSurveys)  || 0;
+      kpiMap[k][p].total += Number(r.totalSurveys) || 0;
+    });
+  } else if (kpi === 'iqs') {
+    iqsRecs.forEach(r => {
+      const p = r.weekOf ? String(r.weekOf).substring(0, 7) : '';
+      if (!periods.includes(p)) return;
+      const k = groupKey(r);
+      if (!kpiMap[k]) kpiMap[k] = {};
+      if (!kpiMap[k][p]) kpiMap[k][p] = { sum: 0, cnt: 0 };
+      const iqs = Number(r.iqs);
+      if (iqs > 0) { kpiMap[k][p].sum += iqs; kpiMap[k][p].cnt++; }
+    });
+  }
+
+  const rows = [];
+  Object.entries(kpiMap).forEach(([key, perPeriod]) => {
+    const vals = periods.map(p => {
+      const d = perPeriod[p];
+      if (!d) return null;
+      if (kpi === 'tph') { const hrs = (d.tickSec + d.prodSec) / 3600; return hrs > 0 ? Math.round((d.tickets / hrs) * 100) / 100 : null; }
+      if (kpi === 'aht') return d.ahtCnt > 0 ? Math.round(d.ahtSum / d.ahtCnt) : null;
+      if (kpi === 'csat') return d.total > 0 ? Math.round((d.good / d.total) * 10000) / 100 : null;
+      if (kpi === 'iqs')  return d.cnt > 0 ? Math.round((d.sum / d.cnt) * 100) / 100 : null;
+      return null;
+    });
+    const latestTwo = vals.filter(v => v !== null).slice(-2);
+    const trend = latestTwo.length < 2 ? 0 : latestTwo[1] - latestTwo[0];
+    const lbl = level !== 'agent' ? key : (cachedData.agents.find(a => a.email === key)?.name || key);
+    rows.push({ key, label: lbl, vals, trend });
+  });
+  rows.sort((a, b) => (b.vals.filter(v => v !== null).pop() || 0) - (a.vals.filter(v => v !== null).pop() || 0));
+  return rows;
+}
+
+function renderPeriodTable(containerId, rows, periods, kpi, higherIsBetter, fmtPeriod) {
+  const el = document.getElementById(containerId);
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No data for this period. Upload files in Admin.</p></div>';
+    return;
+  }
+
+  // Compute per-column values for color tiering
+  const colVals = periods.map((_, ci) => rows.map(r => r.vals[ci]));
+
+  const head = `<th>Name</th>${periods.map(p => `<th style="text-align:right">${fmtPeriod(p)}</th>`).join('')}<th style="text-align:right">Trend</th>`;
+  const body = rows.map(row => {
+    const cells = row.vals.map((v, ci) => {
+      const tier = colorTier(v, colVals[ci], higherIsBetter);
+      return `<td class="cell-val ${tier}">${fmtVal(v, kpi)}</td>`;
+    }).join('');
+    const lastValid = row.vals.filter(v => v !== null);
+    const prev = lastValid.length >= 2 ? lastValid[lastValid.length - 2] : null;
+    const last = lastValid.length >= 1 ? lastValid[lastValid.length - 1] : null;
+    let trendCell = '<td class="trend-flat">—</td>';
+    if (last !== null && prev !== null) {
+      const diff = last - prev;
+      const good = higherIsBetter ? diff > 0 : diff < 0;
+      trendCell = `<td class="${good ? 'trend-up' : diff === 0 ? 'trend-flat' : 'trend-down'}">${diff > 0 ? '▲' : diff < 0 ? '▼' : '→'} ${Math.abs(diff).toFixed(1)}</td>`;
+    }
+    return `<tr><td class="agent-name">${escH(row.label)}</td>${cells}${trendCell}</tr>`;
+  }).join('');
+
+  el.innerHTML = `<table class="agent-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 4 — TPH + AHT CHART
+// ─────────────────────────────────────────────────────────────
+function renderTPHAHTChart() {
+  const supFilter = document.getElementById('tph-sup-filter')?.value || '';
+  const tphRecs = filterTPH().filter(r => !supFilter || r.supervisor === supFilter || r.am === supFilter);
+  const weeks   = lastNWeeks(12);
+  const byWk    = aggTPHByPeriod(tphRecs, 'isoWeek');
+  const labels  = weeks.map(fmtWeek);
+  const tphVals = weeks.map(w => byWk[w]?.tph ?? null);
+  const ahtVals = weeks.map(w => byWk[w]?.aht ?? null);
+
+  destroyChart('chart-tph-aht');
+  const ctx = document.getElementById('chart-tph-aht');
+  if (!ctx) return;
+  charts['chart-tph-aht'] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'TPH', data: tphVals, borderColor: COLORS[0], backgroundColor: COLORS[0] + '18',
+          fill: false, tension: 0.3, spanGaps: true, yAxisID: 'y'
+        },
+        {
+          label: 'AHT (s)', data: ahtVals, borderColor: COLORS[3], backgroundColor: COLORS[3] + '18',
+          fill: false, tension: 0.3, spanGaps: true, yAxisID: 'y2', borderDash: [5, 3]
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' } },
+        y:  { position: 'left',  title: { display: true, text: 'TPH' }, grid: { color: '#F1F5F9' } },
+        y2: { position: 'right', title: { display: true, text: 'AHT (seconds)' }, grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 5 — CSAT PROGRESSION
+// ─────────────────────────────────────────────────────────────
+function renderCSATProgChart() {
+  const supFilter = document.getElementById('csat-sup-filter')?.value || '';
+  const recs  = filterCSAT().filter(r => !supFilter || r.supervisor === supFilter || r.am === supFilter);
+  const weeks = lastNWeeks(12);
+  const byWk  = aggCSATByPeriod(recs, 'isoWeek');
+  const labels = weeks.map(fmtWeek);
+  const scores = weeks.map(w => byWk[w]?.score ?? null);
+  const goods  = weeks.map(w => byWk[w]?.good  ?? 0);
+  const bads   = weeks.map(w => byWk[w]?.bad   ?? 0);
+
+  makeLineChart('chart-csat-prog', labels, [{
+    label: 'CSAT %', data: scores, borderColor: COLORS[1], backgroundColor: COLORS[1] + '18',
+    fill: true, tension: 0.3, spanGaps: true, pointRadius: 4
+  }], { y: { min: 0, max: 100, title: { display: true, text: 'CSAT Score (%)' } } });
+
+  makeBarChart('chart-csat-volume', labels, [
+    { label: 'Good', data: goods, backgroundColor: COLORS[1] + 'CC' },
+    { label: 'Bad',  data: bads,  backgroundColor: COLORS[3] + 'CC' }
+  ]);
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 6 — IQS PROGRESSION
+// ─────────────────────────────────────────────────────────────
+function renderIQSProgChart() {
+  const supFilter = document.getElementById('iqs-sup-filter')?.value || '';
+  const recs  = filterIQS().filter(r => !supFilter || r.supervisor === supFilter || r.am === supFilter);
+  const weeks = lastNWeeks(12);
+  const byWk  = aggIQSByPeriod(recs, 'weekOf');
+  const labels = weeks.map(fmtWeek);
+  const scores  = weeks.map(w => byWk[w]?.score   ?? null);
+  const reviews = weeks.map(w => byWk[w]?.reviews ?? 0);
+
+  makeLineChart('chart-iqs-prog', labels, [{
+    label: 'IQS %', data: scores, borderColor: COLORS[4], backgroundColor: COLORS[4] + '18',
+    fill: true, tension: 0.3, spanGaps: true, pointRadius: 4
+  }], { y: { min: 0, max: 100, title: { display: true, text: 'IQS Score (%)' } } });
+
+  makeBarChart('chart-iqs-volume', labels, [
+    { label: 'Reviews', data: reviews, backgroundColor: COLORS[4] + 'AA' }
+  ]);
+}
+
+// ─────────────────────────────────────────────────────────────
+// NAVIGATION
+// ─────────────────────────────────────────────────────────────
+const PAGES = ['dashboard','weekly','monthly','tph-aht','csat-prog','iqs-prog','admin'];
+
+function navTo(page) {
+  currentPage = page;
+  PAGES.forEach(p => {
+    document.getElementById('page-' + p)?.classList.toggle('active', p === page);
+    document.querySelector(`.nav-tab[data-page="${p}"]`)?.classList.toggle('active', p === page);
+  });
+  renderCurrentPage();
+}
+
+function renderCurrentPage() {
+  if (currentPage === 'dashboard') renderDashboard();
+  else if (currentPage === 'weekly')    renderWeeklyTable();
+  else if (currentPage === 'monthly')   renderMonthlyTable();
+  else if (currentPage === 'tph-aht')   renderTPHAHTChart();
+  else if (currentPage === 'csat-prog') renderCSATProgChart();
+  else if (currentPage === 'iqs-prog')  renderIQSProgChart();
+  else if (currentPage === 'admin')     renderAdminPage();
+}
+
+// ─────────────────────────────────────────────────────────────
+// FILTERS
+// ─────────────────────────────────────────────────────────────
+function applyFilters() {
+  activeFilters.dateFrom   = document.getElementById('f-from').value;
+  activeFilters.dateTo     = document.getElementById('f-to').value;
+  activeFilters.supervisor = document.getElementById('f-supervisor').value;
+  activeFilters.tenure     = document.getElementById('f-tenure').value;
+  const active = Object.values(activeFilters).some(v => v);
+  document.getElementById('active-filter-badge').style.display = active ? '' : 'none';
+  renderCurrentPage();
+}
+
+function clearFilters() {
+  activeFilters = { dateFrom: '', dateTo: '', supervisor: '', tenure: '' };
+  document.getElementById('f-from').value = '';
+  document.getElementById('f-to').value = '';
+  document.getElementById('f-supervisor').value = '';
+  document.getElementById('f-tenure').value = '';
+  document.getElementById('active-filter-badge').style.display = 'none';
+  renderCurrentPage();
+}
+
+function populateSupervisorFilters() {
+  const sups = new Set();
+  [...cachedData.tph, ...cachedData.csat, ...cachedData.iqs].forEach(r => {
+    if (r.supervisor) sups.add(r.supervisor);
+    if (r.am) sups.add(r.am);
+  });
+  cachedData.agents.forEach(a => {
+    if (a.supervisor) sups.add(a.supervisor);
+    if (a.am) sups.add(a.am);
+  });
+  const sorted = [...sups].sort();
+  const opts = '<option value="">All</option>' + sorted.map(s => `<option value="${escH(s)}">${escH(s)}</option>`).join('');
+  ['f-supervisor','tph-sup-filter','csat-sup-filter','iqs-sup-filter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// ADMIN PAGE
+// ─────────────────────────────────────────────────────────────
+function renderAdminPage() {
+  renderUploadHistory();
+  renderHierarchyLog();
+  renderRolesTable();
+}
+
+function renderUploadHistory() {
+  const tbody = document.getElementById('upload-log-tbody');
+  if (!tbody) return;
+  const rows = [...cachedData.uploadLog].reverse().slice(0, 50);
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);padding:.75rem">No uploads yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td><span class="type-badge ${escH(r.type)}">${escH(r.type)}</span></td>
+    <td>${escH(String(r.uploadedAt).substring(0, 16).replace('T',' '))}</td>
+    <td>${escH(r.uploadedBy)}</td>
+    <td>${escH(String(r.recordCount))}</td>
+    <td>${escH(r.fileName || '—')}</td>
+  </tr>`).join('');
+}
+
+function renderHierarchyLog() {
+  const tbody = document.getElementById('hier-log-tbody');
+  if (!tbody) return;
+  const rows = [...cachedData.hierLog].reverse();
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);padding:.75rem">No versions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td style="font-size:.72rem;color:var(--muted)">${escH(r.versionId)}</td>
+    <td>${escH(String(r.effectiveDate).substring(0, 16).replace('T',' '))}</td>
+    <td>${escH(r.uploadedBy)}</td>
+    <td>${escH(String(r.agentCount))}</td>
+    <td>${escH(r.notes || '—')}</td>
+  </tr>`).join('');
+}
+
+function renderRolesTable() {
+  const tbody = document.getElementById('roles-tbody');
+  if (!tbody) return;
+  if (!isCurrentUserAdmin()) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">Loading…</td></tr>'; loadRoles(); return; }
+}
+
+async function loadRoles() {
+  try {
+    const data = await apiPost({ action: 'getRoles' });
+    const roles = data.roles || [];
+    const tbody = document.getElementById('roles-tbody');
+    if (!tbody) return;
+    if (!roles.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);padding:.75rem">No roles assigned</td></tr>'; return; }
+    tbody.innerHTML = roles.map(r => `<tr>
+      <td>${escH(r.email)}</td>
+      <td><span class="role-badge ${escH(r.role)}">${escH(r.role)}</span></td>
+      <td>${escH(r.assignedBy || '—')}</td>
+      <td>${escH(String(r.assignedDate || '').substring(0, 10))}</td>
+      <td><button class="btn-remove-role" onclick="removeRole('${escH(r.email)}')">Remove</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast('Error loading roles: ' + e.message, '#EF4444'); }
+}
+
+async function addRole() {
+  const email = document.getElementById('new-role-email').value.trim().toLowerCase();
+  const role  = document.getElementById('new-role-select').value;
+  if (!email || !email.endsWith('@' + ALLOWED_DOMAIN)) { showToast('Invalid email domain.', '#F59E0B'); return; }
+  try {
+    await apiPost({ action: 'updateRoles', subAction: 'add', targetEmail: email, role });
+    showToast('Role updated.', '#10B981');
+    loadRoles();
+  } catch (e) { showToast(e.message, '#EF4444'); }
+}
+
+async function removeRole(email) {
+  if (!confirm('Remove role for ' + email + '?')) return;
+  try {
+    await apiPost({ action: 'updateRoles', subAction: 'remove', targetEmail: email });
+    showToast('Role removed.', '#10B981');
+    loadRoles();
+  } catch (e) { showToast(e.message, '#EF4444'); }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FILE PARSING UTILITIES
+// ─────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+  if (!lines.length) return [];
+  const headers = splitCSVLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = splitCSVLine(line);
+    const obj  = {};
+    headers.forEach((h, i) => { obj[h.trim()] = (vals[i] || '').trim(); });
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (const ch of line) {
+    if (ch === '"') { inQ = !inQ; continue; }
+    if (ch === ',' && !inQ) { result.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseTSVorCSV(text) {
+  // Auto-detect delimiter
+  const firstLine = text.split('\n')[0];
+  const tabs = (firstLine.match(/\t/g) || []).length;
+  const commas = (firstLine.match(/,/g) || []).length;
+  if (tabs > commas) {
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+    const headers = lines[0].split('\t');
+    return lines.slice(1).map(line => {
+      const vals = line.split('\t');
+      const obj  = {};
+      headers.forEach((h, i) => { obj[h.trim()] = (vals[i] || '').trim(); });
+      return obj;
+    }).filter(r => Object.values(r).some(v => v));
+  }
+  return parseCSV(text);
+}
+
+function timeToSec(str) {
+  if (!str) return 0;
+  const p = String(str).split(':').map(Number);
+  if (p.length === 2) return (p[0] || 0) * 60 + (p[1] || 0);
+  if (p.length === 3) return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
+  return 0;
+}
+
+// ─────────────────────────────────────────────────────────────
+// FILE UPLOAD HANDLERS — TPH
+// ─────────────────────────────────────────────────────────────
+function handleTPHFile(input) {
+  const file = input.files[0]; if (!file) return;
+  setUploadStatus('tph', 'processing', `Parsing ${file.name}…`);
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const rows = parseTSVorCSV(e.target.result);
+      if (!rows.length) throw new Error('No rows found in file.');
+
+      const records = [];
+      rows.forEach(r => {
+        const email = (r['Agent Email'] || '').toLowerCase();
+        if (!email) return;
+        const tickSec = timeToSec(r['Ticket Time (hh:mm:ss)']);
+        const prodSec = timeToSec(r['Productive General Task Time (hh:mm:ss)']);
+        const totalHrs = (tickSec + prodSec) / 3600;
+        const tickets   = parseInt(r['Valid Tickets']) || 0;
+        const tph = totalHrs > 0 ? Math.round((tickets / totalHrs) * 100) / 100 : 0;
+        const ahtSeconds = timeToSec(r['Avg Handle Time (mm:ss)']);
+        records.push({
+          agentEmail: email,
+          agentName: r['Agent Name'] || '',
+          date: r['Date'] || '',
+          handledTickets: tickets,
+          ticketTimeSec: tickSec,
+          productiveTimeSec: prodSec,
+          tph,
+          ahtSeconds
+        });
+      });
+
+      if (!records.length) throw new Error('No valid agent rows found.');
+      setUploadStatus('tph', 'processing', `Uploading ${records.length} records…`);
+      const res = await apiPost({ action: 'uploadTPH', records, fileName: file.name });
+      setUploadStatus('tph', 'ok', `✓ ${res.recordsAdded} records saved.`);
+      showToast(`✓ TPH: ${res.recordsAdded} records uploaded.`, '#10B981');
+      await apiFetch();
+      renderCurrentPage();
+    } catch (err) {
+      setUploadStatus('tph', 'err', '✗ ' + err.message);
+      showToast('TPH upload failed: ' + err.message, '#EF4444');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ─────────────────────────────────────────────────────────────
+// FILE UPLOAD HANDLERS — CSAT
+// ─────────────────────────────────────────────────────────────
+function handleCSATFile(input) {
+  const file = input.files[0]; if (!file) return;
+  setUploadStatus('csat', 'processing', `Parsing ${file.name}…`);
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      // Parse XLSX using SheetJS
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      // Build name → email map from cached CSAT map
+      const nameMap = {};
+      cachedData.csatMap.forEach(r => {
+        if (r.displayName && r.email) {
+          nameMap[String(r.displayName).trim().toLowerCase()] = String(r.email).toLowerCase();
+        }
+      });
+
+      // Aggregate: { agentEmail_date: { good, bad } }
+      const agg = {};
+      const unmatchedSet = new Set();
+
+      rows.forEach(r => {
+        if (r['Changes - Field name'] !== 'satisfaction_score') return;
+        const assignee = String(r['Update ticket assignee'] || '').trim();
+        if (!assignee || assignee === '\xa0' || assignee === ' ') return;
+        const email = nameMap[assignee.toLowerCase()];
+        if (!email) { unmatchedSet.add(assignee); return; }
+        const date  = String(r['Update - Date'] || '').trim().substring(0, 10);
+        if (!date) return;
+        const key = email + '|' + date;
+        if (!agg[key]) agg[key] = { agentEmail: email, date, good: 0, bad: 0 };
+        const val = String(r['Changes - New value'] || '').toLowerCase();
+        if (val === 'good') agg[key].good++;
+        else if (val === 'bad') agg[key].bad++;
+      });
+
+      const records = Object.values(agg).map(d => ({
+        agentEmail: d.agentEmail, date: d.date,
+        goodSurveys: d.good, badSurveys: d.bad
+      }));
+
+      if (!records.length) throw new Error('No valid CSAT records matched. Check the CSAT Name Map in Admin.');
+
+      // Show unmatched names
+      const unmatchedBox = document.getElementById('csat-unmatched');
+      if (unmatchedSet.size > 0) {
+        const list = [...unmatchedSet].slice(0, 20).map(n => `<li>${escH(n)}</li>`).join('');
+        unmatchedBox.style.display = '';
+        unmatchedBox.innerHTML = `<h5>⚠️ ${unmatchedSet.size} unmatched assignee names (excluded)</h5><ul>${list}</ul><p style="margin-top:.35rem">Add these names to the CSAT Name Map in Admin.</p>`;
+      } else {
+        unmatchedBox.style.display = 'none';
+      }
+
+      setUploadStatus('csat', 'processing', `Uploading ${records.length} records…`);
+      const res = await apiPost({ action: 'uploadCSAT', records, fileName: file.name, unmatched: [...unmatchedSet] });
+      setUploadStatus('csat', 'ok', `✓ ${res.recordsAdded} records saved.`);
+      showToast(`✓ CSAT: ${res.recordsAdded} records uploaded.`, '#10B981');
+      await apiFetch();
+      renderCurrentPage();
+    } catch (err) {
+      setUploadStatus('csat', 'err', '✗ ' + err.message);
+      showToast('CSAT upload failed: ' + err.message, '#EF4444');
+    }
+    input.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ─────────────────────────────────────────────────────────────
+// FILE UPLOAD HANDLERS — IQS
+// ─────────────────────────────────────────────────────────────
+function handleIQSFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const weekOf = document.getElementById('iqs-week-date').value || new Date().toISOString().split('T')[0];
+  setUploadStatus('iqs', 'processing', `Parsing ${file.name}…`);
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const rows = parseTSVorCSV(e.target.result);
+      if (!rows.length) throw new Error('No rows found in file.');
+
+      const records = [];
+      rows.forEach(r => {
+        // The email column has a special invisible-char header; find it by looking for @ in values
+        let email = '';
+        const keys = Object.keys(r);
+        for (const k of keys) {
+          if (String(r[k]).includes('@')) { email = String(r[k]).toLowerCase(); break; }
+        }
+        if (!email) return;
+
+        const iqsStr  = r['IQS'] || r['IQS%'] || '';
+        const iqs     = parseFloat(String(iqsStr).replace('%', '')) || 0;
+        if (!iqs) return;
+
+        records.push({
+          agentEmail: email,
+          agentName:  r['Reviewee'] || '',
+          weekOf,
+          iqs,
+          reviews: parseInt(r['Reviews'])  || 0,
+          passed:  parseInt(r['Passed'])   || 0,
+          failed:  parseInt(r['Failed'])   || 0
+        });
+      });
+
+      if (!records.length) throw new Error('No valid IQS records found.');
+      setUploadStatus('iqs', 'processing', `Uploading ${records.length} records…`);
+      const res = await apiPost({ action: 'uploadIQS', records, fileName: file.name });
+      setUploadStatus('iqs', 'ok', `✓ ${res.recordsAdded} records saved for week of ${weekOf}.`);
+      showToast(`✓ IQS: ${res.recordsAdded} records uploaded.`, '#10B981');
+      await apiFetch();
+      renderCurrentPage();
+    } catch (err) {
+      setUploadStatus('iqs', 'err', '✗ ' + err.message);
+      showToast('IQS upload failed: ' + err.message, '#EF4444');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ─────────────────────────────────────────────────────────────
+// FILE UPLOAD HANDLERS — HIERARCHY
+// ─────────────────────────────────────────────────────────────
+function handleHierarchyFile(input) {
+  const file = input.files[0]; if (!file) return;
+  setUploadStatus('hier', 'processing', `Parsing ${file.name}…`);
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const rows = parseTSVorCSV(e.target.result);
+      if (!rows.length) throw new Error('No rows found.');
+
+      // TPH Hierarchy: A.Manager, New Supervisor, Hire Date, NAME, C•U Email, ROLE
+      const agents = rows.map(r => ({
+        email:      (r['C•U Email'] || r['CU Email'] || r['Email'] || '').toLowerCase(),
+        name:       r['NAME'] || r['Name'] || '',
+        role:       r['ROLE'] || r['Role'] || '',
+        supervisor: r['New Supervisor'] || r['Supervisor'] || '',
+        am:         r['A.Manager'] || r['AM'] || '',
+        hireDate:   r['Hire Date'] || r['HireDate'] || '',
+        team:       'CU - CX',
+        status:     'Active'
+      })).filter(a => a.email && a.name);
+
+      if (!agents.length) throw new Error('No valid agent rows found. Check column headers match the TPH Hierarchy format.');
+
+      const notes = document.getElementById('hier-notes').value;
+      const res   = await apiPost({ action: 'updateHierarchy', agents, notes });
+      setUploadStatus('hier', 'ok', `✓ ${res.agentsUpdated} agents updated. Version: ${res.versionId}`);
+      showToast(`✓ Hierarchy updated: ${res.agentsUpdated} agents.`, '#10B981');
+      await apiFetch();
+    } catch (err) {
+      setUploadStatus('hier', 'err', '✗ ' + err.message);
+      showToast('Hierarchy upload failed: ' + err.message, '#EF4444');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function handleCSATMapFile(input) {
+  const file = input.files[0]; if (!file) return;
+  setUploadStatus('csatmap', 'processing', `Parsing ${file.name}…`);
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const rows = parseTSVorCSV(e.target.result);
+      // CSAT Hierarchy: NAME, C•U Email, Status, ROLE, Team, Supervisor
+      const entries = [];
+      const seen    = new Set();
+      rows.forEach(r => {
+        const email = (r['C•U Email'] || r['CU Email'] || r['Email'] || '').toLowerCase();
+        const name  = (r['NAME'] || r['Name'] || '').trim();
+        if (!email || !name) return;
+        const key = name.toLowerCase() + '|' + email;
+        if (seen.has(key)) return;
+        seen.add(key);
+        entries.push({ displayName: name, email, status: r['Status'] || 'Active' });
+      });
+      if (!entries.length) throw new Error('No valid entries found.');
+      const res = await apiPost({ action: 'updateCSATMap', entries });
+      setUploadStatus('csatmap', 'ok', `✓ ${res.entriesUpdated} name mappings updated.`);
+      showToast(`✓ CSAT map updated: ${res.entriesUpdated} entries.`, '#10B981');
+      await apiFetch();
+    } catch (err) {
+      setUploadStatus('csatmap', 'err', '✗ ' + err.message);
+      showToast('CSAT map upload failed: ' + err.message, '#EF4444');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function setUploadStatus(id, cls, msg) {
+  const el = document.getElementById(id + '-status');
+  if (!el) return;
+  el.className = 'upload-status ' + cls;
+  el.textContent = msg;
+}
+
+// ─────────────────────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────────────────────
+function isCurrentUserAdmin() {
+  if (!currentUser) return false;
+  return cachedRole === 'admin' || currentUser.email === DEFAULT_ADMIN_EMAIL.toLowerCase();
+}
+
+function updateRoleUI() {
+  const adminTab = document.getElementById('admin-tab');
+  if (adminTab) adminTab.style.display = isCurrentUserAdmin() ? '' : 'none';
+}
+
+function showLoading(show, msg = 'Loading…') {
+  const el = document.getElementById('loading-overlay');
+  el.classList.toggle('show', show);
+  document.getElementById('loading-msg').textContent = msg;
+}
+
+function showToast(msg, color = '#10B981') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function escH(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─────────────────────────────────────────────────────────────
+// DRAG & DROP for upload zones
+// ─────────────────────────────────────────────────────────────
+function setupDropZone(zoneId, inputId) {
+  const zone  = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  if (!zone || !input) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change'));
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────────
+async function startApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  // Set user avatar
+  const initials = (currentUser.name || currentUser.email).split(/[\s@]/)[0].substring(0, 2).toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  document.getElementById('user-name-display').textContent = currentUser.name || currentUser.email;
+
+  // Set default IQS week to today
+  document.getElementById('iqs-week-date').value = new Date().toISOString().split('T')[0];
+
+  // Load data
+  try {
+    await apiFetch();
+  } catch (e) {
+    // Show empty dashboard anyway
+  }
+
+  renderCurrentPage();
+  updateRoleUI();
+
+  // Setup drag & drop
+  setupDropZone('tph-drop',  'tph-file');
+  setupDropZone('csat-drop', 'csat-file');
+  setupDropZone('iqs-drop',  'iqs-file');
+
+  // Auto-refresh every 5 minutes
+  setInterval(async () => {
+    try { await apiFetch(); renderCurrentPage(); } catch(e) {}
+  }, 300000);
+}
+
+// ─── Entry point ─────────────────────────────────────────────
+(function boot() {
+  const saved = localStorage.getItem('cx_user_v2');
+  if (saved) {
+    try {
+      currentUser = JSON.parse(saved);
+      if (currentUser && currentUser.email && currentUser.email.endsWith('@' + ALLOWED_DOMAIN)) {
+        startApp();
+        return;
+      }
+    } catch (e) {}
+  }
+  // Show login screen
+  document.getElementById('login-screen').style.display = 'flex';
+  // Pre-fill email from Google Sign-In if available
+  document.getElementById('manual-email').addEventListener('keydown', e => {
+    if (e.key === 'Enter') manualLogin();
+  });
+})();
+</script>
+</body>
+</html>
