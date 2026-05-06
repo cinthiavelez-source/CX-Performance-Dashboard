@@ -1048,14 +1048,19 @@ function lastNWeeks(n) {
   return weeks.slice(-n);
 }
 
+// Normalize a yearMonth value to exactly YYYY-MM (7 chars).
+// Google Sheets sometimes stores "2026-04" as a date cell, which sheetToObjects
+// normalizes to "2026-04-01". Both must collapse to "2026-04" to avoid duplicates.
+function normYM(v) { return v ? String(v).substring(0, 7) : ''; }
+
 function lastNMonths(n) {
   // Data-driven: derive last N yearMonths from actual filtered data (not calendar)
   const seen = new Set();
-  filterTPH().forEach(r  => { if (r.yearMonth) seen.add(r.yearMonth); });
-  filterCSAT().forEach(r => { if (r.yearMonth) seen.add(r.yearMonth); });
+  filterTPH().forEach(r  => { const ym = normYM(r.yearMonth); if (ym) seen.add(ym); });
+  filterCSAT().forEach(r => { const ym = normYM(r.yearMonth); if (ym) seen.add(ym); });
   filterIQS().forEach(r  => {
     if (r.weekOf) {
-      const ym = String(r.weekOf).substring(0, 7);
+      const ym = normYM(r.weekOf);
       if (ym && /^\d{4}-\d{2}$/.test(ym)) seen.add(ym);
     }
   });
@@ -1180,13 +1185,18 @@ function aggCSATByPeriod(records, field) {
 }
 
 function aggIQSByPeriod(records, field) {
-  // For IQS, field is 'weekOf' (weekly) or we convert weekOf to month
+  // field = 'weekOf'  → key is ISO week string "YYYY-Wnn"  (matches chart week labels)
+  // field = 'month'   → key is "YYYY-MM"
   const map = {};
   records.forEach(r => {
-    let k = r[field];
-    if (!k) {
-      // For monthly view, derive month from weekOf
-      if (field === 'month' && r.weekOf) k = String(r.weekOf).substring(0, 7);
+    let k;
+    if (field === 'weekOf') {
+      // weekOf is stored as the Monday date "YYYY-MM-DD"; convert to ISO week key
+      k = isoWeek(r.weekOf);
+    } else if (field === 'month') {
+      k = normYM(r.weekOf);
+    } else {
+      k = r[field];
     }
     if (!k) return;
     const iqs = Number(r.iqs);
@@ -1227,7 +1237,7 @@ function buildAllKPIData(level, periods, periodField, isMonthly) {
 
   // TPH + AHT
   tphRecs.forEach(r => {
-    const p = r[periodField]; if (!periods.includes(p)) return;
+    const p = isMonthly ? normYM(r[periodField]) : r[periodField]; if (!periods.includes(p)) return;
     const k = groupKey(r);
     if (!map[k]) map[k] = {};
     if (!map[k][p]) map[k][p] = empty();
@@ -1240,7 +1250,7 @@ function buildAllKPIData(level, periods, periodField, isMonthly) {
 
   // CSAT — period key depends on isMonthly
   csatRecs.forEach(r => {
-    const p = isMonthly ? r.yearMonth : r[periodField];
+    const p = isMonthly ? normYM(r.yearMonth) : r[periodField];
     if (!periods.includes(p)) return;
     const k = groupKey(r);
     if (!map[k]) map[k] = {};
@@ -1726,7 +1736,7 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
 
   if (kpi === 'tph' || kpi === 'aht') {
     tphRecs.forEach(r => {
-      const p = r.yearMonth; if (!periods.includes(p)) return;
+      const p = normYM(r.yearMonth); if (!periods.includes(p)) return;
       const k = groupKey(r);
       if (!kpiMap[k]) kpiMap[k] = {};
       if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tphWSum: 0, ahtWSum: 0 };
@@ -1737,7 +1747,7 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
     });
   } else if (kpi === 'csat') {
     csatRecs.forEach(r => {
-      const p = r.yearMonth; if (!periods.includes(p)) return;
+      const p = normYM(r.yearMonth); if (!periods.includes(p)) return;
       const k = groupKey(r);
       if (!kpiMap[k]) kpiMap[k] = {};
       if (!kpiMap[k][p]) kpiMap[k][p] = { good: 0, total: 0 };
@@ -1746,7 +1756,7 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
     });
   } else if (kpi === 'iqs') {
     iqsRecs.forEach(r => {
-      const p = r.weekOf ? String(r.weekOf).substring(0, 7) : '';
+      const p = normYM(r.weekOf);
       if (!periods.includes(p)) return;
       const k = groupKey(r);
       if (!kpiMap[k]) kpiMap[k] = {};
