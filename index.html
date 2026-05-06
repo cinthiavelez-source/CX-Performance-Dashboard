@@ -210,6 +210,57 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
 .trend-down { color: var(--red);   font-size: .75rem; }
 .trend-flat { color: var(--muted); font-size: .75rem; }
 
+/* ─── LIFETIME TABLE ───────────────────────────────── */
+.lifetime-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.lifetime-table th {
+  background:var(--bg); padding:.55rem .9rem; text-align:left;
+  font-size:.73rem; font-weight:700; color:var(--sub); text-transform:uppercase;
+  letter-spacing:.04em; border-bottom:2px solid var(--border); white-space:nowrap; cursor:pointer;
+}
+.lifetime-table th:hover { background:#E8EDFF; color:var(--brand); }
+.lifetime-table th.sort-asc::after  { content:' ↑'; color:var(--brand); }
+.lifetime-table th.sort-desc::after { content:' ↓'; color:var(--brand); }
+.lifetime-table td { padding:.52rem .9rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+.lifetime-table tr:hover td { background:#F8FAFC; }
+.lifetime-table .num { text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* ─── LEADERBOARD ───────────────────────────────────── */
+.lb-controls { display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1.25rem; }
+.lb-weight-group { display:flex; flex-direction:column; gap:.3rem; min-width:140px; }
+.lb-weight-group label { font-size:.75rem; font-weight:700; color:var(--sub); margin:0; }
+.lb-weight-row { display:flex; align-items:center; gap:.5rem; }
+.lb-weight-row input[type=range] { flex:1; accent-color:var(--brand); }
+.lb-weight-val { font-size:.85rem; font-weight:700; color:var(--brand); min-width:36px; text-align:right; }
+.lb-total { font-size:.8rem; font-weight:700; margin-top:.5rem; }
+.lb-total.ok   { color:var(--green); }
+.lb-total.warn { color:var(--red); }
+
+.lb-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.lb-table th {
+  background:var(--bg); padding:.55rem .9rem; text-align:left;
+  font-size:.73rem; font-weight:700; color:var(--sub); text-transform:uppercase;
+  letter-spacing:.04em; border-bottom:2px solid var(--border); white-space:nowrap;
+}
+.lb-table td { padding:.55rem .9rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+.lb-table tr:hover td { background:#F8FAFC; }
+.rank-badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border-radius:50%; font-size:.75rem; font-weight:800;
+}
+.rank-1  { background:#FFD700; color:#7B5800; }
+.rank-2  { background:#C0C0C0; color:#555; }
+.rank-3  { background:#CD7F32; color:#fff; }
+.rank-n  { background:var(--bg); color:var(--sub); }
+.score-bar-wrap { display:flex; align-items:center; gap:.6rem; }
+.score-bar-bg { flex:1; height:8px; background:var(--border); border-radius:4px; min-width:80px; }
+.score-bar-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#4F46E5,#10B981); }
+.score-val { font-size:.9rem; font-weight:800; color:var(--brand); min-width:38px; text-align:right; }
+.kpi-pill { display:inline-block; padding:.1rem .45rem; border-radius:.3rem; font-size:.72rem; font-weight:700; }
+.kpi-pill.tph  { background:#EEF2FF; color:var(--brand); }
+.kpi-pill.csat { background:#F0FDF4; color:#166534; }
+.kpi-pill.iqs  { background:#FFF7ED; color:#92400E; }
+.kpi-pill.aht  { background:#FFF1F2; color:#9F1239; }
+
 /* ─── COMBINED KPI TABLE ───────────────────────────── */
 .combined-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
 .combined-table th {
@@ -400,6 +451,8 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
       <button class="nav-tab" onclick="navTo('tph-aht')"   data-page="tph-aht">TPH + AHT</button>
       <button class="nav-tab" onclick="navTo('csat-prog')" data-page="csat-prog">CSAT Trend</button>
       <button class="nav-tab" onclick="navTo('iqs-prog')"  data-page="iqs-prog">IQS Trend</button>
+      <button class="nav-tab" onclick="navTo('lifetime')"  data-page="lifetime">All-Time</button>
+      <button class="nav-tab" onclick="navTo('leaderboard')" data-page="leaderboard">🏆 Leaderboard</button>
       <button class="nav-tab" id="admin-tab" style="display:none" onclick="navTo('admin')" data-page="admin">⚙ Admin</button>
     </div>
     <div class="navbar-user">
@@ -563,6 +616,86 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
       <div class="prog-chart-card mt-2">
         <h3>Review Volume</h3>
         <canvas id="chart-iqs-volume" style="max-height:250px"></canvas>
+      </div>
+    </div>
+
+    <!-- ── PAGE 7: ALL-TIME LIFETIME METRICS ─────────────── -->
+    <div id="page-lifetime" class="page">
+      <div class="page-title">📊 All-Time Agent Metrics</div>
+      <div class="card" style="margin-bottom:1rem;padding:.85rem 1.25rem">
+        <p style="font-size:.82rem;color:var(--sub);margin:0">
+          Consolidated lifetime performance per agent. Use the <strong>From / To</strong> date filters in the top bar to narrow to a specific date or range
+          (e.g. set both From and To to the same day to view a single date).
+          Clear filters to see all-time totals.
+        </p>
+      </div>
+      <div class="card">
+        <div class="table-toolbar">
+          <div class="table-toolbar-left">
+            <div class="toggle-group" id="lifetime-level-toggle">
+              <button class="toggle-btn active" onclick="setLifetimeLevel('agent')"      data-level="agent">Agent</button>
+              <button class="toggle-btn" onclick="setLifetimeLevel('supervisor')" data-level="supervisor">Supervisor</button>
+              <button class="toggle-btn" onclick="setLifetimeLevel('am')"         data-level="am">Asst. Manager</button>
+            </div>
+          </div>
+          <button class="btn-download" onclick="downloadLifetimeCSV()">⬇ Download CSV</button>
+        </div>
+        <div class="agent-table-wrap" id="lifetime-table-container"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE 8: LEADERBOARD ────────────────────────────── -->
+    <div id="page-leaderboard" class="page">
+      <div class="page-title">🏆 Agent Leaderboard</div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="lb-controls">
+          <div>
+            <p style="font-size:.82rem;color:var(--sub);margin:0 0 .65rem">
+              Set the weight for each KPI. Weights must sum to 100%.
+              Each KPI is normalised 0–100 across all agents before scoring.
+            </p>
+            <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
+              <div class="lb-weight-group">
+                <label>TPH weight</label>
+                <div class="lb-weight-row">
+                  <input type="range" id="w-tph"  min="0" max="100" value="40" oninput="updateWeights()">
+                  <span class="lb-weight-val" id="wv-tph">40%</span>
+                </div>
+              </div>
+              <div class="lb-weight-group">
+                <label>CSAT weight</label>
+                <div class="lb-weight-row">
+                  <input type="range" id="w-csat" min="0" max="100" value="40" oninput="updateWeights()">
+                  <span class="lb-weight-val" id="wv-csat">40%</span>
+                </div>
+              </div>
+              <div class="lb-weight-group">
+                <label>IQS weight</label>
+                <div class="lb-weight-row">
+                  <input type="range" id="w-iqs"  min="0" max="100" value="20" oninput="updateWeights()">
+                  <span class="lb-weight-val" id="wv-iqs">20%</span>
+                </div>
+              </div>
+              <div class="lb-weight-group">
+                <label>AHT weight <span style="font-size:.7rem;color:var(--muted)">(lower=better)</span></label>
+                <div class="lb-weight-row">
+                  <input type="range" id="w-aht"  min="0" max="100" value="0" oninput="updateWeights()">
+                  <span class="lb-weight-val" id="wv-aht">0%</span>
+                </div>
+              </div>
+            </div>
+            <div class="lb-total" id="lb-total">Total: 100% ✓</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-toolbar">
+          <div class="table-toolbar-left">
+            <span style="font-size:.8rem;color:var(--sub)">Showing agent-level ranking. Date filters apply.</span>
+          </div>
+          <button class="btn-download" onclick="downloadLeaderboardCSV()">⬇ Download CSV</button>
+        </div>
+        <div class="agent-table-wrap" id="leaderboard-container"></div>
       </div>
     </div>
 
@@ -768,6 +901,9 @@ let currentPage   = 'dashboard';
 // Tab state
 let weeklyLevel = 'agent', weeklyKPI = 'tph';
 let monthlyLevel = 'agent', monthlyKPI = 'tph';
+let lifetimeLevel = 'agent';
+let lifetimeSortCol = 'tph', lifetimeSortDir = 'desc';
+let lbWeights = { tph: 40, csat: 40, iqs: 20, aht: 0 };
 
 // Chart instances (kept for destroy on re-render)
 const charts = {};
@@ -1752,9 +1888,341 @@ function renderIQSProgChart() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// PAGE 7 — ALL-TIME LIFETIME METRICS
+// ─────────────────────────────────────────────────────────────
+function setLifetimeLevel(lvl) {
+  lifetimeLevel = lvl;
+  document.querySelectorAll('#lifetime-level-toggle .toggle-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.level === lvl));
+  renderLifetimeTable();
+}
+
+function buildLifetimeData(level) {
+  // Uses the global date/supervisor/tenure filters (filterTPH / filterCSAT / filterIQS)
+  const tphRecs  = filterTPH();
+  const csatRecs = filterCSAT();
+  const iqsRecs  = filterIQS();
+
+  const groupKey = r => {
+    if (level === 'supervisor') return r.supervisor || '(unknown)';
+    if (level === 'am')         return r.am || '(unknown)';
+    return r.agentEmail || '(unknown)';
+  };
+
+  const supOf = {};
+  const map   = {};
+
+  const empty = () => ({ tickets: 0, tphWSum: 0, ahtWSum: 0, good: 0, total: 0, iqsSum: 0, iqsCnt: 0, dateDays: new Set() });
+
+  // TPH + AHT
+  tphRecs.forEach(r => {
+    const k = groupKey(r);
+    if (!map[k]) map[k] = empty();
+    const t = Number(r.handledTickets) || 0;
+    map[k].tickets  += t;
+    map[k].tphWSum  += (Number(r.tph) || 0) * t;
+    map[k].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
+    if (r.date) map[k].dateDays.add(r.date);
+    if (level === 'agent' && r.supervisor) supOf[k] = r.supervisor;
+  });
+
+  // CSAT
+  csatRecs.forEach(r => {
+    const k = groupKey(r);
+    if (!map[k]) map[k] = empty();
+    map[k].good  += Number(r.goodSurveys)  || 0;
+    map[k].total += Number(r.totalSurveys) || 0;
+    if (level === 'agent' && r.supervisor) supOf[k] = supOf[k] || r.supervisor;
+  });
+
+  // IQS
+  iqsRecs.forEach(r => {
+    const k = groupKey(r);
+    if (!map[k]) map[k] = empty();
+    const iqsVal = Number(r.iqs);
+    if (iqsVal > 0) { map[k].iqsSum += iqsVal; map[k].iqsCnt++; }
+    if (level === 'agent' && r.supervisor) supOf[k] = supOf[k] || r.supervisor;
+  });
+
+  return Object.entries(map).map(([key, d]) => ({
+    key,
+    label:      key,
+    supervisor: level === 'agent' ? (supOf[key] || '') : '',
+    dataDays:   d.dateDays.size,
+    tickets:    d.tickets,
+    tph:        d.tickets > 0 ? Math.round((d.tphWSum / d.tickets) * 100) / 100 : null,
+    aht:        d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets)              : null,
+    csat:       d.total > 0   ? Math.round((d.good / d.total) * 10000) / 100   : null,
+    iqs:        d.iqsCnt > 0  ? Math.round((d.iqsSum / d.iqsCnt) * 100) / 100  : null,
+    surveys:    d.total,
+    iqsReviews: d.iqsCnt
+  }));
+}
+
+function sortLifetime(col) {
+  if (lifetimeSortCol === col) {
+    lifetimeSortDir = lifetimeSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    lifetimeSortCol = col;
+    lifetimeSortDir = 'desc';
+  }
+  renderLifetimeTable();
+}
+
+function renderLifetimeTable() {
+  const el   = document.getElementById('lifetime-table-container');
+  const rows = buildLifetimeData(lifetimeLevel);
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No data matches the current filters.</p></div>';
+    return;
+  }
+
+  // Sort
+  const dir = lifetimeSortDir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    const av = a[lifetimeSortCol] ?? (lifetimeSortDir === 'asc' ? Infinity : -Infinity);
+    const bv = b[lifetimeSortCol] ?? (lifetimeSortDir === 'asc' ? Infinity : -Infinity);
+    return typeof av === 'string' ? av.localeCompare(bv) * dir : (av - bv) * dir;
+  });
+
+  const showSup = lifetimeLevel === 'agent';
+  const cols = [
+    { key: 'label',     label: showSup ? 'Agent Email' : (lifetimeLevel === 'supervisor' ? 'Supervisor' : 'AM'), align: 'left' },
+    ...(showSup ? [{ key: 'supervisor', label: 'Supervisor', align: 'left' }] : []),
+    { key: 'dataDays',  label: 'Data Days',     align: 'right' },
+    { key: 'tickets',   label: 'Total Tickets',  align: 'right' },
+    { key: 'tph',       label: 'Avg TPH',        align: 'right' },
+    { key: 'aht',       label: 'Avg AHT (s)',    align: 'right' },
+    { key: 'surveys',   label: 'Surveys',         align: 'right' },
+    { key: 'csat',      label: 'CSAT %',          align: 'right' },
+    { key: 'iqsReviews',label: 'IQS Reviews',     align: 'right' },
+    { key: 'iqs',       label: 'IQS %',           align: 'right' },
+  ];
+
+  const thCls = col => {
+    let c = lifetimeSortCol === col ? (lifetimeSortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    return c;
+  };
+
+  const head = cols.map(c =>
+    `<th class="${thCls(c.key)}" style="text-align:${c.align}" onclick="sortLifetime('${c.key}')">${escH(c.label)}</th>`
+  ).join('');
+
+  const colorize = (val, col) => {
+    if (val === null || val === undefined) return 'color:var(--muted)';
+    if (col === 'tph')  return val >= 5 ? 'color:var(--green)' : val >= 3.5 ? 'color:var(--yellow)' : 'color:var(--red)';
+    if (col === 'csat') return val >= 85 ? 'color:var(--green)' : val >= 75 ? 'color:var(--yellow)' : 'color:var(--red)';
+    if (col === 'iqs')  return val >= 90 ? 'color:var(--green)' : val >= 80 ? 'color:var(--yellow)' : 'color:var(--red)';
+    if (col === 'aht')  return val <= 600 ? 'color:var(--green)' : val <= 900 ? 'color:var(--yellow)' : 'color:var(--red)';
+    return '';
+  };
+
+  const fmtCell = (row, col) => {
+    const v = row[col];
+    if (v === null || v === undefined) return '<td class="num" style="color:var(--muted)">—</td>';
+    if (col === 'tph')  return `<td class="num" style="${colorize(v,col)};font-weight:700">${v.toFixed(1)}</td>`;
+    if (col === 'csat' || col === 'iqs') return `<td class="num" style="${colorize(v,col)};font-weight:700">${v.toFixed(1)}%</td>`;
+    if (col === 'aht')  return `<td class="num" style="${colorize(v,col)}">${v}s</td>`;
+    if (col === 'label') return `<td style="font-weight:600">${escH(String(v))}</td>`;
+    if (col === 'supervisor') return `<td style="color:var(--sub);font-size:.8rem">${escH(String(v))}</td>`;
+    return `<td class="num">${escH(String(v))}</td>`;
+  };
+
+  const body = rows.map(row =>
+    `<tr>${cols.map(c => fmtCell(row, c.key)).join('')}</tr>`
+  ).join('');
+
+  el.innerHTML = `
+    <div style="font-size:.75rem;color:var(--muted);margin-bottom:.6rem">
+      ${rows.length} ${lifetimeLevel === 'agent' ? 'agents' : lifetimeLevel === 'supervisor' ? 'supervisors' : 'AMs'}
+      · Click any column header to sort
+    </div>
+    <table class="lifetime-table">
+      <thead><tr>${head}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>`;
+}
+
+function downloadLifetimeCSV() {
+  const rows = buildLifetimeData(lifetimeLevel);
+  if (!rows.length) { showToast('No data to export', '#F59E0B'); return; }
+  const showSup = lifetimeLevel === 'agent';
+  const header = [
+    showSup ? '"Agent Email","Supervisor"' : lifetimeLevel === 'supervisor' ? '"Supervisor"' : '"AM"',
+    '"Data Days","Total Tickets","Avg TPH","Avg AHT (s)","Surveys","CSAT %","IQS Reviews","IQS %"'
+  ].filter(Boolean).join(',');
+  const csvRows = rows.map(r => {
+    const fixed = showSup ? `"${r.label}","${r.supervisor}"` : `"${r.label}"`;
+    return `${fixed},${r.dataDays},${r.tickets},${r.tph ?? ''},${r.aht ?? ''},${r.surveys},${r.csat ?? ''},${r.iqsReviews},${r.iqs ?? ''}`;
+  });
+  triggerCSVDownload([header, ...csvRows].join('\n'), 'lifetime_performance.csv');
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAGE 8 — LEADERBOARD
+// ─────────────────────────────────────────────────────────────
+function updateWeights() {
+  lbWeights.tph  = parseInt(document.getElementById('w-tph').value)  || 0;
+  lbWeights.csat = parseInt(document.getElementById('w-csat').value) || 0;
+  lbWeights.iqs  = parseInt(document.getElementById('w-iqs').value)  || 0;
+  lbWeights.aht  = parseInt(document.getElementById('w-aht').value)  || 0;
+
+  document.getElementById('wv-tph').textContent  = lbWeights.tph  + '%';
+  document.getElementById('wv-csat').textContent = lbWeights.csat + '%';
+  document.getElementById('wv-iqs').textContent  = lbWeights.iqs  + '%';
+  document.getElementById('wv-aht').textContent  = lbWeights.aht  + '%';
+
+  const total = lbWeights.tph + lbWeights.csat + lbWeights.iqs + lbWeights.aht;
+  const el    = document.getElementById('lb-total');
+  el.textContent = `Total: ${total}%${total === 100 ? ' ✓' : ' ← must equal 100%'}`;
+  el.className   = 'lb-total ' + (total === 100 ? 'ok' : 'warn');
+
+  renderLeaderboard();
+}
+
+function buildLeaderboardData() {
+  // 1. Get raw lifetime data at agent level (respects global filters)
+  const rows = buildLifetimeData('agent').filter(r =>
+    r.tph !== null || r.csat !== null || r.iqs !== null
+  );
+  if (!rows.length) return [];
+
+  // 2. Min-max normalise each KPI to 0-100 across all agents
+  const vals = kpi => rows.map(r => r[kpi]).filter(v => v !== null);
+  const norm  = (v, mn, mx) => mx > mn ? Math.round(((v - mn) / (mx - mn)) * 100) : 50;
+  const normInv = (v, mn, mx) => mx > mn ? Math.round(((mx - v) / (mx - mn)) * 100) : 50;
+
+  const tphVals  = vals('tph');  const tphMin  = Math.min(...tphVals);  const tphMax  = Math.max(...tphVals);
+  const csatVals = vals('csat'); const csatMin = Math.min(...csatVals); const csatMax = Math.max(...csatVals);
+  const iqsVals  = vals('iqs');  const iqsMin  = Math.min(...iqsVals);  const iqsMax  = Math.max(...iqsVals);
+  const ahtVals  = vals('aht');  const ahtMin  = Math.min(...ahtVals);  const ahtMax  = Math.max(...ahtVals);
+
+  const w = lbWeights;
+  const total = w.tph + w.csat + w.iqs + w.aht;
+  if (total === 0) return rows.map(r => ({ ...r, score: 0, normTph: 0, normCsat: 0, normIqs: 0, normAht: 0 }));
+
+  return rows.map(r => {
+    const nTph  = r.tph  !== null ? norm(r.tph,  tphMin,  tphMax)    : null;
+    const nCsat = r.csat !== null ? norm(r.csat, csatMin, csatMax)   : null;
+    const nIqs  = r.iqs  !== null ? norm(r.iqs,  iqsMin,  iqsMax)    : null;
+    const nAht  = r.aht  !== null ? normInv(r.aht, ahtMin, ahtMax)   : null;
+
+    // Weighted score — skip null KPIs (redistribute weight proportionally)
+    let weightedSum = 0, weightUsed = 0;
+    if (nTph  !== null) { weightedSum += nTph  * w.tph;  weightUsed += w.tph; }
+    if (nCsat !== null) { weightedSum += nCsat * w.csat; weightUsed += w.csat; }
+    if (nIqs  !== null) { weightedSum += nIqs  * w.iqs;  weightUsed += w.iqs; }
+    if (nAht  !== null) { weightedSum += nAht  * w.aht;  weightUsed += w.aht; }
+
+    const score = weightUsed > 0 ? Math.round(weightedSum / weightUsed) : 0;
+
+    return { ...r, score, normTph: nTph, normCsat: nCsat, normIqs: nIqs, normAht: nAht };
+  }).sort((a, b) => b.score - a.score);
+}
+
+function renderLeaderboard() {
+  const el   = document.getElementById('leaderboard-container');
+  const rows = buildLeaderboardData();
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No data matches the current filters.</p></div>';
+    return;
+  }
+
+  const w = lbWeights;
+  const total = w.tph + w.csat + w.iqs + w.aht;
+
+  const body = rows.map((r, i) => {
+    const rank   = i + 1;
+    const rCls   = rank <= 3 ? `rank-${rank}` : 'rank-n';
+    const badge  = rank <= 3 ? ['🥇','🥈','🥉'][rank - 1] : rank;
+
+    const scoreBar = `
+      <div class="score-bar-wrap">
+        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${r.score}%"></div></div>
+        <span class="score-val">${r.score}</span>
+      </div>`;
+
+    const kpiPills = [
+      w.tph  > 0 ? `<span class="kpi-pill tph">TPH ${r.tph !== null ? r.tph.toFixed(1) : '—'}</span>` : '',
+      w.csat > 0 ? `<span class="kpi-pill csat">CSAT ${r.csat !== null ? r.csat.toFixed(1) + '%' : '—'}</span>` : '',
+      w.iqs  > 0 ? `<span class="kpi-pill iqs">IQS ${r.iqs !== null ? r.iqs.toFixed(1) + '%' : '—'}</span>` : '',
+      w.aht  > 0 ? `<span class="kpi-pill aht">AHT ${r.aht !== null ? r.aht + 's' : '—'}</span>` : '',
+    ].filter(Boolean).join(' ');
+
+    const normCells = [
+      w.tph  > 0 ? `<td class="num" style="color:var(--sub)">${r.normTph  !== null ? r.normTph  : '—'}</td>` : '',
+      w.csat > 0 ? `<td class="num" style="color:var(--sub)">${r.normCsat !== null ? r.normCsat : '—'}</td>` : '',
+      w.iqs  > 0 ? `<td class="num" style="color:var(--sub)">${r.normIqs  !== null ? r.normIqs  : '—'}</td>` : '',
+      w.aht  > 0 ? `<td class="num" style="color:var(--sub)">${r.normAht  !== null ? r.normAht  : '—'}</td>` : '',
+    ].filter(Boolean).join('');
+
+    return `<tr>
+      <td style="text-align:center"><span class="rank-badge ${rCls}">${badge}</span></td>
+      <td style="font-weight:600;font-size:.82rem">${escH(r.label)}</td>
+      <td style="font-size:.75rem;color:var(--sub)">${escH(r.supervisor)}</td>
+      <td>${scoreBar}</td>
+      <td>${kpiPills}</td>
+      ${normCells}
+    </tr>`;
+  }).join('');
+
+  // Dynamic KPI norm headers
+  const normHeaders = [
+    w.tph  > 0 ? `<th style="text-align:right">TPH score<br><span style="font-weight:400;font-size:.68rem">(${w.tph}% weight)</span></th>` : '',
+    w.csat > 0 ? `<th style="text-align:right">CSAT score<br><span style="font-weight:400;font-size:.68rem">(${w.csat}% weight)</span></th>` : '',
+    w.iqs  > 0 ? `<th style="text-align:right">IQS score<br><span style="font-weight:400;font-size:.68rem">(${w.iqs}% weight)</span></th>` : '',
+    w.aht  > 0 ? `<th style="text-align:right">AHT score<br><span style="font-weight:400;font-size:.68rem">(${w.aht}% weight)</span></th>` : '',
+  ].filter(Boolean).join('');
+
+  el.innerHTML = total !== 100
+    ? `<div style="color:var(--red);padding:1rem;font-weight:600">⚠ Weights must sum to 100% before ranking is shown.</div>`
+    : `<table class="lb-table">
+        <thead>
+          <tr>
+            <th style="text-align:center;width:48px">#</th>
+            <th>Agent</th>
+            <th>Supervisor</th>
+            <th>Composite Score</th>
+            <th>KPI Values</th>
+            ${normHeaders}
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:.75rem">
+        Scores are normalised 0–100 within the current filtered dataset. An agent with a null KPI has that KPI excluded and the remaining weights are redistributed proportionally.
+      </p>`;
+}
+
+function downloadLeaderboardCSV() {
+  const rows = buildLeaderboardData();
+  if (!rows.length) { showToast('No data to export', '#F59E0B'); return; }
+  const w = lbWeights;
+  const kpiCols = [
+    w.tph  > 0 ? `"TPH","TPH Norm (${w.tph}%)"` : '',
+    w.csat > 0 ? `"CSAT %","CSAT Norm (${w.csat}%)"` : '',
+    w.iqs  > 0 ? `"IQS %","IQS Norm (${w.iqs}%)"` : '',
+    w.aht  > 0 ? `"AHT (s)","AHT Norm (${w.aht}%)"` : '',
+  ].filter(Boolean).join(',');
+  const header = `"Rank","Agent Email","Supervisor","Composite Score",${kpiCols}`;
+  const csvRows = rows.map((r, i) => {
+    const kpiVals = [
+      w.tph  > 0 ? `${r.tph ?? ''},${r.normTph ?? ''}` : '',
+      w.csat > 0 ? `${r.csat ?? ''},${r.normCsat ?? ''}` : '',
+      w.iqs  > 0 ? `${r.iqs ?? ''},${r.normIqs ?? ''}` : '',
+      w.aht  > 0 ? `${r.aht ?? ''},${r.normAht ?? ''}` : '',
+    ].filter(Boolean).join(',');
+    return `${i + 1},"${r.label}","${r.supervisor}",${r.score},${kpiVals}`;
+  });
+  triggerCSVDownload([header, ...csvRows].join('\n'), 'leaderboard.csv');
+}
+
+// ─────────────────────────────────────────────────────────────
 // NAVIGATION
 // ─────────────────────────────────────────────────────────────
-const PAGES = ['dashboard','weekly','monthly','tph-aht','csat-prog','iqs-prog','admin'];
+const PAGES = ['dashboard','weekly','monthly','tph-aht','csat-prog','iqs-prog','lifetime','leaderboard','admin'];
 
 function navTo(page) {
   currentPage = page;
@@ -1766,13 +2234,15 @@ function navTo(page) {
 }
 
 function renderCurrentPage() {
-  if (currentPage === 'dashboard') renderDashboard();
-  else if (currentPage === 'weekly')    renderWeeklyTable();
-  else if (currentPage === 'monthly')   renderMonthlyTable();
-  else if (currentPage === 'tph-aht')   renderTPHAHTChart();
-  else if (currentPage === 'csat-prog') renderCSATProgChart();
-  else if (currentPage === 'iqs-prog')  renderIQSProgChart();
-  else if (currentPage === 'admin')     renderAdminPage();
+  if (currentPage === 'dashboard')   renderDashboard();
+  else if (currentPage === 'weekly')      renderWeeklyTable();
+  else if (currentPage === 'monthly')     renderMonthlyTable();
+  else if (currentPage === 'tph-aht')     renderTPHAHTChart();
+  else if (currentPage === 'csat-prog')   renderCSATProgChart();
+  else if (currentPage === 'iqs-prog')    renderIQSProgChart();
+  else if (currentPage === 'lifetime')    renderLifetimeTable();
+  else if (currentPage === 'leaderboard') renderLeaderboard();
+  else if (currentPage === 'admin')       renderAdminPage();
 }
 
 // ─────────────────────────────────────────────────────────────
