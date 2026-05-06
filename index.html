@@ -653,18 +653,20 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
             <div id="hier-status" class="upload-status mt-1"></div>
           </div>
           <div>
-            <label>Upload CSAT Name Map (CSAT Hierarchy CSV)</label>
+            <label>Upload CSAT Name Map</label>
             <p style="font-size:.78rem;color:var(--sub);margin:.25rem 0 .5rem">
-              Update when agent display names change in Zendesk.
-              Columns: NAME, C•U Email, Status, ROLE, Team, Supervisor
+              Upload your agent roster (CSV or XLSX). Accepted column formats:<br>
+              • <strong>New format (XLSX)</strong>: <em>Full name, Email Address, CU Email</em><br>
+              • <strong>Legacy format (CSV)</strong>: <em>NAME, C•U Email, Status</em><br>
+              When <em>CU Email</em> is present it is used as the canonical email; otherwise <em>Email Address</em> is used.
             </p>
             <div class="upload-zone" style="margin-top:.35rem" onclick="document.getElementById('csatmap-file').click()">
               <div class="upload-icon">🔗</div>
               <h4>CSAT Name Map</h4>
-              <p>Maps Zendesk display names → agent emails</p>
+              <p>Maps Zendesk display names → canonical agent emails</p>
               <button class="btn-upload" type="button">Choose File</button>
             </div>
-            <input type="file" id="csatmap-file" class="file-input" accept=".csv" onchange="handleCSATMapFile(this)">
+            <input type="file" id="csatmap-file" class="file-input" accept=".csv,.xlsx,.xls" onchange="handleCSATMapFile(this)">
             <div id="csatmap-status" class="upload-status mt-1"></div>
           </div>
         </div>
@@ -2076,9 +2078,19 @@ function handleCSATFile(input) {
         if (r['Changes - Field name'] !== 'satisfaction_score') return;
         const assignee = String(r['Update ticket assignee'] || '').trim();
         if (!assignee || assignee === '\xa0' || assignee === ' ') return;
-        const email = nameMap[assignee.toLowerCase()];
+
+        // Match strategy:
+        // 1. Look up display name in CSAT Name Map (standard Zendesk export)
+        // 2. If assignee looks like an email, use it directly (no Name Map needed)
+        // 3. Try lowercase exact match in name map
+        let email = nameMap[assignee.toLowerCase()];
+        if (!email && assignee.includes('@')) {
+          // Assignee field already contains an email — match directly
+          email = assignee.toLowerCase();
+        }
         if (!email) { unmatchedSet.add(assignee); return; }
-        const date  = String(r['Update - Date'] || '').trim().substring(0, 10);
+
+        const date = String(r['Update - Date'] || '').trim().substring(0, 10);
         if (!date) return;
         const key = email + '|' + date;
         if (!agg[key]) agg[key] = { agentEmail: email, date, good: 0, bad: 0 };
@@ -2092,7 +2104,7 @@ function handleCSATFile(input) {
         goodSurveys: d.good, badSurveys: d.bad
       }));
 
-      if (!records.length) throw new Error('No valid CSAT records matched. Check the CSAT Name Map in Admin.');
+      if (!records.length) throw new Error('No valid CSAT records matched. Make sure the CSAT Name Map is uploaded first (Admin → Hierarchy Management), or that your Zendesk export has the correct column names.');
 
       // Show unmatched names
       const unmatchedBox = document.getElementById('csat-unmatched');
@@ -2216,26 +2228,54 @@ function handleHierarchyFile(input) {
 function handleCSATMapFile(input) {
   const file = input.files[0]; if (!file) return;
   setUploadStatus('csatmap', 'processing', `Parsing ${file.name}…`);
-  const reader = new FileReader();
+  const reader  = new FileReader();
+  const isXlsx  = /\.(xlsx|xls)$/i.test(file.name);
+
   reader.onload = async e => {
     try {
-      const rows = parseTSVorCSV(e.target.result);
-      // CSAT Hierarchy: NAME, C•U Email, Status, ROLE, Team, Supervisor
+      let rows;
+      if (isXlsx) {
+        // New XLSX format: Full name | Email Address | CU Email | Role | Job Status | Group | Start Date | End Date
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      } else {
+        // Legacy CSV format: NAME, C•U Email, Status, ROLE, Team, Supervisor
+        rows = parseTSVorCSV(e.target.result);
+      }
+
       const entries = [];
       const seen    = new Set();
       rows.forEach(r => {
-        const email = (r['C•U Email'] || r['CU Email'] || r['Email'] || '').toLowerCase();
-        const name  = (r['NAME'] || r['Name'] || '').trim();
-        if (!email || !name) return;
-        const key = name.toLowerCase() + '|' + email;
+        // ── Display name (what appears in Zendesk as agent name) ──
+        const displayName = (r['Full name'] || r['NAME'] || r['Name'] || '').trim();
+        if (!displayName) return;
+
+        // ── Canonical email — prefer CU Email (alias) over BPO email ──
+        // New XLSX: "CU Email" overrides "Email Address" for BPO agents
+        // Legacy CSV: "C•U Email" or "CU Email"
+        const cuEmail   = String(r['CU Email'] || r['C•U Email'] || '').trim();
+        const emailAddr = String(r['Email Address'] || r['Email'] || '').trim();
+        const canonical = (cuEmail || emailAddr).toLowerCase();
+
+        if (!canonical || !canonical.includes('@')) return;
+        if (canonical === 'pending') return;  // skip placeholder rows
+
+        const key = displayName.toLowerCase() + '|' + canonical;
         if (seen.has(key)) return;
         seen.add(key);
-        entries.push({ displayName: name, email, status: r['Status'] || 'Active' });
+        entries.push({
+          displayName,
+          email:  canonical,
+          status: r['Job Status'] || r['Status'] || 'Active'
+        });
       });
-      if (!entries.length) throw new Error('No valid entries found.');
+
+      if (!entries.length) throw new Error('No valid entries found. Expected columns: "Full name" + "Email Address" (XLSX) or "NAME" + "C•U Email" (CSV).');
+
       const res = await apiPost({ action: 'updateCSATMap', entries });
       setUploadStatus('csatmap', 'ok', `✓ ${res.entriesUpdated} name mappings updated.`);
-      showToast(`✓ CSAT map updated: ${res.entriesUpdated} entries.`, '#10B981');
+      showToast(`✓ CSAT Name Map updated: ${res.entriesUpdated} entries.`, '#10B981');
       await apiFetch();
     } catch (err) {
       setUploadStatus('csatmap', 'err', '✗ ' + err.message);
@@ -2243,7 +2283,12 @@ function handleCSATMapFile(input) {
     }
     input.value = '';
   };
-  reader.readAsText(file, 'UTF-8');
+
+  if (isXlsx) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file, 'UTF-8');
+  }
 }
 
 function setUploadStatus(id, cls, msg) {
