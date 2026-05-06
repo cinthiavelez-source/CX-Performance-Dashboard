@@ -210,6 +210,43 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
 .trend-down { color: var(--red);   font-size: .75rem; }
 .trend-flat { color: var(--muted); font-size: .75rem; }
 
+/* ─── COMBINED KPI TABLE ───────────────────────────── */
+.combined-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.combined-table th {
+  background: var(--bg); padding: .45rem .65rem; text-align: center;
+  font-size: .7rem; font-weight: 700; color: var(--sub);
+  border-bottom: 2px solid var(--border); white-space: nowrap;
+}
+.combined-table td { padding: .42rem .65rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.combined-table tr:hover td { background: #F8FAFC; }
+.period-group-header {
+  background: var(--brand) !important; color: white !important;
+  text-align: center; font-size: .75rem !important; letter-spacing: .04em;
+  border-left: 2px solid white !important;
+}
+.period-group-header:first-of-type { border-left: none !important; }
+.kpi-sub-header { text-transform: uppercase; letter-spacing: .03em; font-size: .66rem !important; }
+.period-divider { border-left: 2px solid var(--border) !important; }
+.combined-table .agent-name { text-align: left; font-weight: 600; color: var(--text); min-width: 140px; }
+.combined-table .sup-name { text-align: left; color: var(--sub); font-size: .75rem; min-width: 110px; white-space: nowrap; }
+.combined-table .cell-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 42px; }
+.combined-table .cell-val.tier1 { color: var(--green); background: #F0FDF4; }
+.combined-table .cell-val.tier2 { color: #92400E; background: #FFFBEB; }
+.combined-table .cell-val.tier3 { color: var(--red); background: #FEF2F2; }
+.combined-table .cell-val.empty { color: var(--muted); font-weight: 400; }
+.fixed-col { text-align: left !important; position: sticky; left: 0; z-index: 2; background: var(--bg); }
+.fixed-col-2 { text-align: left !important; position: sticky; z-index: 2; background: var(--bg); }
+
+/* Download button */
+.btn-download {
+  background: var(--bg); color: var(--brand); padding: .35rem .8rem;
+  border-radius: .45rem; font-size: .78rem; font-weight: 600;
+  border: 1.5px solid var(--brand); transition: all .15s; white-space: nowrap;
+}
+.btn-download:hover { background: var(--brand); color: white; }
+.table-toolbar { display: flex; align-items: center; gap: .75rem; margin-bottom: .85rem; flex-wrap: wrap; justify-content: space-between; }
+.table-toolbar-left { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; }
+
 /* ─── PROGRESSION CHARTS ───────────────────────────── */
 .prog-chart-card { background: var(--card); border-radius: var(--radius); padding: 1.5rem; box-shadow: var(--shadow); }
 .prog-chart-card canvas { max-height: 360px; }
@@ -436,18 +473,16 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
     <div id="page-weekly" class="page">
       <div class="page-title">👤 Agent Performance — Last 4 Weeks</div>
       <div class="card">
-        <div class="table-controls">
-          <div class="toggle-group" id="weekly-level-toggle">
-            <button class="toggle-btn active" onclick="setWeeklyLevel('agent')"   data-level="agent">Agent</button>
-            <button class="toggle-btn" onclick="setWeeklyLevel('supervisor')" data-level="supervisor">Supervisor</button>
-            <button class="toggle-btn" onclick="setWeeklyLevel('am')"         data-level="am">Asst. Manager</button>
+        <div class="table-toolbar">
+          <div class="table-toolbar-left">
+            <div class="toggle-group" id="weekly-level-toggle">
+              <button class="toggle-btn active" onclick="setWeeklyLevel('agent')"      data-level="agent">Agent</button>
+              <button class="toggle-btn" onclick="setWeeklyLevel('supervisor')" data-level="supervisor">Supervisor</button>
+              <button class="toggle-btn" onclick="setWeeklyLevel('am')"         data-level="am">Asst. Manager</button>
+            </div>
+            <span style="font-size:.75rem;color:var(--muted)">All KPIs shown: TPH · AHT · CSAT · IQS</span>
           </div>
-          <div class="kpi-tabs" id="weekly-kpi-tabs">
-            <button class="kpi-tab-btn active" onclick="setWeeklyKPI('tph')"  data-kpi="tph">TPH</button>
-            <button class="kpi-tab-btn" onclick="setWeeklyKPI('csat')" data-kpi="csat">CSAT</button>
-            <button class="kpi-tab-btn" onclick="setWeeklyKPI('iqs')"  data-kpi="iqs">IQS</button>
-            <button class="kpi-tab-btn" onclick="setWeeklyKPI('aht')"  data-kpi="aht">AHT</button>
-          </div>
+          <button class="btn-download" onclick="downloadWeeklyCSV()">⬇ Download CSV</button>
         </div>
         <div class="agent-table-wrap" id="weekly-table-container"></div>
       </div>
@@ -457,18 +492,16 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
     <div id="page-monthly" class="page">
       <div class="page-title">📅 Agent Performance — Last 4 Months</div>
       <div class="card">
-        <div class="table-controls">
-          <div class="toggle-group" id="monthly-level-toggle">
-            <button class="toggle-btn active" onclick="setMonthlyLevel('agent')"      data-level="agent">Agent</button>
-            <button class="toggle-btn" onclick="setMonthlyLevel('supervisor')" data-level="supervisor">Supervisor</button>
-            <button class="toggle-btn" onclick="setMonthlyLevel('am')"         data-level="am">Asst. Manager</button>
+        <div class="table-toolbar">
+          <div class="table-toolbar-left">
+            <div class="toggle-group" id="monthly-level-toggle">
+              <button class="toggle-btn active" onclick="setMonthlyLevel('agent')"      data-level="agent">Agent</button>
+              <button class="toggle-btn" onclick="setMonthlyLevel('supervisor')" data-level="supervisor">Supervisor</button>
+              <button class="toggle-btn" onclick="setMonthlyLevel('am')"         data-level="am">Asst. Manager</button>
+            </div>
+            <span style="font-size:.75rem;color:var(--muted)">All KPIs shown: TPH · AHT · CSAT · IQS</span>
           </div>
-          <div class="kpi-tabs" id="monthly-kpi-tabs">
-            <button class="kpi-tab-btn active" onclick="setMonthlyKPI('tph')"  data-kpi="tph">TPH</button>
-            <button class="kpi-tab-btn" onclick="setMonthlyKPI('csat')" data-kpi="csat">CSAT</button>
-            <button class="kpi-tab-btn" onclick="setMonthlyKPI('iqs')"  data-kpi="iqs">IQS</button>
-            <button class="kpi-tab-btn" onclick="setMonthlyKPI('aht')"  data-kpi="aht">AHT</button>
-          </div>
+          <button class="btn-download" onclick="downloadMonthlyCSV()">⬇ Download CSV</button>
         </div>
         <div class="agent-table-wrap" id="monthly-table-container"></div>
       </div>
@@ -477,13 +510,14 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
     <!-- ── PAGE 4: TPH + AHT PROGRESSION ─────────────────── -->
     <div id="page-tph-aht" class="page">
       <div class="page-title">⚡ TPH + AHT Weekly Progression</div>
-      <div class="prog-sub-filters">
+      <div class="prog-sub-filters" style="justify-content:space-between">
         <div class="filter-group">
           <label>Supervisor</label>
           <select id="tph-sup-filter" onchange="renderTPHAHTChart()">
             <option value="">All Supervisors</option>
           </select>
         </div>
+        <button class="btn-download" onclick="downloadChartData('tph-aht')">⬇ Download CSV</button>
       </div>
       <div class="prog-chart-card">
         <canvas id="chart-tph-aht" style="max-height:400px"></canvas>
@@ -493,13 +527,14 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
     <!-- ── PAGE 5: CSAT PROGRESSION ──────────────────────── -->
     <div id="page-csat-prog" class="page">
       <div class="page-title">😊 CSAT Weekly Progression</div>
-      <div class="prog-sub-filters">
+      <div class="prog-sub-filters" style="justify-content:space-between">
         <div class="filter-group">
           <label>Supervisor</label>
           <select id="csat-sup-filter" onchange="renderCSATProgChart()">
             <option value="">All Supervisors</option>
           </select>
         </div>
+        <button class="btn-download" onclick="downloadChartData('csat')">⬇ Download CSV</button>
       </div>
       <div class="prog-chart-card">
         <canvas id="chart-csat-prog" style="max-height:400px"></canvas>
@@ -513,13 +548,14 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
     <!-- ── PAGE 6: IQS PROGRESSION ───────────────────────── -->
     <div id="page-iqs-prog" class="page">
       <div class="page-title">🏆 IQS Weekly Progression</div>
-      <div class="prog-sub-filters">
+      <div class="prog-sub-filters" style="justify-content:space-between">
         <div class="filter-group">
           <label>Supervisor</label>
           <select id="iqs-sup-filter" onchange="renderIQSProgChart()">
             <option value="">All Supervisors</option>
           </select>
         </div>
+        <button class="btn-download" onclick="downloadChartData('iqs')">⬇ Download CSV</button>
       </div>
       <div class="prog-chart-card">
         <canvas id="chart-iqs-prog" style="max-height:400px"></canvas>
@@ -1020,6 +1056,231 @@ function aggIQSByPeriod(records, field) {
   return result;
 }
 
+// ─────────────────────────────────────────────────────────────
+// COMBINED ALL-KPI DATA BUILDER
+// Returns rows with all 4 KPIs per period in one pass.
+// isMonthly = true uses yearMonth/weekOf-month; false uses isoWeek
+// ─────────────────────────────────────────────────────────────
+function buildAllKPIData(level, periods, periodField, isMonthly) {
+  const tphRecs  = filterTPH();
+  const csatRecs = filterCSAT();
+  const iqsRecs  = filterIQS();
+
+  const groupKey = r => {
+    if (level === 'supervisor') return r.supervisor || '(unknown)';
+    if (level === 'am')         return r.am || '(unknown)';
+    return r.agentEmail || '(unknown)';
+  };
+
+  // Store supervisor per agent key (for display when level=agent)
+  const supOf = {};
+
+  const empty = () => ({ tickets: 0, tphWSum: 0, ahtWSum: 0, good: 0, total: 0, iqsSum: 0, iqsCnt: 0 });
+  const map = {};  // key → { periodKey: accumulator }
+
+  // TPH + AHT
+  tphRecs.forEach(r => {
+    const p = r[periodField]; if (!periods.includes(p)) return;
+    const k = groupKey(r);
+    if (!map[k]) map[k] = {};
+    if (!map[k][p]) map[k][p] = empty();
+    const t = Number(r.handledTickets) || 0;
+    map[k][p].tickets  += t;
+    map[k][p].tphWSum  += (Number(r.tph) || 0) * t;
+    map[k][p].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
+    if (level === 'agent' && r.supervisor) supOf[k] = r.supervisor;
+  });
+
+  // CSAT — period key depends on isMonthly
+  csatRecs.forEach(r => {
+    const p = isMonthly ? r.yearMonth : r[periodField];
+    if (!periods.includes(p)) return;
+    const k = groupKey(r);
+    if (!map[k]) map[k] = {};
+    if (!map[k][p]) map[k][p] = empty();
+    map[k][p].good  += Number(r.goodSurveys)  || 0;
+    map[k][p].total += Number(r.totalSurveys) || 0;
+    if (level === 'agent' && r.supervisor) supOf[k] = r.supervisor;
+  });
+
+  // IQS — convert weekOf to the right period key
+  iqsRecs.forEach(r => {
+    const wo = r.weekOf || '';
+    const p  = isMonthly ? String(wo).substring(0, 7) : isoWeek(wo);
+    if (!p || !periods.includes(p)) return;
+    const k = groupKey(r);
+    if (!map[k]) map[k] = {};
+    if (!map[k][p]) map[k][p] = empty();
+    const iqsVal = Number(r.iqs);
+    if (iqsVal > 0) { map[k][p].iqsSum += iqsVal; map[k][p].iqsCnt++; }
+    if (level === 'agent' && r.supervisor) supOf[k] = supOf[k] || r.supervisor;
+  });
+
+  const rows = [];
+  Object.entries(map).forEach(([key, perPeriod]) => {
+    const allKpis = periods.map(p => {
+      const d = perPeriod[p];
+      if (!d) return { tph: null, aht: null, csat: null, iqs: null };
+      return {
+        tph:  d.tickets > 0 ? Math.round((d.tphWSum / d.tickets) * 100) / 100 : null,
+        aht:  d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets)              : null,
+        csat: d.total > 0   ? Math.round((d.good / d.total) * 10000) / 100   : null,
+        iqs:  d.iqsCnt > 0  ? Math.round((d.iqsSum / d.iqsCnt) * 100) / 100  : null
+      };
+    });
+    rows.push({
+      key,
+      label:      key,
+      supervisor: level === 'agent' ? (supOf[key] || '') : '',
+      allKpis
+    });
+  });
+
+  // Sort: by latest TPH descending, then by key alphabetically
+  rows.sort((a, b) => {
+    const av = a.allKpis.map(k => k.tph).filter(v => v !== null).pop() ?? -1;
+    const bv = b.allKpis.map(k => k.tph).filter(v => v !== null).pop() ?? -1;
+    return bv !== av ? bv - av : a.key.localeCompare(b.key);
+  });
+
+  return rows;
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMBINED KPI TABLE RENDERER
+// ─────────────────────────────────────────────────────────────
+function renderCombinedKPITable(containerId, level, rows, periods, fmtPeriod) {
+  const el = document.getElementById(containerId);
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No data for this period. Upload files in Admin.</p></div>';
+    return;
+  }
+
+  const showSup = level === 'agent';
+  const KPIS    = ['tph', 'aht', 'csat', 'iqs'];
+
+  // Build per-period per-KPI value arrays for color tiering
+  // colVals[pi][kpi] = [val, val, ...]
+  const colVals = periods.map((_, pi) => {
+    const obj = {};
+    KPIS.forEach(k => { obj[k] = rows.map(r => r.allKpis[pi]?.[k] ?? null); });
+    return obj;
+  });
+
+  const higherBetter = { tph: true, aht: false, csat: true, iqs: true };
+  const kpiLabel     = { tph: 'TPH', aht: 'AHT', csat: 'CSAT', iqs: 'IQS' };
+
+  // Two-row header
+  const periodHeaders = periods.map((p, pi) =>
+    `<th colspan="4" class="period-group-header${pi > 0 ? ' period-divider' : ''}">${escH(fmtPeriod(p))}</th>`
+  ).join('');
+
+  const kpiSubHeaders = periods.map((_, pi) =>
+    KPIS.map((k, ki) =>
+      `<th class="kpi-sub-header${ki === 0 && pi > 0 ? ' period-divider' : ''}">${kpiLabel[k]}</th>`
+    ).join('')
+  ).join('');
+
+  const fixedColCount = showSup ? 2 : 1;
+  const fixedPlaceholders = `<th rowspan="2" colspan="${fixedColCount}" style="text-align:left;background:var(--bg)">${showSup ? 'Supervisor / Agent' : level === 'supervisor' ? 'Supervisor' : 'Asst. Manager'}</th>`;
+
+  const head = `
+    <thead>
+      <tr>${fixedPlaceholders}${periodHeaders}</tr>
+      <tr>${kpiSubHeaders}</tr>
+    </thead>`;
+
+  const body = rows.map(row => {
+    const dataCells = row.allKpis.map((kpis, pi) =>
+      KPIS.map((k, ki) => {
+        const v    = kpis[k];
+        const tier = colorTier(v, colVals[pi][k], higherBetter[k]);
+        const div  = ki === 0 && pi > 0 ? ' period-divider' : '';
+        return `<td class="cell-val ${tier}${div}">${fmtVal(v, k)}</td>`;
+      }).join('')
+    ).join('');
+
+    const supCell = showSup ? `<td class="sup-name">${escH(row.supervisor)}</td>` : '';
+    return `<tr>${supCell}<td class="agent-name">${escH(row.label)}</td>${dataCells}</tr>`;
+  }).join('');
+
+  el.innerHTML = `<table class="combined-table">${head}<tbody>${body}</tbody></table>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// CSV EXPORT UTILITIES
+// ─────────────────────────────────────────────────────────────
+function triggerCSVDownload(csvContent, filename) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportAllKPIToCSV(rows, periods, fmtPeriod, level, filename) {
+  if (!rows.length) { showToast('No data to export', '#F59E0B'); return; }
+  const KPIS = ['TPH', 'AHT', 'CSAT', 'IQS'];
+  const showSup = level === 'agent';
+
+  // Header row
+  const periodCols = periods.flatMap(p => KPIS.map(k => `"${fmtPeriod(p)} ${k}"`)).join(',');
+  const fixedCols  = showSup ? '"Supervisor","Agent Email"' : level === 'supervisor' ? '"Supervisor"' : '"Asst. Manager"';
+  const header     = fixedCols + ',' + periodCols;
+
+  const csvRows = rows.map(row => {
+    const fixed = showSup
+      ? `"${row.supervisor}","${row.label}"`
+      : `"${row.label}"`;
+    const vals = row.allKpis.flatMap(kpis =>
+      [kpis.tph ?? '', kpis.aht ?? '', kpis.csat ?? '', kpis.iqs ?? '']
+    ).join(',');
+    return fixed + ',' + vals;
+  });
+
+  triggerCSVDownload([header, ...csvRows].join('\n'), filename);
+}
+
+function downloadChartData(type) {
+  const weeks = lastNWeeks(12);
+  let csvRows = [], header = '';
+
+  if (type === 'tph-aht') {
+    const supFilter = document.getElementById('tph-sup-filter')?.value || '';
+    const tphRecs   = filterTPH().filter(r => !supFilter || r.supervisor === supFilter || r.am === supFilter);
+    const byWk      = aggTPHByPeriod(tphRecs, 'isoWeek');
+    header = '"Week","TPH","AHT (seconds)"';
+    csvRows = weeks.map(w => {
+      const d = byWk[w];
+      return `"${fmtWeek(w)}",${d?.tph ?? ''},${d?.aht ?? ''}`;
+    });
+  } else if (type === 'csat') {
+    const supFilter = document.getElementById('csat-sup-filter')?.value || '';
+    const recs      = filterCSAT().filter(r => !supFilter || r.supervisor === supFilter || r.am === supFilter);
+    const byWk      = aggCSATByPeriod(recs, 'isoWeek');
+    header = '"Week","CSAT %","Good Surveys","Bad Surveys"';
+    csvRows = weeks.map(w => {
+      const d = byWk[w];
+      return `"${fmtWeek(w)}",${d?.score ?? ''},${d?.good ?? ''},${d?.bad ?? ''}`;
+    });
+  } else if (type === 'iqs') {
+    const supFilter = document.getElementById('iqs-sup-filter')?.value || '';
+    const recs      = filterIQS().filter(r => !supFilter || r.supervisor === supFilter || r.am === supFilter);
+    const byWk      = aggIQSByPeriod(recs, 'weekOf');
+    const iqsWeeks  = lastNWeeks(12);
+    header = '"Week","IQS %","Reviews","Passed","Failed"';
+    csvRows = iqsWeeks.map(w => {
+      const d = byWk[w];
+      return `"${fmtWeek(w)}",${d?.score ?? ''},${d?.reviews ?? ''},${d?.passed ?? ''},${d?.failed ?? ''}`;
+    });
+  }
+
+  if (!csvRows.length) { showToast('No data to export', '#F59E0B'); return; }
+  triggerCSVDownload([header, ...csvRows].join('\n'), `${type}_weekly_data.csv`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEGACY SINGLE-KPI TABLE (kept for internal use)
 // Aggregate by agent (or supervisor/am) for a given set of period keys
 function buildAgentPeriodTable(level, kpi, periods, periodField) {
   const tphRecs  = filterTPH();
@@ -1259,7 +1520,7 @@ function findLast(arr, pred) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PAGE 2 — WEEKLY TABLE
+// PAGE 2 — WEEKLY TABLE (combined all-KPI view)
 // ─────────────────────────────────────────────────────────────
 function setWeeklyLevel(lvl) {
   weeklyLevel = lvl;
@@ -1267,22 +1528,21 @@ function setWeeklyLevel(lvl) {
     b.classList.toggle('active', b.dataset.level === lvl));
   renderWeeklyTable();
 }
-function setWeeklyKPI(kpi) {
-  weeklyKPI = kpi;
-  document.querySelectorAll('#weekly-kpi-tabs .kpi-tab-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.kpi === kpi));
-  renderWeeklyTable();
-}
 
 function renderWeeklyTable() {
   const periods = lastNWeeks(4);
-  const rows    = buildAgentPeriodTable(weeklyLevel, weeklyKPI, periods, 'isoWeek');
-  const higherIsBetter = weeklyKPI !== 'aht';
-  renderPeriodTable('weekly-table-container', rows, periods, weeklyKPI, higherIsBetter, fmtWeek);
+  const rows    = buildAllKPIData(weeklyLevel, periods, 'isoWeek', false);
+  renderCombinedKPITable('weekly-table-container', weeklyLevel, rows, periods, fmtWeek);
+}
+
+function downloadWeeklyCSV() {
+  const periods = lastNWeeks(4);
+  const rows    = buildAllKPIData(weeklyLevel, periods, 'isoWeek', false);
+  exportAllKPIToCSV(rows, periods, fmtWeek, weeklyLevel, 'weekly_performance.csv');
 }
 
 // ─────────────────────────────────────────────────────────────
-// PAGE 3 — MONTHLY TABLE
+// PAGE 3 — MONTHLY TABLE (combined all-KPI view)
 // ─────────────────────────────────────────────────────────────
 function setMonthlyLevel(lvl) {
   monthlyLevel = lvl;
@@ -1290,19 +1550,17 @@ function setMonthlyLevel(lvl) {
     b.classList.toggle('active', b.dataset.level === lvl));
   renderMonthlyTable();
 }
-function setMonthlyKPI(kpi) {
-  monthlyKPI = kpi;
-  document.querySelectorAll('#monthly-kpi-tabs .kpi-tab-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.kpi === kpi));
-  renderMonthlyTable();
-}
 
 function renderMonthlyTable() {
   const periods = lastNMonths(4);
-  // For monthly IQS, we need to aggregate IQS records by month
-  const rows    = buildAgentPeriodTableMonthly(monthlyLevel, monthlyKPI, periods);
-  const higherIsBetter = monthlyKPI !== 'aht';
-  renderPeriodTable('monthly-table-container', rows, periods, monthlyKPI, higherIsBetter, fmtMonth);
+  const rows    = buildAllKPIData(monthlyLevel, periods, 'yearMonth', true);
+  renderCombinedKPITable('monthly-table-container', monthlyLevel, rows, periods, fmtMonth);
+}
+
+function downloadMonthlyCSV() {
+  const periods = lastNMonths(4);
+  const rows    = buildAllKPIData(monthlyLevel, periods, 'yearMonth', true);
+  exportAllKPIToCSV(rows, periods, fmtMonth, monthlyLevel, 'monthly_performance.csv');
 }
 
 function buildAgentPeriodTableMonthly(level, kpi, periods) {
