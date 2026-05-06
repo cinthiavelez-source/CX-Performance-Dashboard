@@ -1100,12 +1100,16 @@ function calcTenureGroup(hireDateStr, refDateStr) {
 // ─────────────────────────────────────────────────────────────
 // DATA FILTERING
 // ─────────────────────────────────────────────────────────────
+// Normalise any date value → "YYYY-MM-DD" (strips time component if present)
+function normDate(v) { return v ? String(v).substring(0, 10) : ''; }
+
 function filterTPH() {
   return cachedData.tph.filter(r => {
     if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
-    if (activeFilters.dateFrom && r.date && r.date < activeFilters.dateFrom) return false;
-    if (activeFilters.dateTo   && r.date && r.date > activeFilters.dateTo)   return false;
+    const d = normDate(r.date);
+    if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
+    if (activeFilters.dateTo   && d && d > activeFilters.dateTo)   return false;
     return true;
   });
 }
@@ -1114,8 +1118,9 @@ function filterCSAT() {
   return cachedData.csat.filter(r => {
     if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
-    if (activeFilters.dateFrom && r.date && r.date < activeFilters.dateFrom) return false;
-    if (activeFilters.dateTo   && r.date && r.date > activeFilters.dateTo)   return false;
+    const d = normDate(r.date);
+    if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
+    if (activeFilters.dateTo   && d && d > activeFilters.dateTo)   return false;
     return true;
   });
 }
@@ -1124,8 +1129,10 @@ function filterIQS() {
   return cachedData.iqs.filter(r => {
     if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
-    if (activeFilters.dateFrom && r.weekOf && r.weekOf < activeFilters.dateFrom) return false;
-    if (activeFilters.dateTo   && r.weekOf && r.weekOf > activeFilters.dateTo)   return false;
+    // IQS records use weekOf (Sunday start of the week) for date comparison
+    const d = normDate(r.weekOf);
+    if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
+    if (activeFilters.dateTo   && d && d > activeFilters.dateTo)   return false;
     return true;
   });
 }
