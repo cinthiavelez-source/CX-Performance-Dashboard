@@ -9,6 +9,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <!-- SheetJS for XLSX parsing -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -1613,35 +1614,64 @@ function makeLineChart(id, labels, datasets, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
+  const fmt = opts.fmt || (v => v != null ? String(v) : '');
   charts[id] = new Chart(ctx, {
     type: 'line',
     data: { labels, datasets },
+    plugins: [ChartDataLabels],
     options: {
       responsive: true,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } },
-        tooltip: { titleFont: { size: 11 }, bodyFont: { size: 11 } }
+        tooltip: { titleFont: { size: 11 }, bodyFont: { size: 11 } },
+        datalabels: {
+          display: context => context.dataset.data[context.dataIndex] != null,
+          formatter: (value) => fmt(value),
+          font: { size: 9, weight: '600' },
+          color: context => context.dataset.borderColor || '#374151',
+          anchor: 'end',
+          align: 'top',
+          offset: 2,
+          clamp: true
+        }
       },
       scales: {
         x: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' } },
         y: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' }, ...opts.y },
         ...(opts.y2 ? { y2: { position: 'right', ticks: { font: { size: 10 } }, grid: { drawOnChartArea: false }, ...opts.y2 } } : {})
-      }
+      },
+      layout: { padding: { top: 18 } }
     }
   });
 }
 
-function makeBarChart(id, labels, datasets) {
+function makeBarChart(id, labels, datasets, opts = {}) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
+  const fmt = opts.fmt || (v => v != null && v !== 0 ? String(Math.round(v)) : '');
   charts[id] = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets },
+    plugins: [ChartDataLabels],
     options: {
       responsive: true,
-      plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } } },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } },
+        datalabels: {
+          display: context => {
+            const v = context.dataset.data[context.dataIndex];
+            return v != null && v !== 0;
+          },
+          formatter: (value) => fmt(value),
+          font: { size: 9, weight: '600' },
+          color: '#fff',
+          anchor: 'center',
+          align: 'center',
+          clamp: true
+        }
+      },
       scales: {
         x: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' }, stacked: true },
         y: { ticks: { font: { size: 10 } }, grid: { color: '#F1F5F9' }, stacked: true }
@@ -1690,19 +1720,19 @@ function renderDashboard() {
   makeLineChart('chart-tph-trend', wkLabels, [{
     label: 'TPH', data: tphVals, borderColor: COLORS[0], backgroundColor: COLORS[0] + '18',
     fill: true, tension: 0.3, spanGaps: true
-  }]);
+  }], { fmt: v => v != null ? v.toFixed(1) : '' });
   makeLineChart('chart-csat-trend', wkLabels, [{
     label: 'CSAT %', data: csatVals, borderColor: COLORS[1], backgroundColor: COLORS[1] + '18',
     fill: true, tension: 0.3, spanGaps: true
-  }], { y: { min: 0, max: 100 } });
+  }], { y: { min: 0, max: 100 }, fmt: v => v != null ? v.toFixed(1) + '%' : '' });
   makeLineChart('chart-iqs-trend', wkLabels, [{
     label: 'IQS %', data: iqsVals, borderColor: COLORS[4], backgroundColor: COLORS[4] + '18',
     fill: true, tension: 0.3, spanGaps: true
-  }], { y: { min: 0, max: 100 } });
+  }], { y: { min: 0, max: 100 }, fmt: v => v != null ? v.toFixed(1) + '%' : '' });
   makeLineChart('chart-aht-trend', wkLabels, [{
     label: 'AHT (s)', data: ahtVals, borderColor: COLORS[3], backgroundColor: COLORS[3] + '18',
     fill: true, tension: 0.3, spanGaps: true
-  }]);
+  }], { fmt: v => v != null ? Math.round(v) + 's' : '' });
 }
 
 function buildKPICard(label, value, sub, wowHtml, higherBetter) {
@@ -1929,7 +1959,7 @@ function renderCSATProgChart() {
   makeLineChart('chart-csat-prog', labels, [{
     label: 'CSAT %', data: scores, borderColor: COLORS[1], backgroundColor: COLORS[1] + '18',
     fill: true, tension: 0.3, spanGaps: true, pointRadius: 4
-  }], { y: { min: 0, max: 100, title: { display: true, text: 'CSAT Score (%)' } } });
+  }], { y: { min: 0, max: 100, title: { display: true, text: 'CSAT Score (%)' } }, fmt: v => v != null ? v.toFixed(1) + '%' : '' });
 
   makeBarChart('chart-csat-volume', labels, [
     { label: 'Good', data: goods, backgroundColor: COLORS[1] + 'CC' },
@@ -1952,7 +1982,7 @@ function renderIQSProgChart() {
   makeLineChart('chart-iqs-prog', labels, [{
     label: 'IQS %', data: scores, borderColor: COLORS[4], backgroundColor: COLORS[4] + '18',
     fill: true, tension: 0.3, spanGaps: true, pointRadius: 4
-  }], { y: { min: 0, max: 100, title: { display: true, text: 'IQS Score (%)' } } });
+  }], { y: { min: 0, max: 100, title: { display: true, text: 'IQS Score (%)' } }, fmt: v => v != null ? v.toFixed(1) + '%' : '' });
 
   makeBarChart('chart-iqs-volume', labels, [
     { label: 'Reviews', data: reviews, backgroundColor: COLORS[4] + 'AA' }
@@ -3072,6 +3102,9 @@ async function startApp() {
 }
 
 // ─── Entry point ─────────────────────────────────────────────
+// Register chartjs-plugin-datalabels globally (opt-in per chart via plugins: [ChartDataLabels])
+if (typeof ChartDataLabels !== 'undefined') Chart.unregister(ChartDataLabels);
+
 (function boot() {
   const saved = localStorage.getItem('cx_user_v2');
   if (saved) {
