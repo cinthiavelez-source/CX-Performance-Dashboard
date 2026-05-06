@@ -1141,10 +1141,19 @@ function normDate(v) { return v ? String(v).substring(0, 10) : ''; }
 // Only built when cachedData.agents is populated; if hierarchy isn't loaded yet,
 // returns null so the caller skips role filtering rather than hiding all data.
 function getSpecialistEmails() {
+  // Returns a Set of emails for agents meeting ALL 3 conditions:
+  //   role = "Specialist"
+  //   team = "CU - Ops" OR "CU - CX"
+  //   status = "active"
+  // Returns null when hierarchy isn't loaded yet (skip filtering rather than blank the view).
   if (!cachedData.agents.length) return null;
   const s = new Set();
   cachedData.agents.forEach(a => {
-    if (a.role && a.role.trim().toLowerCase() === 'specialist' && a.email) {
+    const role   = (a.role   || '').trim().toLowerCase();
+    const team   = (a.team   || '').trim();
+    const status = (a.status || '').trim().toLowerCase();
+    const teamOk = team === 'CU - Ops' || team === 'CU - CX';
+    if (role === 'specialist' && teamOk && status === 'active' && a.email) {
       s.add(String(a.email).toLowerCase());
     }
   });
@@ -1184,10 +1193,10 @@ function filterRowsByRole(rows, level) {
   return rows;
 }
 
-function filterTPH() {
-  const specialists = getSpecialistEmails();
+function filterTPH(agentLevelOnly = false) {
+  const specialists = agentLevelOnly ? getSpecialistEmails() : null;
   return cachedData.tph.filter(r => {
-    // Only include records belonging to Specialist agents
+    // Specialist filter only applied when building agent-level rows
     if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.am   && r.am !== activeFilters.am) return false;
     if (activeFilters.team && r.supervisor !== activeFilters.team) return false;
@@ -1199,8 +1208,8 @@ function filterTPH() {
   });
 }
 
-function filterCSAT() {
-  const specialists = getSpecialistEmails();
+function filterCSAT(agentLevelOnly = false) {
+  const specialists = agentLevelOnly ? getSpecialistEmails() : null;
   return cachedData.csat.filter(r => {
     if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.am   && r.am !== activeFilters.am) return false;
@@ -1213,8 +1222,8 @@ function filterCSAT() {
   });
 }
 
-function filterIQS() {
-  const specialists = getSpecialistEmails();
+function filterIQS(agentLevelOnly = false) {
+  const specialists = agentLevelOnly ? getSpecialistEmails() : null;
   return cachedData.iqs.filter(r => {
     if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.am   && r.am !== activeFilters.am) return false;
@@ -1304,9 +1313,12 @@ function aggIQSByPeriod(records, field) {
 // isMonthly = true uses yearMonth/weekOf-month; false uses isoWeek
 // ─────────────────────────────────────────────────────────────
 function buildAllKPIData(level, periods, periodField, isMonthly) {
-  const tphRecs  = filterTPH();
-  const csatRecs = filterCSAT();
-  const iqsRecs  = filterIQS();
+  // Agent level → restrict to specialist/CU-Ops|CX/active only.
+  // Supervisor / AM level → all agents under that supervisor/AM (matches GSheets).
+  const agentOnly = level === 'agent';
+  const tphRecs  = filterTPH(agentOnly);
+  const csatRecs = filterCSAT(agentOnly);
+  const iqsRecs  = filterIQS(agentOnly);
 
   const groupKey = r => {
     if (level === 'supervisor') return r.supervisor || '(unknown)';
@@ -1837,9 +1849,10 @@ function downloadMonthlyCSV() {
 
 function buildAgentPeriodTableMonthly(level, kpi, periods) {
   // For monthly, TPH/CSAT use yearMonth field; IQS derives month from weekOf
-  const tphRecs  = filterTPH();
-  const csatRecs = filterCSAT();
-  const iqsRecs  = filterIQS();
+  const agentOnly = level === 'agent';
+  const tphRecs  = filterTPH(agentOnly);
+  const csatRecs = filterCSAT(agentOnly);
+  const iqsRecs  = filterIQS(agentOnly);
 
   const groupKey = r => {
     if (level === 'supervisor') return r.supervisor || '(unknown)';
@@ -2032,10 +2045,11 @@ function setLifetimeLevel(lvl) {
 }
 
 function buildLifetimeData(level) {
-  // Uses the global date/supervisor/tenure filters (filterTPH / filterCSAT / filterIQS)
-  const tphRecs  = filterTPH();
-  const csatRecs = filterCSAT();
-  const iqsRecs  = filterIQS();
+  // Agent level → specialists only. Supervisor/AM → all agents under them (matches GSheets).
+  const agentOnly = level === 'agent';
+  const tphRecs  = filterTPH(agentOnly);
+  const csatRecs = filterCSAT(agentOnly);
+  const iqsRecs  = filterIQS(agentOnly);
 
   const groupKey = r => {
     if (level === 'supervisor') return r.supervisor || '(unknown)';
@@ -2215,32 +2229,15 @@ function updateWeights() {
   renderLeaderboard();
 }
 
-function getLeaderboardEligibleEmails() {
-  // Agents must meet ALL 3 conditions:
-  //   role = "Specialist"
-  //   team = "CU - Ops" OR "CU - CX"
-  //   status = "active"
-  if (!cachedData.agents.length) return null;  // no hierarchy loaded → no restriction
-  const eligible = new Set();
-  cachedData.agents.forEach(a => {
-    const role   = (a.role   || '').trim().toLowerCase();
-    const team   = (a.team   || '').trim();
-    const status = (a.status || '').trim().toLowerCase();
-    const teamOk = team === 'CU - Ops' || team === 'CU - CX';
-    if (role === 'specialist' && teamOk && status === 'active') {
-      if (a.email) eligible.add(String(a.email).toLowerCase());
-    }
-  });
-  return eligible.size ? eligible : null;
-}
-
 function buildLeaderboardData() {
-  // 1. Get raw lifetime data at agent level (respects global filters)
-  const eligibleEmails = getLeaderboardEligibleEmails();
+  // 1. Get raw lifetime data at agent level (respects global filters).
+  // getSpecialistEmails() already enforces role=Specialist + team=CU-Ops/CX + status=active,
+  // and filterTPH/CSAT/IQS (called inside buildLifetimeData) apply that automatically.
+  // We add an explicit check here so the leaderboard is gated even if called directly.
+  const eligible = getSpecialistEmails();
   const rows = buildLifetimeData('agent').filter(r => {
     if (r.tph === null && r.csat === null && r.iqs === null) return false;
-    // Enforce Specialist + CU-Ops/CX + active
-    if (eligibleEmails && !eligibleEmails.has((r.key || '').toLowerCase())) return false;
+    if (eligible && !eligible.has((r.key || '').toLowerCase())) return false;
     return true;
   });
   if (!rows.length) return [];
