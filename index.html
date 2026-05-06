@@ -689,6 +689,18 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
         </div>
       </div>
 
+      <!-- Audit / Login Log -->
+      <h3 style="margin-bottom:.75rem;margin-top:1.75rem">🔍 Login Audit Log</h3>
+      <div class="card">
+        <p style="font-size:.8rem;color:var(--sub);margin-bottom:.75rem">Every sign-in is recorded here. Timestamps are UTC.</p>
+        <div style="overflow-x:auto">
+          <table class="history-table">
+            <thead><tr><th>Timestamp (UTC)</th><th>Email</th><th>Browser / Device</th></tr></thead>
+            <tbody id="audit-log-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- end admin page -->
 
   </div><!-- end main -->
@@ -711,7 +723,7 @@ const ALLOWED_DOMAIN      = 'cookunity.com';
 // ─────────────────────────────────────────────────────────────
 let currentUser = null;
 let cachedRole  = 'viewer';
-let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [] };
+let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [], auditLog: [] };
 let activeFilters = { dateFrom: '', dateTo: '', supervisor: '', tenure: '' };
 let currentPage   = 'dashboard';
 
@@ -788,6 +800,8 @@ async function apiFetch() {
     cachedData.csatMap   = data.csatMap   || [];
     cachedData.uploadLog = data.uploadLog || [];
     cachedData.hierLog   = data.hierLog   || [];
+    // Audit log only returned to admins — gracefully ignore if absent
+    if (data.auditLog) cachedData.auditLog = data.auditLog;
 
     updateRoleUI();
     populateSupervisorFilters();
@@ -829,20 +843,44 @@ function isoWeek(dateStr) {
 }
 
 function lastNWeeks(n) {
-  const seen = new Set(), weeks = [];
-  const now = new Date();
+  // Data-driven: derive last N ISO weeks from actual filtered data (not calendar)
+  const seen = new Set();
+  filterTPH().forEach(r  => { if (r.isoWeek) seen.add(r.isoWeek); });
+  filterCSAT().forEach(r => { if (r.isoWeek) seen.add(r.isoWeek); });
+  filterIQS().forEach(r  => {
+    if (r.weekOf) { const w = isoWeek(r.weekOf); if (w) seen.add(w); }
+  });
+  if (seen.size) {
+    const sorted = Array.from(seen).sort();
+    return sorted.slice(-n);
+  }
+  // Fallback to calendar weeks when no data is loaded yet
+  const fallback = new Set(), weeks = [], now = new Date();
   for (let i = n + 2; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i * 7);
+    const d = new Date(now); d.setDate(d.getDate() - i * 7);
     const w = isoWeek(d.toISOString().split('T')[0]);
-    if (w && !seen.has(w)) { seen.add(w); weeks.push(w); }
+    if (w && !fallback.has(w)) { fallback.add(w); weeks.push(w); }
   }
   return weeks.slice(-n);
 }
 
 function lastNMonths(n) {
-  const months = [];
-  const now = new Date();
+  // Data-driven: derive last N yearMonths from actual filtered data (not calendar)
+  const seen = new Set();
+  filterTPH().forEach(r  => { if (r.yearMonth) seen.add(r.yearMonth); });
+  filterCSAT().forEach(r => { if (r.yearMonth) seen.add(r.yearMonth); });
+  filterIQS().forEach(r  => {
+    if (r.weekOf) {
+      const ym = String(r.weekOf).substring(0, 7);
+      if (ym && /^\d{4}-\d{2}$/.test(ym)) seen.add(ym);
+    }
+  });
+  if (seen.size) {
+    const sorted = Array.from(seen).sort();
+    return sorted.slice(-n);
+  }
+  // Fallback to calendar months when no data is loaded yet
+  const months = [], now = new Date();
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
@@ -995,16 +1033,10 @@ function buildAgentPeriodTable(level, kpi, periods, periodField) {
     return r.agentEmail || '(unknown)';
   };
 
-  const groupLabel = (key, type) => {
-    if (level !== 'agent') return key;
-    if (type === 'iqs') {
-      const rec = cachedData.iqs.find(r => r.agentEmail === key);
-      return rec ? rec.agentName || key : key;
-    }
-    const rec = cachedData.tph.find(r => r.agentEmail === key);
-    if (rec) return rec.agentName || key;
-    const ag = cachedData.agents.find(a => a.email === key);
-    return ag ? ag.name : key;
+  const groupLabel = (key /*, _type */) => {
+    // Always show email for agent-level rows — more reliable than display names
+    // (avoids encoding issues with special characters and keeps data consistent)
+    return key;
   };
 
   // Build per-period aggregations
@@ -1332,8 +1364,8 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
     });
     const latestTwo = vals.filter(v => v !== null).slice(-2);
     const trend = latestTwo.length < 2 ? 0 : latestTwo[1] - latestTwo[0];
-    const lbl = level !== 'agent' ? key : (cachedData.agents.find(a => a.email === key)?.name || key);
-    rows.push({ key, label: lbl, vals, trend });
+    // Use email for agent rows — consistent with weekly table
+    rows.push({ key, label: key, vals, trend });
   });
   rows.sort((a, b) => (b.vals.filter(v => v !== null).pop() || 0) - (a.vals.filter(v => v !== null).pop() || 0));
   return rows;
@@ -1531,6 +1563,31 @@ function renderAdminPage() {
   renderUploadHistory();
   renderHierarchyLog();
   renderRolesTable();
+  renderAuditLog();
+}
+
+function renderAuditLog() {
+  const tbody = document.getElementById('audit-log-tbody');
+  if (!tbody) return;
+  // auditLog comes from the backend — if not loaded yet, fetch it
+  const rows = cachedData.auditLog || [];
+  const recent = [...rows].reverse().slice(0, 100);
+  if (!recent.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);padding:.75rem">No login events recorded yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = recent.map(r => {
+    const ts  = r.timestamp || '';
+    const em  = r.email || '';
+    const ua  = r.userAgent || '';
+    // Shorten user-agent to just browser + OS tokens
+    const uaShort = ua.length > 80 ? ua.substring(0, 80) + '…' : ua;
+    return `<tr>
+      <td style="white-space:nowrap;font-size:.78rem">${escHtml(ts)}</td>
+      <td style="font-size:.82rem">${escHtml(em)}</td>
+      <td style="font-size:.75rem;color:var(--sub);max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(ua)}">${escHtml(uaShort)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderUploadHistory() {
@@ -1951,6 +2008,15 @@ function updateRoleUI() {
   if (adminTab) adminTab.style.display = isCurrentUserAdmin() ? '' : 'none';
 }
 
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function showLoading(show, msg = 'Loading…') {
   const el = document.getElementById('loading-overlay');
   el.classList.toggle('show', show);
@@ -2008,6 +2074,11 @@ async function startApp() {
   } catch (e) {
     // Show empty dashboard anyway
   }
+
+  // Log this login to the audit trail (fire-and-forget — never block the UI)
+  try {
+    apiPost({ action: 'logLogin', userAgent: navigator.userAgent }).catch(() => {});
+  } catch (e) {}
 
   renderCurrentPage();
   updateRoleUI();
