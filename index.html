@@ -665,6 +665,19 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
         </table>
       </div>
 
+      <!-- Danger Zone -->
+      <h3 style="margin-bottom:.75rem;margin-top:1.75rem;color:var(--red)">⚠️ Clear Data</h3>
+      <div class="card" style="border:1.5px solid #FECACA">
+        <p style="font-size:.82rem;color:var(--sub);margin-bottom:1rem">
+          Use this to wipe a data sheet and re-upload corrected files. This cannot be undone.
+        </p>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <button class="btn-danger" onclick="clearSheet('TPH_Data')">🗑 Clear all TPH data</button>
+          <button class="btn-danger" onclick="clearSheet('CSAT_Data')">🗑 Clear all CSAT data</button>
+          <button class="btn-danger" onclick="clearSheet('IQS_Data')">🗑 Clear all IQS data</button>
+        </div>
+      </div>
+
       <!-- Upload History -->
       <h3 style="margin-bottom:.75rem;margin-top:1.75rem">Upload History</h3>
       <div class="card">
@@ -910,22 +923,21 @@ function filterIQS() {
 // ─────────────────────────────────────────────────────────────
 function aggTPHByPeriod(records, field) {
   // field = 'isoWeek' or 'yearMonth'
+  // Uses pre-stored tph and ahtSeconds (weighted average by ticket count)
   const map = {};
   records.forEach(r => {
     const k = r[field]; if (!k) return;
-    if (!map[k]) map[k] = { tickets: 0, tickSec: 0, prodSec: 0, ahtSum: 0, ahtCnt: 0 };
-    map[k].tickets += Number(r.handledTickets) || 0;
-    map[k].tickSec += Number(r.ticketTimeSec)  || 0;
-    map[k].prodSec += Number(r.productiveTimeSec) || 0;
-    const a = Number(r.ahtSeconds);
-    if (a > 0) { map[k].ahtSum += a; map[k].ahtCnt++; }
+    if (!map[k]) map[k] = { tickets: 0, tphWSum: 0, ahtWSum: 0 };
+    const t = Number(r.handledTickets) || 0;
+    map[k].tickets  += t;
+    map[k].tphWSum  += (Number(r.tph) || 0) * t;
+    map[k].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
   });
   const result = {};
   Object.entries(map).forEach(([k, v]) => {
-    const hrs = (v.tickSec + v.prodSec) / 3600;
     result[k] = {
-      tph: hrs > 0 ? Math.round((v.tickets / hrs) * 100) / 100 : 0,
-      aht: v.ahtCnt > 0 ? Math.round(v.ahtSum / v.ahtCnt) : 0
+      tph: v.tickets > 0 ? Math.round((v.tphWSum / v.tickets) * 100) / 100 : 0,
+      aht: v.tickets > 0 ? Math.round(v.ahtWSum / v.tickets) : 0
     };
   });
   return result;
@@ -1003,12 +1015,11 @@ function buildAgentPeriodTable(level, kpi, periods, periodField) {
       const p = r[periodField]; if (!periods.includes(p)) return;
       const k = groupKey(r);
       if (!kpiMap[k]) kpiMap[k] = {};
-      if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tickSec: 0, prodSec: 0, ahtSum: 0, ahtCnt: 0 };
-      kpiMap[k][p].tickets += Number(r.handledTickets) || 0;
-      kpiMap[k][p].tickSec += Number(r.ticketTimeSec)  || 0;
-      kpiMap[k][p].prodSec += Number(r.productiveTimeSec) || 0;
-      const a = Number(r.ahtSeconds);
-      if (a > 0) { kpiMap[k][p].ahtSum += a; kpiMap[k][p].ahtCnt++; }
+      if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tphWSum: 0, ahtWSum: 0 };
+      const t = Number(r.handledTickets) || 0;
+      kpiMap[k][p].tickets  += t;
+      kpiMap[k][p].tphWSum  += (Number(r.tph) || 0) * t;         // weighted by ticket count
+      kpiMap[k][p].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;  // weighted by ticket count
     });
   } else if (kpi === 'csat') {
     csatRecs.forEach(r => {
@@ -1038,11 +1049,8 @@ function buildAgentPeriodTable(level, kpi, periods, periodField) {
     const vals = periods.map(p => {
       const d = perPeriod[p];
       if (!d) return null;
-      if (kpi === 'tph') {
-        const hrs = (d.tickSec + d.prodSec) / 3600;
-        return hrs > 0 ? Math.round((d.tickets / hrs) * 100) / 100 : null;
-      }
-      if (kpi === 'aht') return d.ahtCnt > 0 ? Math.round(d.ahtSum / d.ahtCnt) : null;
+      if (kpi === 'tph') return d.tickets > 0 ? Math.round((d.tphWSum / d.tickets) * 100) / 100 : null;
+      if (kpi === 'aht') return d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets) : null;
       if (kpi === 'csat') return d.total > 0 ? Math.round((d.good / d.total) * 10000) / 100 : null;
       if (kpi === 'iqs')  return d.cnt > 0 ? Math.round((d.sum / d.cnt) * 100) / 100 : null;
       return null;
@@ -1284,12 +1292,11 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
       const p = r.yearMonth; if (!periods.includes(p)) return;
       const k = groupKey(r);
       if (!kpiMap[k]) kpiMap[k] = {};
-      if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tickSec: 0, prodSec: 0, ahtSum: 0, ahtCnt: 0 };
-      kpiMap[k][p].tickets += Number(r.handledTickets) || 0;
-      kpiMap[k][p].tickSec += Number(r.ticketTimeSec)  || 0;
-      kpiMap[k][p].prodSec += Number(r.productiveTimeSec) || 0;
-      const a = Number(r.ahtSeconds);
-      if (a > 0) { kpiMap[k][p].ahtSum += a; kpiMap[k][p].ahtCnt++; }
+      if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, tphWSum: 0, ahtWSum: 0 };
+      const t = Number(r.handledTickets) || 0;
+      kpiMap[k][p].tickets += t;
+      kpiMap[k][p].tphWSum += (Number(r.tph) || 0) * t;
+      kpiMap[k][p].ahtWSum += (Number(r.ahtSeconds) || 0) * t;
     });
   } else if (kpi === 'csat') {
     csatRecs.forEach(r => {
@@ -1317,8 +1324,8 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
     const vals = periods.map(p => {
       const d = perPeriod[p];
       if (!d) return null;
-      if (kpi === 'tph') { const hrs = (d.tickSec + d.prodSec) / 3600; return hrs > 0 ? Math.round((d.tickets / hrs) * 100) / 100 : null; }
-      if (kpi === 'aht') return d.ahtCnt > 0 ? Math.round(d.ahtSum / d.ahtCnt) : null;
+      if (kpi === 'tph') return d.tickets > 0 ? Math.round((d.tphWSum / d.tickets) * 100) / 100 : null;
+      if (kpi === 'aht') return d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets) : null;
       if (kpi === 'csat') return d.total > 0 ? Math.round((d.good / d.total) * 10000) / 100 : null;
       if (kpi === 'iqs')  return d.cnt > 0 ? Math.round((d.sum / d.cnt) * 100) / 100 : null;
       return null;
@@ -1558,6 +1565,22 @@ function renderRolesTable() {
   const tbody = document.getElementById('roles-tbody');
   if (!tbody) return;
   if (!isCurrentUserAdmin()) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">Loading…</td></tr>'; loadRoles(); return; }
+}
+
+async function clearSheet(sheetName) {
+  const labels = { TPH_Data: 'TPH data', CSAT_Data: 'CSAT data', IQS_Data: 'IQS data' };
+  if (!confirm(`Delete ALL ${labels[sheetName] || sheetName} from the sheet? This cannot be undone.`)) return;
+  try {
+    showLoading(true, 'Clearing data…');
+    await apiPost({ action: 'clearDataSheet', sheetName });
+    showToast(`✓ ${labels[sheetName]} cleared. Re-upload your files now.`, '#10B981');
+    await apiFetch();
+    renderCurrentPage();
+  } catch (e) {
+    showToast('Error: ' + e.message, '#EF4444');
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function loadRoles() {
