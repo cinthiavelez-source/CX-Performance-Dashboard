@@ -1110,8 +1110,58 @@ function calcTenureGroup(hireDateStr, refDateStr) {
 // Normalise any date value → "YYYY-MM-DD" (strips time component if present)
 function normDate(v) { return v ? String(v).substring(0, 10) : ''; }
 
+// Build a Set of emails whose role is "Specialist" (case-insensitive).
+// Only built when cachedData.agents is populated; if hierarchy isn't loaded yet,
+// returns null so the caller skips role filtering rather than hiding all data.
+function getSpecialistEmails() {
+  if (!cachedData.agents.length) return null;
+  const s = new Set();
+  cachedData.agents.forEach(a => {
+    if (a.role && a.role.trim().toLowerCase() === 'specialist' && a.email) {
+      s.add(String(a.email).toLowerCase());
+    }
+  });
+  return s.size ? s : null;
+}
+
+// Build a Set of NAMES whose role matches a given role string.
+// Supervisor rows use the agent's `name` field as the group key (e.g. "Fiorella Marquez"),
+// so we collect names (not emails) to filter row keys against.
+// Returns null if hierarchy isn't loaded (skip filtering rather than blank the view).
+function getRoleNames(roleStr) {
+  if (!cachedData.agents.length) return null;
+  const s = new Set();
+  cachedData.agents.forEach(a => {
+    if (a.role && a.role.trim().toLowerCase() === roleStr.toLowerCase() && a.name) {
+      s.add(String(a.name).trim());
+    }
+  });
+  return s.size ? s : null;
+}
+
+// Convenience wrappers
+function getSupervisorNames()     { return getRoleNames('Supervisor'); }
+function getAssistantManagerNames() { return getRoleNames('Assistant Manager'); }
+
+// Filter a rows array (from buildAllKPIData / buildLifetimeData) to only keep
+// rows whose key matches the valid names for the given level.
+function filterRowsByRole(rows, level) {
+  if (level === 'supervisor') {
+    const valid = getSupervisorNames();
+    if (valid) return rows.filter(r => valid.has(r.key));
+  } else if (level === 'am') {
+    const valid = getAssistantManagerNames();
+    if (valid) return rows.filter(r => valid.has(r.key));
+  }
+  // Agent level is already filtered upstream via getSpecialistEmails()
+  return rows;
+}
+
 function filterTPH() {
+  const specialists = getSpecialistEmails();
   return cachedData.tph.filter(r => {
+    // Only include records belonging to Specialist agents
+    if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
     const d = normDate(r.date);
@@ -1122,7 +1172,9 @@ function filterTPH() {
 }
 
 function filterCSAT() {
+  const specialists = getSpecialistEmails();
   return cachedData.csat.filter(r => {
+    if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
     const d = normDate(r.date);
@@ -1133,10 +1185,11 @@ function filterCSAT() {
 }
 
 function filterIQS() {
+  const specialists = getSpecialistEmails();
   return cachedData.iqs.filter(r => {
+    if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.supervisor && r.supervisor !== activeFilters.supervisor && r.am !== activeFilters.supervisor) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
-    // IQS records use weekOf (Sunday start of the week) for date comparison
     const d = normDate(r.weekOf);
     if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
     if (activeFilters.dateTo   && d && d > activeFilters.dateTo)   return false;
@@ -1688,13 +1741,13 @@ function setWeeklyLevel(lvl) {
 
 function renderWeeklyTable() {
   const periods = lastNWeeks(4);
-  const rows    = buildAllKPIData(weeklyLevel, periods, 'isoWeek', false);
+  const rows    = filterRowsByRole(buildAllKPIData(weeklyLevel, periods, 'isoWeek', false), weeklyLevel);
   renderCombinedKPITable('weekly-table-container', weeklyLevel, rows, periods, fmtWeek);
 }
 
 function downloadWeeklyCSV() {
   const periods = lastNWeeks(4);
-  const rows    = buildAllKPIData(weeklyLevel, periods, 'isoWeek', false);
+  const rows    = filterRowsByRole(buildAllKPIData(weeklyLevel, periods, 'isoWeek', false), weeklyLevel);
   exportAllKPIToCSV(rows, periods, fmtWeek, weeklyLevel, 'weekly_performance.csv');
 }
 
@@ -1710,13 +1763,13 @@ function setMonthlyLevel(lvl) {
 
 function renderMonthlyTable() {
   const periods = lastNMonths(4);
-  const rows    = buildAllKPIData(monthlyLevel, periods, 'yearMonth', true);
+  const rows    = filterRowsByRole(buildAllKPIData(monthlyLevel, periods, 'yearMonth', true), monthlyLevel);
   renderCombinedKPITable('monthly-table-container', monthlyLevel, rows, periods, fmtMonth);
 }
 
 function downloadMonthlyCSV() {
   const periods = lastNMonths(4);
-  const rows    = buildAllKPIData(monthlyLevel, periods, 'yearMonth', true);
+  const rows    = filterRowsByRole(buildAllKPIData(monthlyLevel, periods, 'yearMonth', true), monthlyLevel);
   exportAllKPIToCSV(rows, periods, fmtMonth, monthlyLevel, 'monthly_performance.csv');
 }
 
@@ -1990,7 +2043,7 @@ function sortLifetime(col) {
 
 function renderLifetimeTable() {
   const el   = document.getElementById('lifetime-table-container');
-  const rows = buildLifetimeData(lifetimeLevel);
+  const rows = filterRowsByRole(buildLifetimeData(lifetimeLevel), lifetimeLevel);
 
   if (!rows.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No data matches the current filters.</p></div>';
@@ -2064,7 +2117,7 @@ function renderLifetimeTable() {
 }
 
 function downloadLifetimeCSV() {
-  const rows = buildLifetimeData(lifetimeLevel);
+  const rows = filterRowsByRole(buildLifetimeData(lifetimeLevel), lifetimeLevel);
   if (!rows.length) { showToast('No data to export', '#F59E0B'); return; }
   const showSup = lifetimeLevel === 'agent';
   const header = [
