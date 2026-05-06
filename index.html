@@ -743,8 +743,8 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
           <div class="upload-zone" id="tph-drop" onclick="document.getElementById('tph-file').click()">
             <div class="upload-icon">📋</div>
             <h4>TPH &amp; AHT Data</h4>
-            <p>CSV/TSV with columns: <strong>Agent Name</strong>, <strong>Agent Email</strong>, <strong>Date</strong>, <strong>Valid Tickets</strong>, <strong>Total Handle Time (hh:mm:ss)</strong>, <strong>Productive General Task Time (hh:mm:ss)</strong>, <strong>Avg Handle Time (mm:ss)</strong></p>
-            <p style="font-size:.75rem;margin-top:.3rem;color:var(--muted)">TPH = Valid Tickets ÷ (Total Handle Time + Productive General Task Time) in hours</p>
+            <p>CSV/TSV with columns: <strong>Agent Name</strong>, <strong>Agent Email</strong>, <strong>Date</strong>, <strong>Valid Tickets</strong>, <strong>Total Time (hh:mm:ss)</strong>, <strong>Avg Handle Time (mm:ss)</strong></p>
+            <p style="font-size:.75rem;margin-top:.3rem;color:var(--muted)">TPH = Valid Tickets ÷ Total Time (hh:mm:ss) in hours · AHT = Avg Handle Time (mm:ss)</p>
             <button class="btn-upload" type="button">Choose File</button>
           </div>
           <input type="file" id="tph-file" class="file-input" accept=".csv" onchange="handleTPHFile(this)">
@@ -2692,15 +2692,18 @@ function handleTPHFile(input) {
       let missingTimeCount = 0;
       let skippedNoEmail   = 0;
 
-      // Detect column names early so we can give a clear error if the file format is wrong
-      const firstRow    = rows[0] || {};
-      const hasHandleT  = 'Total Handle Time (hh:mm:ss)' in firstRow;
-      const hasProdT    = 'Productive General Task Time (hh:mm:ss)' in firstRow;
-      if (!hasHandleT || !hasProdT) {
+      // Detect required columns — accept new format (Total Time) or old format (Handle + Productive)
+      const firstRow     = rows[0] || {};
+      const hasTotalTime = 'Total Time (hh:mm:ss)' in firstRow;
+      const hasHandleT   = 'Total Handle Time (hh:mm:ss)' in firstRow;
+      const hasProdT     = 'Productive General Task Time (hh:mm:ss)' in firstRow;
+      const hasAvgAHT    = 'Avg Handle Time (mm:ss)' in firstRow;
+
+      if (!hasTotalTime && !(hasHandleT && hasProdT)) {
         const found = Object.keys(firstRow).join(', ');
         throw new Error(
-          `Required columns not found.\n` +
-          `Need: "Total Handle Time (hh:mm:ss)" and "Productive General Task Time (hh:mm:ss)"\n` +
+          `Required column not found.\n` +
+          `Need: "Total Time (hh:mm:ss)" (or legacy "Total Handle Time" + "Productive General Task Time")\n` +
           `Found: ${found}`
         );
       }
@@ -2709,34 +2712,33 @@ function handleTPHFile(input) {
         const email = (r['Agent Email'] || '').toLowerCase();
         if (!email) { skippedNoEmail++; return; }
 
-        // ── TPH Formula ───────────────────────────────────────────────
-        // Working hours = Total Handle Time (hh:mm:ss) + Productive General Task Time (hh:mm:ss)
-        //   • Total Handle Time  = time agents actually spent handling tickets (AHT × ticket count)
-        //   • Productive General Task Time = logged productive time not tied to specific tickets
-        //                                    (meetings, coaching, admin marked as productive)
-        // Both fields are in hh:mm:ss format → converted to seconds → summed → divided by 3600 → hours
-        // TPH = Valid Tickets ÷ Working Hours
-        const totalHandleSec = timeToSec(r['Total Handle Time (hh:mm:ss)']);
-        const prodSec        = timeToSec(r['Productive General Task Time (hh:mm:ss)']);
-        const denomSec       = totalHandleSec + prodSec;
-        const totalHrs       = denomSec / 3600;
-        const tickets        = parseInt(r['Valid Tickets']) || 0;
+        // ── TPH Formula ────────────────────────────────────────────────
+        // New format:  TPH = Valid Tickets ÷ Total Time (hh:mm:ss) in hours
+        //   Total Time = all productive time logged by the agent that day
+        // Legacy fallback: TPH = Valid Tickets ÷ (Total Handle Time + Productive General Task Time)
+        const totalTimeSec = hasTotalTime
+          ? timeToSec(r['Total Time (hh:mm:ss)'])
+          : timeToSec(r['Total Handle Time (hh:mm:ss)']) + timeToSec(r['Productive General Task Time (hh:mm:ss)']);
 
-        if (denomSec === 0) {
-          // No time logged at all — skip or record as 0 TPH but flag it
-          missingTimeCount++;
-        }
+        const totalHrs = totalTimeSec / 3600;
+        const tickets  = parseInt(r['Valid Tickets']) || 0;
 
-        const tph        = totalHrs > 0 ? Math.round((tickets / totalHrs) * 100) / 100 : 0;
+        if (totalTimeSec === 0) missingTimeCount++;
+
+        // ── AHT Formula ────────────────────────────────────────────────
+        // AHT = Avg Handle Time (mm:ss) per agent per day.
+        // At supervisor level the dashboard ticket-weights these values:
+        //   Supervisor AHT = Σ(agentAHT × agentTickets) ÷ Σ(tickets)
         const ahtSeconds = timeToSec(r['Avg Handle Time (mm:ss)']);
+        const tph        = totalHrs > 0 ? Math.round((tickets / totalHrs) * 100) / 100 : 0;
 
         records.push({
-          agentEmail:       email,
-          agentName:        r['Agent Name'] || '',
-          date:             r['Date'] || '',
-          handledTickets:   tickets,
-          ticketTimeSec:    totalHandleSec,  // Total Handle Time stored for audit
-          productiveTimeSec: prodSec,        // Productive General Task Time stored for audit
+          agentEmail:        email,
+          agentName:         r['Agent Name'] || '',
+          date:              r['Date'] || '',
+          handledTickets:    tickets,
+          ticketTimeSec:     totalTimeSec,  // stores Total Time seconds (TPH denominator)
+          productiveTimeSec: 0,             // folded into totalTimeSec above
           tph,
           ahtSeconds
         });
