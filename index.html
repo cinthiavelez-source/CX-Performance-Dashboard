@@ -743,18 +743,15 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
 
         <!-- IQS Upload -->
         <div class="card">
-          <h3>Weekly IQS Snapshot</h3>
+          <h3>IQS Reviews Export</h3>
           <p style="font-size:.8rem;color:var(--sub);margin-bottom:.75rem">
-            Upload every Sunday — the QA aggregate snapshot per agent.
+            Upload the raw reviews export from your QA tool. The system automatically aggregates by agent and ISO week — no manual date entry needed.
           </p>
-          <div class="week-picker">
-            <label style="margin:0">Week of:</label>
-            <input type="date" id="iqs-week-date" value="">
-          </div>
           <div class="upload-zone" id="iqs-drop" onclick="document.getElementById('iqs-file').click()">
             <div class="upload-icon">🏆</div>
-            <h4>IQS Data</h4>
-            <p>CSV with Reviewee, Email, IQS%, Reviews, Passed, Failed</p>
+            <h4>IQS Reviews (CSV)</h4>
+            <p>Columns: <strong>Reviewee</strong>, <strong>Reviewee email</strong>, <strong>Review created</strong>, <strong>Review score</strong> (e.g. 90.00%)</p>
+            <p style="font-size:.75rem;margin-top:.3rem;color:var(--muted)">IQS = avg score per agent per week · Pass threshold: ≥ 80%</p>
             <button class="btn-upload" type="button">Choose File</button>
           </div>
           <input type="file" id="iqs-file" class="file-input" accept=".csv" onchange="handleIQSFile(this)">
@@ -1014,6 +1011,18 @@ function isoWeek(dateStr) {
     const yr = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
     const wk = Math.ceil((((tmp - yr) / 86400000) + 1) / 7);
     return tmp.getUTCFullYear() + '-W' + String(wk).padStart(2, '0');
+  } catch (e) { return ''; }
+}
+
+// Returns the Monday date (YYYY-MM-DD) of the ISO week containing dateStr.
+// Used as the canonical weekOf value when storing aggregated IQS records.
+function isoWeekMonday(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr + 'T00:00:00Z');
+    const dow = d.getUTCDay() || 7;   // 1=Mon … 7=Sun
+    d.setUTCDate(d.getUTCDate() - (dow - 1));
+    return d.toISOString().split('T')[0];
   } catch (e) { return ''; }
 }
 
@@ -2653,10 +2662,13 @@ function handleCSATFile(input) {
 
 // ─────────────────────────────────────────────────────────────
 // FILE UPLOAD HANDLERS — IQS
+// Raw reviews export (one row per review). Aggregated here into
+// one record per agent per ISO week before sending to the backend.
 // ─────────────────────────────────────────────────────────────
+const IQS_PASS_THRESHOLD = 80;   // scores ≥ this % count as "passed"
+
 function handleIQSFile(input) {
   const file = input.files[0]; if (!file) return;
-  const weekOf = document.getElementById('iqs-week-date').value || new Date().toISOString().split('T')[0];
   setUploadStatus('iqs', 'processing', `Parsing ${file.name}…`);
   const reader = new FileReader();
   reader.onload = async e => {
@@ -2664,36 +2676,78 @@ function handleIQSFile(input) {
       const rows = parseTSVorCSV(e.target.result);
       if (!rows.length) throw new Error('No rows found in file.');
 
-      const records = [];
+      // Validate required columns exist
+      const firstRow = rows[0] || {};
+      const hasEmail  = 'Reviewee email' in firstRow;
+      const hasDate   = 'Review created' in firstRow;
+      const hasScore  = 'Review score'   in firstRow;
+      if (!hasEmail || !hasDate || !hasScore) {
+        const found = Object.keys(firstRow).join(', ');
+        throw new Error(
+          `Required columns not found.\n` +
+          `Need: "Reviewee email", "Review created", "Review score"\n` +
+          `Found: ${found}`
+        );
+      }
+
+      // ── Step 1: Aggregate individual reviews by (agent email, ISO week) ──
+      // agg key = email + '|' + isoWeekKey (e.g. "2026-W18")
+      const agg = {};   // key → { email, name, weekOf, scoreSum, count, passed, failed }
+
       rows.forEach(r => {
-        // The email column has a special invisible-char header; find it by looking for @ in values
-        let email = '';
-        const keys = Object.keys(r);
-        for (const k of keys) {
-          if (String(r[k]).includes('@')) { email = String(r[k]).toLowerCase(); break; }
+        const email = String(r['Reviewee email'] || '').trim().toLowerCase();
+        if (!email || !email.includes('@')) return;
+
+        const reviewDate = String(r['Review created'] || '').trim().substring(0, 10);
+        if (!reviewDate) return;
+
+        const scoreRaw = String(r['Review score'] || '').replace('%', '').trim();
+        const score    = parseFloat(scoreRaw);
+        if (isNaN(score)) return;
+
+        const weekKey   = isoWeek(reviewDate);          // e.g. "2026-W18"  — used as agg key
+        const weekStart = isoWeekMonday(reviewDate);     // e.g. "2026-04-27" — stored as weekOf
+
+        const k = email + '|' + weekKey;
+        if (!agg[k]) {
+          agg[k] = {
+            agentEmail: email,
+            agentName:  String(r['Reviewee'] || '').trim(),
+            weekOf:     weekStart,
+            scoreSum:   0,
+            count:      0,
+            passed:     0,
+            failed:     0
+          };
         }
-        if (!email) return;
-
-        const iqsStr  = r['IQS'] || r['IQS%'] || '';
-        const iqs     = parseFloat(String(iqsStr).replace('%', '')) || 0;
-        if (!iqs) return;
-
-        records.push({
-          agentEmail: email,
-          agentName:  r['Reviewee'] || '',
-          weekOf,
-          iqs,
-          reviews: parseInt(r['Reviews'])  || 0,
-          passed:  parseInt(r['Passed'])   || 0,
-          failed:  parseInt(r['Failed'])   || 0
-        });
+        agg[k].scoreSum += score;
+        agg[k].count    += 1;
+        if (score >= IQS_PASS_THRESHOLD) agg[k].passed++;
+        else                              agg[k].failed++;
       });
 
-      if (!records.length) throw new Error('No valid IQS records found.');
-      setUploadStatus('iqs', 'processing', `Uploading ${records.length} records…`);
+      // ── Step 2: Convert aggregated buckets to IQS records ───────────────
+      // IQS = average score across all reviews in the week
+      const records = Object.values(agg).map(a => ({
+        agentEmail: a.agentEmail,
+        agentName:  a.agentName,
+        weekOf:     a.weekOf,
+        iqs:        Math.round((a.scoreSum / a.count) * 100) / 100,  // 2 decimal places
+        reviews:    a.count,
+        passed:     a.passed,
+        failed:     a.failed
+      }));
+
+      if (!records.length) throw new Error('No valid review rows found. Check that "Reviewee email", "Review created", and "Review score" columns have data.');
+
+      // Summary info for the user
+      const weeks = [...new Set(records.map(r => isoWeek(r.weekOf)))].sort();
+      const weeksLabel = weeks.length === 1 ? weeks[0] : `${weeks[0]} → ${weeks[weeks.length - 1]}`;
+
+      setUploadStatus('iqs', 'processing', `Uploading ${records.length} agent-week records…`);
       const res = await apiPost({ action: 'uploadIQS', records, fileName: file.name });
-      setUploadStatus('iqs', 'ok', `✓ ${res.recordsAdded} records saved for week of ${weekOf}.`);
-      showToast(`✓ IQS: ${res.recordsAdded} records uploaded.`, '#10B981');
+      setUploadStatus('iqs', 'ok', `✓ ${res.recordsAdded} records saved · ${weeks.length} week(s): ${weeksLabel}`);
+      showToast(`✓ IQS: ${res.recordsAdded} records uploaded (${weeks.length} week(s)).`, '#10B981');
       await apiFetch();
       renderCurrentPage();
     } catch (err) {
@@ -2888,8 +2942,7 @@ async function startApp() {
   document.getElementById('user-avatar').textContent = initials;
   document.getElementById('user-name-display').textContent = currentUser.name || currentUser.email;
 
-  // Set default IQS week to today
-  document.getElementById('iqs-week-date').value = new Date().toISOString().split('T')[0];
+  // (IQS week is now auto-derived from Review created date — no date picker needed)
 
   // Load data
   try {
