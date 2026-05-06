@@ -2557,16 +2557,54 @@ function handleTPHFile(input) {
 // ─────────────────────────────────────────────────────────────
 // FILE UPLOAD HANDLERS — CSAT
 // ─────────────────────────────────────────────────────────────
+
+// Normalize any date value (JS Date object, Excel serial, or ISO string) → YYYY-MM-DD
+function normalizeCellDate(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    // SheetJS with cellDates:true returns a proper JS Date
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  // String or number: take first 10 chars (handles "2026-05-05T00:00:00.000Z" and plain "2026-05-05")
+  return String(val).trim().substring(0, 10);
+}
+
 function handleCSATFile(input) {
   const file = input.files[0]; if (!file) return;
   setUploadStatus('csat', 'processing', `Parsing ${file.name}…`);
   const reader = new FileReader();
   reader.onload = async e => {
     try {
-      // Parse XLSX using SheetJS
-      const wb = XLSX.read(e.target.result, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      // Parse XLSX using SheetJS — cellDates:true makes date cells return as JS Date objects
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+
+      // ── Auto-detect the correct sheet ────────────────────────────────
+      // The file may have multiple sheets (e.g. combined with an overview/guide).
+      // Find the first sheet that has a "Changes - Field name" column with
+      // "satisfaction_score" data — that is the real CSAT export sheet.
+      let ws = null;
+      let detectedSheetName = '';
+      for (const sheetName of wb.SheetNames) {
+        const candidate = wb.Sheets[sheetName];
+        const sampleRows = XLSX.utils.sheet_to_json(candidate, { defval: '', range: 0 });
+        const hasSatCol  = sampleRows.length > 0 && 'Changes - Field name' in sampleRows[0];
+        const hasSatData = sampleRows.some(r => String(r['Changes - Field name']).trim() === 'satisfaction_score');
+        if (hasSatCol && hasSatData) {
+          ws = candidate;
+          detectedSheetName = sheetName;
+          break;
+        }
+      }
+      if (!ws) {
+        const sheetList = wb.SheetNames.join(', ');
+        throw new Error(`No sheet with CSAT data found. Looked for a "Changes - Field name" column containing "satisfaction_score" rows across all sheets: ${sheetList}. Make sure you're uploading the Zendesk satisfaction score export.`);
+      }
+
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '', cellDates: true });
+      showToast(`📄 Using sheet "${detectedSheetName}" (${rows.length.toLocaleString()} rows)`, '#6366F1');
 
       // ── Build layered name → email lookup maps ──────────────────
       // Layer 1: explicit CSAT Name Map (highest priority — manually curated)
@@ -2619,8 +2657,8 @@ function handleCSATFile(input) {
 
         if (!email) { unmatchedSet.add(assignee); return; }
 
-        const date = String(r['Update - Date'] || '').trim().substring(0, 10);
-        if (!date) return;
+        const date = normalizeCellDate(r['Update - Date']);
+        if (!date || date.length < 10) return;
         const aggKey = email + '|' + date;
         if (!agg[aggKey]) agg[aggKey] = { agentEmail: email, date, good: 0, bad: 0 };
         const val = String(r['Changes - New value'] || '').toLowerCase();
