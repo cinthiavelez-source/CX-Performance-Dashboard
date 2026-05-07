@@ -989,7 +989,8 @@ const ALLOWED_DOMAIN      = 'cookunity.com';
 let currentUser = null;
 let cachedRole  = 'viewer';
 let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [], periodHierarchies: [] };
-let activeFilters = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
+let activeFilters    = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
+let cachedTeamEmails = null;   // Set<email> for active team filter; null = no team filter
 let currentPage   = 'dashboard';
 
 // Tab state
@@ -1159,13 +1160,13 @@ function isoWeekMonday(dateStr) {
 }
 
 function lastNWeeks(n) {
-  // Data-driven: derive last N ISO weeks from actual filtered data (not calendar)
+  // Data-driven: derive last N Sun–Sat weeks from actual data.
+  // Uses r.date (TPH/CSAT) and r.weekOf (IQS) so week boundaries always
+  // match CookUnity's Sun–Sat convention — same as the BI tool and week filter.
   const seen = new Set();
-  filterTPH().forEach(r  => { if (r.isoWeek) seen.add(r.isoWeek); });
-  filterCSAT().forEach(r => { if (r.isoWeek) seen.add(r.isoWeek); });
-  filterIQS().forEach(r  => {
-    if (r.weekOf) { const w = isoWeek(r.weekOf); if (w) seen.add(w); }
-  });
+  filterTPH().forEach(r  => { if (r.date)   { const s = sunSatWeekStart(r.date);   if (s) seen.add(s); } });
+  filterCSAT().forEach(r => { if (r.date)   { const s = sunSatWeekStart(r.date);   if (s) seen.add(s); } });
+  filterIQS().forEach(r  => { if (r.weekOf) { const s = sunSatWeekStart(r.weekOf); if (s) seen.add(s); } });
   if (seen.size) {
     const sorted = Array.from(seen).sort();
     return sorted.slice(-n);
@@ -1174,8 +1175,8 @@ function lastNWeeks(n) {
   const fallback = new Set(), weeks = [], now = new Date();
   for (let i = n + 2; i >= 0; i--) {
     const d = new Date(now); d.setDate(d.getDate() - i * 7);
-    const w = isoWeek(d.toISOString().split('T')[0]);
-    if (w && !fallback.has(w)) { fallback.add(w); weeks.push(w); }
+    const s = sunSatWeekStart(d.toISOString().split('T')[0]);
+    if (s && !fallback.has(s)) { fallback.add(s); weeks.push(s); }
   }
   return weeks.slice(-n);
 }
@@ -1210,8 +1211,10 @@ function lastNMonths(n) {
 }
 
 function fmtWeek(w) {
-  // YYYY-Wnn → "Wnn YYYY"
   if (!w) return '';
+  // Sun–Sat week start date (YYYY-MM-DD from sunSatWeekStart) → human label
+  if (w.length === 10) return formatWeekLabel(w);
+  // Legacy ISO week string (YYYY-Wnn) — kept for safety
   const [yr, wk] = w.split('-');
   return wk + ' ' + yr;
 }
@@ -1301,10 +1304,10 @@ function filterRowsByRole(rows, level) {
 function filterTPH(agentLevelOnly = false) {
   const specialists = agentLevelOnly ? getSpecialistEmails() : null;
   return cachedData.tph.filter(r => {
-    // Specialist filter only applied when building agent-level rows
     if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
-    if (activeFilters.am   && r.am !== activeFilters.am) return false;
-    if (activeFilters.team && r.supervisor !== activeFilters.team) return false;
+    if (activeFilters.am && r.am !== activeFilters.am) return false;
+    // Team filter: match against agents.team (column G), not supervisor name
+    if (cachedTeamEmails && !cachedTeamEmails.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
     const d = normDate(r.date);
     if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
@@ -1317,8 +1320,8 @@ function filterCSAT(agentLevelOnly = false) {
   const specialists = agentLevelOnly ? getSpecialistEmails() : null;
   return cachedData.csat.filter(r => {
     if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
-    if (activeFilters.am   && r.am !== activeFilters.am) return false;
-    if (activeFilters.team && r.supervisor !== activeFilters.team) return false;
+    if (activeFilters.am && r.am !== activeFilters.am) return false;
+    if (cachedTeamEmails && !cachedTeamEmails.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
     const d = normDate(r.date);
     if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
@@ -1331,8 +1334,8 @@ function filterIQS(agentLevelOnly = false) {
   const specialists = agentLevelOnly ? getSpecialistEmails() : null;
   return cachedData.iqs.filter(r => {
     if (specialists && !specialists.has((r.agentEmail || '').toLowerCase())) return false;
-    if (activeFilters.am   && r.am !== activeFilters.am) return false;
-    if (activeFilters.team && r.supervisor !== activeFilters.team) return false;
+    if (activeFilters.am && r.am !== activeFilters.am) return false;
+    if (cachedTeamEmails && !cachedTeamEmails.has((r.agentEmail || '').toLowerCase())) return false;
     if (activeFilters.tenure && r.tenureGroup !== activeFilters.tenure) return false;
     const d = normDate(r.weekOf);
     if (activeFilters.dateFrom && d && d < activeFilters.dateFrom) return false;
@@ -1345,16 +1348,18 @@ function filterIQS(agentLevelOnly = false) {
 // AGGREGATION HELPERS
 // ─────────────────────────────────────────────────────────────
 function aggTPHByPeriod(records, field) {
-  // field = 'isoWeek' or 'yearMonth'
-  // TPH = total tickets ÷ total working hours (sum of ticketTimeSec + productiveTimeSec → hours)
-  // AHT = sum of ticketTimeSec ÷ total tickets (ticket-weighted avg, mathematically identical)
+  // field = 'isoWeek'  → key = Sun–Sat week start date (sunSatWeekStart of r.date)
+  // field = 'yearMonth' → key = "YYYY-MM"
+  // TPH = Σ handledTickets ÷ (Σ ticketTimeSec / 3600)   — matches Code.gs computeSupKPIs
+  // AHT = ticket-weighted average of r.ahtSeconds
   const map = {};
   records.forEach(r => {
-    const k = r[field]; if (!k) return;
+    const k = field === 'isoWeek' ? sunSatWeekStart(r.date || '') : normYM(r[field]);
+    if (!k) return;
     if (!map[k]) map[k] = { tickets: 0, totalSec: 0, ahtWSum: 0 };
     const t = Number(r.handledTickets) || 0;
     map[k].tickets  += t;
-    map[k].totalSec += (Number(r.ticketTimeSec) || 0) + (Number(r.productiveTimeSec) || 0);
+    map[k].totalSec += (Number(r.ticketTimeSec) || 0);   // ticketTimeSec only (not + productiveTimeSec)
     map[k].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
   });
   const result = {};
@@ -1369,9 +1374,12 @@ function aggTPHByPeriod(records, field) {
 }
 
 function aggCSATByPeriod(records, field) {
+  // field = 'isoWeek'  → key = Sun–Sat week start date (sunSatWeekStart of r.date)
+  // field = 'yearMonth' → key = "YYYY-MM"
   const map = {};
   records.forEach(r => {
-    const k = r[field]; if (!k) return;
+    const k = field === 'isoWeek' ? sunSatWeekStart(r.date || '') : normYM(r[field]);
+    if (!k) return;
     if (!map[k]) map[k] = { good: 0, total: 0 };
     map[k].good  += Number(r.goodSurveys)  || 0;
     map[k].total += Number(r.totalSurveys) || 0;
@@ -1384,30 +1392,32 @@ function aggCSATByPeriod(records, field) {
 }
 
 function aggIQSByPeriod(records, field) {
-  // field = 'weekOf'  → key is ISO week string "YYYY-Wnn"  (matches chart week labels)
-  // field = 'month'   → key is "YYYY-MM"
+  // field = 'weekOf'  → key = Sun–Sat week start date (sunSatWeekStart of r.weekOf)
+  // field = 'month'   → key = "YYYY-MM"
+  // IQS = Σ passed ÷ Σ reviews  (volume-weighted; NOT average of r.iqs which is stored as whole %)
   const map = {};
   records.forEach(r => {
     let k;
     if (field === 'weekOf') {
-      // weekOf is stored as the Monday date "YYYY-MM-DD"; convert to ISO week key
-      k = isoWeek(r.weekOf);
+      k = sunSatWeekStart(r.weekOf || '');
     } else if (field === 'month') {
       k = normYM(r.weekOf);
     } else {
       k = r[field];
     }
     if (!k) return;
-    const iqs = Number(r.iqs);
-    if (!iqs) return;
-    if (!map[k]) map[k] = { sum: 0, cnt: 0, reviews: 0 };
-    map[k].sum += iqs;
-    map[k].cnt++;
-    map[k].reviews += Number(r.reviews) || 0;
+    const passed  = Number(r.passed  || 0);
+    const reviews = Number(r.reviews || 0);
+    if (reviews <= 0) return;
+    if (!map[k]) map[k] = { passed: 0, reviews: 0 };
+    map[k].passed  += passed;
+    map[k].reviews += reviews;
   });
   const result = {};
   Object.entries(map).forEach(([k, v]) => {
-    result[k] = v.cnt > 0 ? { score: Math.round((v.sum / v.cnt) * 100) / 100, reviews: v.reviews } : null;
+    result[k] = v.reviews > 0
+      ? { score: Math.round((v.passed / v.reviews) * 10000) / 100, reviews: v.reviews, passed: v.passed, failed: v.reviews - v.passed }
+      : null;
   });
   return result;
 }
@@ -1434,26 +1444,30 @@ function buildAllKPIData(level, periods, periodField, isMonthly) {
   // Store supervisor per agent key (for display when level=agent)
   const supOf = {};
 
-  const empty = () => ({ tickets: 0, totalSec: 0, ahtWSum: 0, good: 0, total: 0, iqsSum: 0, iqsCnt: 0 });
+  // accumulator: iqsPassed/iqsReviews replace iqsSum/iqsCnt so IQS = Σpassed÷Σreviews (not avg of r.iqs)
+  const empty = () => ({ tickets: 0, totalSec: 0, ahtWSum: 0, good: 0, total: 0, iqsPassed: 0, iqsReviews: 0 });
   const map = {};  // key → { periodKey: accumulator }
 
-  // TPH + AHT: accumulate raw seconds so TPH = totalTickets / (totalSec/3600), matching GSheets
+  // TPH + AHT — period key is Sun–Sat week start date for weekly, YYYY-MM for monthly
+  // TPH  = Σ handledTickets ÷ (Σ ticketTimeSec / 3600)  — matches Code.gs computeSupKPIs
+  // AHT  = ticket-weighted average of r.ahtSeconds
   tphRecs.forEach(r => {
-    const p = isMonthly ? normYM(r[periodField]) : r[periodField]; if (!periods.includes(p)) return;
+    const p = isMonthly ? normYM(r[periodField]) : sunSatWeekStart(r.date || '');
+    if (!p || !periods.includes(p)) return;
     const k = groupKey(r);
     if (!map[k]) map[k] = {};
     if (!map[k][p]) map[k][p] = empty();
     const t = Number(r.handledTickets) || 0;
     map[k][p].tickets  += t;
-    map[k][p].totalSec += (Number(r.ticketTimeSec) || 0) + (Number(r.productiveTimeSec) || 0);
+    map[k][p].totalSec += (Number(r.ticketTimeSec) || 0);   // ticketTimeSec only — NOT + productiveTimeSec
     map[k][p].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
     if (level === 'agent' && r.supervisor) supOf[k] = r.supervisor;
   });
 
-  // CSAT — period key depends on isMonthly
+  // CSAT — period key is Sun–Sat week start date for weekly, YYYY-MM for monthly
   csatRecs.forEach(r => {
-    const p = isMonthly ? normYM(r.yearMonth) : r[periodField];
-    if (!periods.includes(p)) return;
+    const p = isMonthly ? normYM(r.yearMonth) : sunSatWeekStart(r.date || '');
+    if (!p || !periods.includes(p)) return;
     const k = groupKey(r);
     if (!map[k]) map[k] = {};
     if (!map[k][p]) map[k][p] = empty();
@@ -1462,16 +1476,20 @@ function buildAllKPIData(level, periods, periodField, isMonthly) {
     if (level === 'agent' && r.supervisor) supOf[k] = r.supervisor;
   });
 
-  // IQS — convert weekOf to the right period key
+  // IQS — period key is Sun–Sat week start date for weekly, YYYY-MM for monthly
+  // Volume-weighted: accumulate passed/reviews rather than averaging r.iqs (which is stored as whole %)
   iqsRecs.forEach(r => {
     const wo = r.weekOf || '';
-    const p  = isMonthly ? String(wo).substring(0, 7) : isoWeek(wo);
+    const p  = isMonthly ? String(wo).substring(0, 7) : sunSatWeekStart(wo);
     if (!p || !periods.includes(p)) return;
     const k = groupKey(r);
     if (!map[k]) map[k] = {};
     if (!map[k][p]) map[k][p] = empty();
-    const iqsVal = Number(r.iqs);
-    if (iqsVal > 0) { map[k][p].iqsSum += iqsVal; map[k][p].iqsCnt++; }
+    const reviews = Number(r.reviews || 0);
+    if (reviews > 0) {
+      map[k][p].iqsPassed  += Number(r.passed  || 0);
+      map[k][p].iqsReviews += reviews;
+    }
     if (level === 'agent' && r.supervisor) supOf[k] = supOf[k] || r.supervisor;
   });
 
@@ -1482,10 +1500,10 @@ function buildAllKPIData(level, periods, periodField, isMonthly) {
       if (!d) return { tph: null, aht: null, csat: null, iqs: null };
       const hrs = (d.totalSec || 0) / 3600;
       return {
-        tph:  hrs > 0 ? Math.round((d.tickets / hrs) * 100) / 100 : null,
-        aht:  d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets)   : null,
-        csat: d.total > 0   ? Math.round((d.good / d.total) * 10000) / 100   : null,
-        iqs:  d.iqsCnt > 0  ? Math.round((d.iqsSum / d.iqsCnt) * 100) / 100  : null
+        tph:  hrs > 0          ? Math.round((d.tickets / hrs) * 100) / 100              : null,
+        aht:  d.tickets > 0    ? Math.round(d.ahtWSum / d.tickets)                      : null,
+        csat: d.total > 0      ? Math.round((d.good / d.total) * 10000) / 100           : null,
+        iqs:  d.iqsReviews > 0 ? Math.round((d.iqsPassed / d.iqsReviews) * 10000) / 100 : null
       };
     });
     rows.push({
@@ -1977,7 +1995,7 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
       if (!kpiMap[k][p]) kpiMap[k][p] = { tickets: 0, totalSec: 0, ahtWSum: 0 };
       const t = Number(r.handledTickets) || 0;
       kpiMap[k][p].tickets  += t;
-      kpiMap[k][p].totalSec += (Number(r.ticketTimeSec) || 0) + (Number(r.productiveTimeSec) || 0);
+      kpiMap[k][p].totalSec += (Number(r.ticketTimeSec) || 0);   // ticketTimeSec only
       kpiMap[k][p].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
     });
   } else if (kpi === 'csat') {
@@ -1990,14 +2008,17 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
       kpiMap[k][p].total += Number(r.totalSurveys) || 0;
     });
   } else if (kpi === 'iqs') {
+    // IQS = Σ passed ÷ Σ reviews (volume-weighted; NOT average of r.iqs which is stored as whole %)
     iqsRecs.forEach(r => {
       const p = normYM(r.weekOf);
       if (!periods.includes(p)) return;
+      const reviews = Number(r.reviews || 0);
+      if (reviews <= 0) return;
       const k = groupKey(r);
       if (!kpiMap[k]) kpiMap[k] = {};
-      if (!kpiMap[k][p]) kpiMap[k][p] = { sum: 0, cnt: 0 };
-      const iqs = Number(r.iqs);
-      if (iqs > 0) { kpiMap[k][p].sum += iqs; kpiMap[k][p].cnt++; }
+      if (!kpiMap[k][p]) kpiMap[k][p] = { passed: 0, reviews: 0 };
+      kpiMap[k][p].passed  += Number(r.passed  || 0);
+      kpiMap[k][p].reviews += reviews;
     });
   }
 
@@ -2006,10 +2027,10 @@ function buildAgentPeriodTableMonthly(level, kpi, periods) {
     const vals = periods.map(p => {
       const d = perPeriod[p];
       if (!d) return null;
-      if (kpi === 'tph') { const hrs=(d.totalSec||0)/3600; return hrs>0 ? Math.round((d.tickets/hrs)*100)/100 : null; }
-      if (kpi === 'aht') return d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets) : null;
-      if (kpi === 'csat') return d.total > 0 ? Math.round((d.good / d.total) * 10000) / 100 : null;
-      if (kpi === 'iqs')  return d.cnt > 0 ? Math.round((d.sum / d.cnt) * 100) / 100 : null;
+      if (kpi === 'tph')  { const hrs=(d.totalSec||0)/3600; return hrs>0 ? Math.round((d.tickets/hrs)*100)/100 : null; }
+      if (kpi === 'aht')  return d.tickets  > 0 ? Math.round(d.ahtWSum / d.tickets) : null;
+      if (kpi === 'csat') return d.total    > 0 ? Math.round((d.good / d.total) * 10000) / 100 : null;
+      if (kpi === 'iqs')  return d.reviews  > 0 ? Math.round((d.passed / d.reviews) * 10000) / 100 : null;
       return null;
     });
     const latestTwo = vals.filter(v => v !== null).slice(-2);
@@ -2168,15 +2189,16 @@ function buildLifetimeData(level) {
   const supOf = {};
   const map   = {};
 
-  const empty = () => ({ tickets: 0, totalSec: 0, ahtWSum: 0, good: 0, total: 0, iqsSum: 0, iqsCnt: 0, dateDays: new Set() });
+  // iqsPassed/iqsReviews for volume-weighted IQS = Σpassed÷Σreviews (not avg of r.iqs)
+  const empty = () => ({ tickets: 0, totalSec: 0, ahtWSum: 0, good: 0, total: 0, iqsPassed: 0, iqsReviews: 0, dateDays: new Set() });
 
-  // TPH + AHT: raw seconds so TPH = totalTickets / (totalSec/3600), matching GSheets
+  // TPH + AHT — ticketTimeSec only (NOT + productiveTimeSec) — matches Code.gs computeSupKPIs
   tphRecs.forEach(r => {
     const k = groupKey(r);
     if (!map[k]) map[k] = empty();
     const t = Number(r.handledTickets) || 0;
     map[k].tickets  += t;
-    map[k].totalSec += (Number(r.ticketTimeSec) || 0) + (Number(r.productiveTimeSec) || 0);
+    map[k].totalSec += (Number(r.ticketTimeSec) || 0);
     map[k].ahtWSum  += (Number(r.ahtSeconds) || 0) * t;
     if (r.date) map[k].dateDays.add(r.date);
     if (level === 'agent' && r.supervisor) supOf[k] = r.supervisor;
@@ -2191,12 +2213,14 @@ function buildLifetimeData(level) {
     if (level === 'agent' && r.supervisor) supOf[k] = supOf[k] || r.supervisor;
   });
 
-  // IQS
+  // IQS — Σ passed ÷ Σ reviews  (NOT average of r.iqs which is stored as whole %)
   iqsRecs.forEach(r => {
+    const reviews = Number(r.reviews || 0);
+    if (reviews <= 0) return;
     const k = groupKey(r);
     if (!map[k]) map[k] = empty();
-    const iqsVal = Number(r.iqs);
-    if (iqsVal > 0) { map[k].iqsSum += iqsVal; map[k].iqsCnt++; }
+    map[k].iqsPassed  += Number(r.passed  || 0);
+    map[k].iqsReviews += reviews;
     if (level === 'agent' && r.supervisor) supOf[k] = supOf[k] || r.supervisor;
   });
 
@@ -2206,12 +2230,12 @@ function buildLifetimeData(level) {
     supervisor: level === 'agent' ? (supOf[key] || '') : '',
     dataDays:   d.dateDays.size,
     tickets:    d.tickets,
-    tph:        (d.totalSec||0)>0 ? Math.round((d.tickets/((d.totalSec||0)/3600))*100)/100 : null,
-    aht:        d.tickets > 0 ? Math.round(d.ahtWSum / d.tickets)              : null,
-    csat:       d.total > 0   ? Math.round((d.good / d.total) * 10000) / 100   : null,
-    iqs:        d.iqsCnt > 0  ? Math.round((d.iqsSum / d.iqsCnt) * 100) / 100  : null,
+    tph:        (d.totalSec||0)>0    ? Math.round((d.tickets/((d.totalSec||0)/3600))*100)/100   : null,
+    aht:        d.tickets    > 0     ? Math.round(d.ahtWSum / d.tickets)                         : null,
+    csat:       d.total      > 0     ? Math.round((d.good / d.total) * 10000) / 100              : null,
+    iqs:        d.iqsReviews > 0     ? Math.round((d.iqsPassed / d.iqsReviews) * 10000) / 100   : null,
     surveys:    d.total,
-    iqsReviews: d.iqsCnt
+    iqsReviews: d.iqsReviews
   }));
 }
 
@@ -2609,11 +2633,23 @@ function applyFilters() {
   activeFilters.team     = document.getElementById('f-team').value;
   activeFilters.tenure   = document.getElementById('f-tenure').value;
 
-  // Update team active badge
-  const badge = document.getElementById('team-badge');
+  // Rebuild the team email cache (used by filterTPH/CSAT/IQS)
+  if (activeFilters.team) {
+    cachedTeamEmails = new Set();
+    cachedData.agents.forEach(a => {
+      if (String(a.team || '').trim() === activeFilters.team) {
+        cachedTeamEmails.add((a.email || '').toLowerCase());
+      }
+    });
+  } else {
+    cachedTeamEmails = null;
+  }
+
+  // Update active badge
+  const badge    = document.getElementById('team-badge');
   const badgeTxt = document.getElementById('team-badge-text');
   if (activeFilters.team) {
-    badgeTxt.textContent = '👥 ' + activeFilters.team;
+    badgeTxt.textContent = '🏷 ' + activeFilters.team;
     badge.style.display = '';
   } else if (activeFilters.am) {
     badgeTxt.textContent = '👥 ' + activeFilters.am + ' (all teams)';
@@ -2624,37 +2660,45 @@ function applyFilters() {
 
   const active = Object.values(activeFilters).some(v => v);
   document.getElementById('active-filter-badge').style.display = active ? '' : 'none';
-  // Filters changed — all page renders are stale
   filterVersion++;
   invalidateAllRenderCache();
   renderCurrentPage();
 }
 
 function onAMFilterChange() {
-  // Cascade: restrict the Team dropdown to supervisors under the selected AM
-  const am = document.getElementById('f-am').value;
+  // Cascade: when an AM is selected, restrict Team dropdown to teams
+  // that have at least one agent under that AM (per Agents sheet, column G).
+  const am      = document.getElementById('f-am').value;
   const teamSel = document.getElementById('f-team');
   const curTeam = teamSel.value;
-  const supMap = buildSupAMMap();  // { supervisorName: amName }
-  const allSups = Object.keys(supMap).sort();
-  const filtered = am ? allSups.filter(s => supMap[s] === am) : allSups;
+
+  const teamSet = new Set();
+  cachedData.agents.forEach(a => {
+    if ((!am || String(a.am || '').trim() === am) && a.team) {
+      teamSet.add(String(a.team).trim());
+    }
+  });
+  const teams = [...teamSet].sort();
+
   teamSel.innerHTML = '<option value="">All Teams</option>' +
-    filtered.map(s => `<option value="${escH(s)}">${escH(s)}</option>`).join('');
-  if (curTeam && filtered.includes(curTeam)) teamSel.value = curTeam;
+    teams.map(t => `<option value="${escH(t)}">${escH(t)}</option>`).join('');
+  if (curTeam && teams.includes(curTeam)) teamSel.value = curTeam;
   applyFilters();
 }
 
 function clearTeamFilter() {
   activeFilters.am   = '';
   activeFilters.team = '';
+  cachedTeamEmails   = null;
   document.getElementById('f-am').value   = '';
   document.getElementById('f-team').value = '';
   document.getElementById('team-badge').style.display = 'none';
-  onAMFilterChange();  // reset Team dropdown to full list
+  onAMFilterChange();
 }
 
 function clearFilters() {
-  activeFilters = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
+  activeFilters    = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
+  cachedTeamEmails = null;
   document.getElementById('f-from').value   = '';
   document.getElementById('f-to').value     = '';
   document.getElementById('f-am').value     = '';
@@ -2662,7 +2706,7 @@ function clearFilters() {
   document.getElementById('f-week').value   = '';
   document.getElementById('team-badge').style.display = 'none';
   document.getElementById('active-filter-badge').style.display = 'none';
-  onAMFilterChange();  // rebuild Team dropdown + re-render
+  onAMFilterChange();
 }
 
 // Returns { supervisorName → amName } map from all data sources
@@ -2676,15 +2720,13 @@ function buildSupAMMap() {
 }
 
 function populateSupervisorFilters() {
-  const amSet  = new Set();
-  const supMap = buildSupAMMap();
-
-  cachedData.agents.forEach(a => { if (a.am) amSet.add(a.am); });
+  // AM dropdown — source from Agents sheet (authoritative) + data records as fallback
+  const amSet = new Set();
+  cachedData.agents.forEach(a => { if (a.am) amSet.add(String(a.am).trim()); });
   [...cachedData.tph, ...cachedData.csat, ...cachedData.iqs].forEach(r => {
-    if (r.am) amSet.add(r.am);
+    if (r.am) amSet.add(String(r.am).trim());
   });
 
-  // AM dropdown
   const amEl = document.getElementById('f-am');
   if (amEl) {
     const curAM = amEl.value;
@@ -2693,10 +2735,12 @@ function populateSupervisorFilters() {
     if (curAM) amEl.value = curAM;
   }
 
-  // Team (supervisor) dropdown — cascade from current AM selection
+  // Team dropdown — sources from Agents sheet column G (team), cascaded by AM
+  // onAMFilterChange() handles both the Team rebuild AND calls applyFilters()
   onAMFilterChange();
 
-  // Per-page supervisor filters (tph / csat / iqs pages) — keep as flat list
+  // Per-chart supervisor filters (tph / csat / iqs trend pages) — still by supervisor name
+  const supMap  = buildSupAMMap();
   const allSups = Object.keys(supMap).sort();
   const flatOpts = '<option value="">All</option>' +
     allSups.map(s => `<option value="${escH(s)}">${escH(s)}</option>`).join('');
