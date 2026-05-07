@@ -2856,12 +2856,36 @@ function parseTSVorCSV(text) {
   return parseCSV(text);
 }
 
+// Convert a hh:mm:ss string to total seconds.
+// Used for Total Time / Total Handle Time columns which are in hours.
 function timeToSec(str) {
   if (!str) return 0;
-  const p = String(str).split(':').map(Number);
+  const p = String(str).trim().split(':').map(Number);
   if (p.length === 2) return (p[0] || 0) * 60 + (p[1] || 0);
   if (p.length === 3) return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
   return 0;
+}
+
+// Convert an AHT mm:ss string to total seconds.
+// The Avg Handle Time column is always in MINUTES:SECONDS (not hours).
+// Some exports add a trailing ":00" (centiseconds/hundredths), which is ignored.
+// Also handles decimal-minute values like "5.49" → 5.49 × 60 = 329s.
+//
+// Examples:
+//   "9:08:17" → 9×60 + 8  = 548s  (NOT 9×3600 which was the old bug)
+//   "5:29"    → 5×60 + 29 = 329s
+//   "5.49"    → Math.round(5.49×60) = 329s
+function ahtToSec(str) {
+  if (!str) return 0;
+  const s = String(str).trim();
+  if (s.includes(':')) {
+    const p = s.split(':').map(Number);
+    // Always: first part = minutes, second part = seconds, rest ignored
+    return (p[0] || 0) * 60 + (p[1] || 0);
+  }
+  // No colon — treat as decimal minutes
+  const mins = parseFloat(s);
+  return isNaN(mins) ? 0 : Math.round(mins * 60);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2917,7 +2941,7 @@ function handleTPHFile(input) {
         // AHT = Avg Handle Time (mm:ss) per agent per day.
         // At supervisor level the dashboard ticket-weights these values:
         //   Supervisor AHT = Σ(agentAHT × agentTickets) ÷ Σ(tickets)
-        const ahtSeconds = timeToSec(r['Avg Handle Time (mm:ss)']);
+        const ahtSeconds = ahtToSec(r['Avg Handle Time (mm:ss)']);
         const tph        = totalHrs > 0 ? Math.round((tickets / totalHrs) * 100) / 100 : 0;
 
         records.push({
