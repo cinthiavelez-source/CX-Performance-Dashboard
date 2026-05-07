@@ -1000,6 +1000,18 @@ let lifetimeLevel = 'agent';
 let lifetimeSortCol = 'tph', lifetimeSortDir = 'desc';
 let lbWeights = { tph: 40, csat: 40, iqs: 20, aht: 0 };
 
+// ─── KPI Performance Targets ────────────────────────────────
+// Used for all color-tiering throughout the dashboard.
+// tier1 (green) = at/above target
+// tier2 (yellow) = between warn and target
+// tier3 (red)   = below warn (or above for AHT)
+const KPI_TARGETS = {
+  tph:  { target: 5,   warn: 4,   higherBetter: true  },  // green ≥5,    yellow ≥4,    red <4
+  csat: { target: 80,  warn: 75,  higherBetter: true  },  // green ≥80%,  yellow ≥75%,  red <75%
+  iqs:  { target: 85,  warn: 80,  higherBetter: true  },  // green ≥85%,  yellow ≥80%,  red <80%
+  aht:  { target: 720, warn: 840, higherBetter: false },  // green ≤720s, yellow ≤840s, red >840s
+};
+
 // ─── Render cache ────────────────────────────────────────────
 // Tracks what each page was last rendered with so we can skip
 // expensive re-computation when nothing has actually changed.
@@ -1536,17 +1548,7 @@ function renderCombinedKPITable(containerId, level, rows, periods, fmtPeriod) {
 
   const showSup = level === 'agent';
   const KPIS    = ['tph', 'aht', 'csat', 'iqs'];
-
-  // Build per-period per-KPI value arrays for color tiering
-  // colVals[pi][kpi] = [val, val, ...]
-  const colVals = periods.map((_, pi) => {
-    const obj = {};
-    KPIS.forEach(k => { obj[k] = rows.map(r => r.allKpis[pi]?.[k] ?? null); });
-    return obj;
-  });
-
-  const higherBetter = { tph: true, aht: false, csat: true, iqs: true };
-  const kpiLabel     = { tph: 'TPH', aht: 'AHT', csat: 'CSAT', iqs: 'IQS' };
+  const kpiLabel = { tph: 'TPH', aht: 'AHT', csat: 'CSAT', iqs: 'IQS' };
 
   // Two-row header
   const periodHeaders = periods.map((p, pi) =>
@@ -1572,7 +1574,7 @@ function renderCombinedKPITable(containerId, level, rows, periods, fmtPeriod) {
     const dataCells = row.allKpis.map((kpis, pi) =>
       KPIS.map((k, ki) => {
         const v    = kpis[k];
-        const tier = colorTier(v, colVals[pi][k], higherBetter[k]);
+        const tier = colorTier(v, k);
         const div  = ki === 0 && pi > 0 ? ' period-divider' : '';
         return `<td class="cell-val ${tier}${div}">${fmtVal(v, k)}</td>`;
       }).join('')
@@ -1741,22 +1743,21 @@ function buildAgentPeriodTable(level, kpi, periods, periodField) {
   return rows;
 }
 
-// Color-tier for a value among all values in the same column
-function colorTier(val, allVals, higherIsBetter) {
-  if (val === null) return 'empty';
-  const clean = allVals.filter(v => v !== null);
-  if (!clean.length) return '';
-  clean.sort((a, b) => a - b);
-  const lo = clean[Math.floor(clean.length * 0.33)];
-  const hi = clean[Math.floor(clean.length * 0.66)];
-  if (higherIsBetter) {
-    if (val >= hi) return 'tier1';
-    if (val > lo)  return 'tier2';
-    return 'tier3';
+// Color-tier based on absolute KPI targets (KPI_TARGETS).
+// kpi = 'tph' | 'csat' | 'iqs' | 'aht'
+// Returns 'tier1' (green), 'tier2' (yellow), 'tier3' (red), or 'empty'
+function colorTier(val, kpi) {
+  if (val === null || val === undefined) return 'empty';
+  const t = KPI_TARGETS[kpi];
+  if (!t) return '';
+  if (t.higherBetter) {
+    if (val >= t.target) return 'tier1';   // at or above target → green
+    if (val >= t.warn)   return 'tier2';   // between warn and target → yellow
+    return 'tier3';                         // below warn → red
   } else {
-    if (val <= lo) return 'tier1';
-    if (val < hi)  return 'tier2';
-    return 'tier3';
+    if (val <= t.target) return 'tier1';   // at or below target → green
+    if (val <= t.warn)   return 'tier2';   // between target and warn → yellow
+    return 'tier3';                         // above warn → red
   }
 }
 
@@ -1866,15 +1867,15 @@ function renderDashboard() {
   const lastAHT  = findLast(weeks, w => tphByWk[w]?.aht);
   const prevAHT  = findLast(weeks.slice(0, -1), w => tphByWk[w]?.aht);
 
+  const tphVal  = tphByWk[lastTPH]?.tph   ?? null;
+  const csatVal = csatByWk[lastCSAT]?.score ?? null;
+  const iqsVal  = iqsByWk[lastIQS]?.score  ?? null;
+  const ahtVal  = tphByWk[lastAHT]?.aht    ?? null;
   document.getElementById('kpi-grid').innerHTML = [
-    buildKPICard('TPH', lastTPH != null ? tphByWk[lastTPH]?.tph?.toFixed(1) : '—',
-      'tickets / hour', wow(tphByWk[lastTPH]?.tph, tphByWk[prevTPH]?.tph, true), true),
-    buildKPICard('CSAT', lastCSAT != null ? csatByWk[lastCSAT]?.score?.toFixed(1) + '%' : '—',
-      'satisfaction score', wow(csatByWk[lastCSAT]?.score, csatByWk[prevCSAT]?.score, true), true),
-    buildKPICard('IQS', lastIQS != null ? iqsByWk[lastIQS]?.score?.toFixed(1) + '%' : '—',
-      'quality score', wow(iqsByWk[lastIQS]?.score, iqsByWk[prevIQS]?.score, true), true),
-    buildKPICard('AHT', lastAHT != null ? tphByWk[lastAHT]?.aht + 's' : '—',
-      'avg handle time', wow(tphByWk[lastAHT]?.aht, tphByWk[prevAHT]?.aht, false), false)
+    buildKPICard('TPH',  lastTPH  != null ? tphVal?.toFixed(1)    : '—', 'tickets / hour',    wow(tphVal,  tphByWk[prevTPH]?.tph,      true),  'tph',  tphVal),
+    buildKPICard('CSAT', lastCSAT != null ? csatVal?.toFixed(1)+'%' : '—', 'satisfaction score', wow(csatVal, csatByWk[prevCSAT]?.score, true),  'csat', csatVal),
+    buildKPICard('IQS',  lastIQS  != null ? iqsVal?.toFixed(1)+'%'  : '—', 'quality score',      wow(iqsVal,  iqsByWk[prevIQS]?.score,  true),  'iqs',  iqsVal),
+    buildKPICard('AHT',  lastAHT  != null ? ahtVal + 's'           : '—', 'avg handle time',    wow(ahtVal,  tphByWk[prevAHT]?.aht,    false), 'aht',  ahtVal),
   ].join('');
 
   // Trend charts
@@ -1902,8 +1903,11 @@ function renderDashboard() {
   }], { fmt: v => v != null ? Math.round(v) + 's' : '' });
 }
 
-function buildKPICard(label, value, sub, wowHtml, higherBetter) {
-  return `<div class="kpi-card">
+// kpiName = 'tph'|'csat'|'iqs'|'aht', rawVal = raw numeric value for color-tier lookup
+function buildKPICard(label, value, sub, wowHtml, kpiName, rawVal) {
+  const tierMap = { tier1: 'green', tier2: 'yellow', tier3: 'red' };
+  const cls = rawVal != null ? (tierMap[colorTier(rawVal, kpiName)] || '') : '';
+  return `<div class="kpi-card ${cls}">
     <div class="kpi-label">${label}</div>
     <div class="kpi-value">${escH(String(value))}</div>
     <div class="kpi-sub">${escH(sub)}</div>
@@ -2049,13 +2053,10 @@ function renderPeriodTable(containerId, rows, periods, kpi, higherIsBetter, fmtP
     return;
   }
 
-  // Compute per-column values for color tiering
-  const colVals = periods.map((_, ci) => rows.map(r => r.vals[ci]));
-
   const head = `<th>Name</th>${periods.map(p => `<th style="text-align:right">${fmtPeriod(p)}</th>`).join('')}<th style="text-align:right">Trend</th>`;
   const body = rows.map(row => {
-    const cells = row.vals.map((v, ci) => {
-      const tier = colorTier(v, colVals[ci], higherIsBetter);
+    const cells = row.vals.map(v => {
+      const tier = colorTier(v, kpi);
       return `<td class="cell-val ${tier}">${fmtVal(v, kpi)}</td>`;
     }).join('');
     const lastValid = row.vals.filter(v => v !== null);
@@ -2290,12 +2291,13 @@ function renderLifetimeTable() {
     `<th class="${thCls(c.key)}" style="text-align:${c.align}" onclick="sortLifetime('${c.key}')">${escH(c.label)}</th>`
   ).join('');
 
+  // Lifetime table inline colorizer — delegates to shared KPI_TARGETS via colorTier()
   const colorize = (val, col) => {
     if (val === null || val === undefined) return 'color:var(--muted)';
-    if (col === 'tph')  return val >= 5 ? 'color:var(--green)' : val >= 3.5 ? 'color:var(--yellow)' : 'color:var(--red)';
-    if (col === 'csat') return val >= 85 ? 'color:var(--green)' : val >= 75 ? 'color:var(--yellow)' : 'color:var(--red)';
-    if (col === 'iqs')  return val >= 90 ? 'color:var(--green)' : val >= 80 ? 'color:var(--yellow)' : 'color:var(--red)';
-    if (col === 'aht')  return val <= 600 ? 'color:var(--green)' : val <= 900 ? 'color:var(--yellow)' : 'color:var(--red)';
+    const tier = colorTier(val, col);
+    if (tier === 'tier1') return 'color:var(--green)';
+    if (tier === 'tier2') return 'color:var(--yellow)';
+    if (tier === 'tier3') return 'color:var(--red)';
     return '';
   };
 
