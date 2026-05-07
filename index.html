@@ -259,10 +259,19 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
   display:inline-flex; align-items:center; justify-content:center;
   width:28px; height:28px; border-radius:50%; font-size:.75rem; font-weight:800;
 }
-.rank-1  { background:#FFD700; color:#7B5800; }
-.rank-2  { background:#C0C0C0; color:#555; }
-.rank-3  { background:#CD7F32; color:#fff; }
-.rank-n  { background:var(--bg); color:var(--sub); }
+.rank-1   { background:#FFD700; color:#7B5800; }
+.rank-2   { background:#C0C0C0; color:#555; }
+.rank-3   { background:#CD7F32; color:#fff; }
+.rank-top { background:#FFF7ED; color:#92400E; border:1.5px solid #FDE68A; font-weight:800; }
+.rank-n   { background:var(--bg); color:var(--sub); }
+/* Top-10 row gets a subtle warm highlight */
+.lb-table tr.top10 td { background:#FFFDF5; }
+.lb-table tr.top10:hover td { background:#FFF7E6; }
+/* Period selector pill row */
+.lb-period-bar { display:flex; align-items:center; gap:.5rem; margin-bottom:1rem; flex-wrap:wrap; }
+.lb-period-btn { padding:.3rem .85rem; border-radius:2rem; font-size:.75rem; font-weight:700; border:1.5px solid var(--border); background:var(--bg); color:var(--sub); cursor:pointer; transition:all .15s; }
+.lb-period-btn.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+.lb-period-btn:hover:not(.active) { border-color:var(--brand); color:var(--brand); }
 .score-bar-wrap { display:flex; align-items:center; gap:.6rem; }
 .score-bar-bg { flex:1; height:8px; background:var(--border); border-radius:4px; min-width:80px; }
 .score-bar-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#4F46E5,#10B981); }
@@ -407,6 +416,54 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .charts-grid, .admin-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── HIERARCHY TAB ─────────────────────────────────── */
+.hier-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.hier-table th {
+  background:var(--bg); padding:.55rem .9rem; text-align:left;
+  font-size:.73rem; font-weight:700; color:var(--sub); text-transform:uppercase;
+  letter-spacing:.04em; border-bottom:2px solid var(--border); white-space:nowrap;
+}
+.hier-table th.num-col { text-align:right; }
+.hier-table td { padding:.5rem .9rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+
+/* AM rows — purple-tinted background */
+.hier-row-am > td { background:#F0EEFF !important; font-weight:800; }
+.hier-row-am:hover > td { background:#E8E1FF !important; }
+
+/* Supervisor rows — light grey */
+.hier-row-sup > td { background:#F8FAFC; font-weight:600; }
+.hier-row-sup:hover > td { background:#F1F5F9 !important; }
+
+/* Agent rows — white */
+.hier-row-agent > td { background:#FFFFFF; }
+.hier-row-agent:hover > td { background:#F8FAFC !important; }
+
+/* Indentation for name cell */
+.hier-name-am  { font-weight:800; color:var(--brand); }
+.hier-name-sup { padding-left:1.6rem !important; }
+.hier-name-agent { padding-left:3rem !important; color:var(--text); font-size:.8rem; }
+
+/* Collapse toggle arrow */
+.hier-toggle { cursor:pointer; user-select:none; }
+.hier-toggle-icon {
+  display:inline-block; font-size:.65rem; color:var(--sub);
+  margin-right:.3rem; transition:transform .15s; vertical-align:middle;
+}
+.hier-toggle-icon.open { transform:rotate(90deg); }
+
+/* KPI cells */
+.hier-table .num { text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+.hier-table .cell-val { text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+.hier-table .cell-val.tier1 { color:var(--green); }
+.hier-table .cell-val.tier2 { color:#92400E; }
+.hier-table .cell-val.tier3 { color:var(--red); }
+.hier-table .cell-val.empty { color:var(--muted); font-weight:400; }
+
+/* Month picker strip */
+.hier-controls { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; padding:.85rem 1.25rem; background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:1rem; }
+.hier-stat-pill { display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; font-weight:700; color:var(--sub); background:var(--bg); border:1px solid var(--border); border-radius:2rem; padding:.2rem .7rem; }
+
 </style>
 </head>
 <body>
@@ -465,6 +522,7 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
       <button class="nav-tab" onclick="navTo('iqs-prog')"  data-page="iqs-prog">IQS Trend</button>
       <button class="nav-tab" onclick="navTo('lifetime')"  data-page="lifetime">All-Time</button>
       <button class="nav-tab" onclick="navTo('leaderboard')" data-page="leaderboard">🏆 Leaderboard</button>
+      <button class="nav-tab" onclick="navTo('hierarchy')"   data-page="hierarchy">🏗 Hierarchy</button>
       <button class="nav-tab" id="admin-tab" style="display:none" onclick="navTo('admin')" data-page="admin">⚙ Admin</button>
     </div>
     <div class="navbar-user">
@@ -728,11 +786,55 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
       <div class="card">
         <div class="table-toolbar">
           <div class="table-toolbar-left">
-            <span style="font-size:.8rem;color:var(--sub)">Showing agent-level ranking. Date filters apply.</span>
+            <div class="lb-period-bar">
+              <span style="font-size:.75rem;font-weight:700;color:var(--sub)">Period:</span>
+              <button class="lb-period-btn active" id="lbp-month"      onclick="setLbPeriod('month')">Current Month</button>
+              <button class="lb-period-btn"        id="lbp-last_month" onclick="setLbPeriod('last_month')">Last Month</button>
+              <button class="lb-period-btn"        id="lbp-last4weeks" onclick="setLbPeriod('last4weeks')">Last 4 Weeks</button>
+              <button class="lb-period-btn"        id="lbp-all"        onclick="setLbPeriod('all')">All Time</button>
+            </div>
           </div>
           <button class="btn-download" onclick="downloadLeaderboardCSV()">⬇ Download CSV</button>
         </div>
         <div class="agent-table-wrap" id="leaderboard-container"></div>
+      </div>
+    </div>
+
+    <!-- ── PAGE 9: HIERARCHY ─────────────────────────────── -->
+    <div id="page-hierarchy" class="page">
+      <div class="page-title">🏗 Team Hierarchy</div>
+
+      <!-- Controls row -->
+      <div class="hier-controls">
+        <div class="filter-group">
+          <label>📅 Month</label>
+          <select id="hier-month-select" onchange="onHierMonthChange()" style="min-width:140px"></select>
+        </div>
+        <div class="divider"></div>
+        <button class="btn-secondary" onclick="hierExpandAll(true)"  style="font-size:.78rem">▶ Expand All</button>
+        <button class="btn-secondary" onclick="hierExpandAll(false)" style="font-size:.78rem">▼ Collapse All</button>
+        <div id="hier-stats" style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap"></div>
+      </div>
+
+      <!-- Tree table -->
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="hier-table" id="hier-table">
+            <thead>
+              <tr>
+                <th style="min-width:200px">Name</th>
+                <th class="num-col">Tickets</th>
+                <th class="num-col">TPH</th>
+                <th class="num-col">AHT</th>
+                <th class="num-col">CSAT %</th>
+                <th class="num-col">IQS %</th>
+              </tr>
+            </thead>
+            <tbody id="hier-tbody">
+              <!-- Injected by renderHierarchyTab() -->
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -999,6 +1101,10 @@ let monthlyLevel = 'agent', monthlyKPI = 'tph';
 let lifetimeLevel = 'agent';
 let lifetimeSortCol = 'tph', lifetimeSortDir = 'desc';
 let lbWeights = { tph: 40, csat: 40, iqs: 20, aht: 0 };
+let lbPeriod  = 'month';   // 'month' | 'last_month' | 'last4weeks' | 'all'
+
+let hierMonth     = '';    // YYYY-MM; '' = auto-pick current/latest month
+const hierOpen    = {};    // { 'am:Name': bool, 'sup:Name': bool } — expand state
 
 // ─── KPI Performance Targets ────────────────────────────────
 // Used for all color-tiering throughout the dashboard.
@@ -1020,13 +1126,20 @@ let dataVersion   = 0;
 let filterVersion = 0;
 const renderCache = {};   // { pageId → cacheKey string }
 
+// ─── Performance: track when data was last fetched ───────────
+// Used to avoid re-fetching on every tab-switch.
+let lastFetchTime = 0;                         // ms since epoch
+const STALE_AFTER_MS = 10 * 60 * 1000;        // 10 min → silent background refresh
+const REFETCH_AFTER_MS = 5 * 60 * 1000;       // 5 min → interval-based refresh
+
 function pageParamsKey(page) {
   // Encode the page-specific UI state that affects what gets rendered.
   switch (page) {
     case 'weekly':      return weeklyLevel  + '_' + weeklyKPI;
     case 'monthly':     return monthlyLevel + '_' + monthlyKPI;
     case 'lifetime':    return lifetimeLevel + '_' + lifetimeSortCol + '_' + lifetimeSortDir;
-    case 'leaderboard': return JSON.stringify(lbWeights);
+    case 'leaderboard': return JSON.stringify(lbWeights) + '_' + lbPeriod;
+    case 'hierarchy':   return hierMonth;
     default:            return '';
   }
 }
@@ -1087,8 +1200,10 @@ function parseJwt(token) {
 // ─────────────────────────────────────────────────────────────
 // API
 // ─────────────────────────────────────────────────────────────
-async function apiFetch() {
-  showLoading(true, 'Loading data…');
+// silent=true → skip the full loading overlay (used for background refreshes so
+// the user doesn't get a white flash when switching back to the tab).
+async function apiFetch(silent = false) {
+  if (!silent) showLoading(true, 'Loading data…');
   try {
     const url = `${SCRIPT_URL}?email=${encodeURIComponent(currentUser.email)}`;
     const res = await fetch(url, { redirect: 'follow' });
@@ -1108,6 +1223,7 @@ async function apiFetch() {
     cachedData.dataWindow        = data.dataWindow        || null;
 
     // New data from server — all cached renders are now stale
+    lastFetchTime = Date.now();
     dataVersion++;
     invalidateAllRenderCache();
 
@@ -1123,10 +1239,10 @@ async function apiFetch() {
       pill.title = `Data loaded from ${cutoff} onwards. To load more history, admins can add ?months=24 to the app URL.`;
     }
   } catch (err) {
-    showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
+    if (!silent) showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
     throw err;
   } finally {
-    showLoading(false);
+    if (!silent) showLoading(false);
   }
 }
 
@@ -2365,17 +2481,82 @@ function updateWeights() {
   markCacheValid('leaderboard');
 }
 
+function setLbPeriod(p) {
+  lbPeriod = p;
+  ['month','last_month','last4weeks','all'].forEach(id => {
+    const btn = document.getElementById('lbp-' + id);
+    if (btn) btn.classList.toggle('active', id === p);
+  });
+  renderLeaderboard();
+  markCacheValid('leaderboard');
+}
+
+// Returns { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } for the active leaderboard period,
+// or null for 'all' (no date restriction).
+function lbPeriodRange() {
+  const now  = new Date();
+  const yyyy = now.getFullYear();
+  const mm   = now.getMonth();   // 0-based
+
+  if (lbPeriod === 'month') {
+    const from = new Date(yyyy, mm, 1);
+    const to   = new Date(yyyy, mm + 1, 0);
+    return { from: from.toISOString().substring(0, 10), to: to.toISOString().substring(0, 10) };
+  }
+  if (lbPeriod === 'last_month') {
+    const from = new Date(yyyy, mm - 1, 1);
+    const to   = new Date(yyyy, mm, 0);
+    return { from: from.toISOString().substring(0, 10), to: to.toISOString().substring(0, 10) };
+  }
+  if (lbPeriod === 'last4weeks') {
+    const to   = new Date(now);
+    const from = new Date(now); from.setDate(from.getDate() - 27);
+    return { from: from.toISOString().substring(0, 10), to: to.toISOString().substring(0, 10) };
+  }
+  return null;  // 'all' — no restriction
+}
+
 function buildLeaderboardData() {
-  // 1. Get raw lifetime data at agent level (respects global filters).
-  // getSpecialistEmails() already enforces role=Specialist + team=CU-Ops/CX + status=active,
-  // and filterTPH/CSAT/IQS (called inside buildLifetimeData) apply that automatically.
-  // We add an explicit check here so the leaderboard is gated even if called directly.
+  // 1. Build period-filtered lifetime data for the active lbPeriod.
+  //    We temporarily overlay date bounds on cachedData records using the period range,
+  //    then delegate to buildLifetimeData which calls filterTPH/CSAT/IQS internally.
+  //    Those filters already respect activeFilters.dateFrom/To — we extend them
+  //    with the leaderboard-specific period by pre-filtering here.
+  const range = lbPeriodRange();   // null means 'all time'
+
+  // Derive period label shown in the table footer
+  const _now = new Date();
+  const _periodLabel = lbPeriod === 'month'
+    ? _now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : lbPeriod === 'last_month'
+    ? new Date(_now.getFullYear(), _now.getMonth() - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : lbPeriod === 'last4weeks' ? 'Last 4 Weeks' : 'All Time';
+  window._lbPeriodLabel = _periodLabel;
+
+  // Filter records to the leaderboard period (additive with global date filters)
+  const inRange = r => {
+    if (!range) return true;
+    const d = normDate(r.date || r.weekOf || '');
+    return d >= range.from && d <= range.to;
+  };
+
+  // Temporarily shadow cachedData with period-filtered records so buildLifetimeData picks them up
+  const _saved = { tph: cachedData.tph, csat: cachedData.csat, iqs: cachedData.iqs };
+  cachedData.tph  = cachedData.tph.filter(inRange);
+  cachedData.csat = cachedData.csat.filter(inRange);
+  cachedData.iqs  = cachedData.iqs.filter(inRange);
+
   const eligible = getSpecialistEmails();
   const rows = buildLifetimeData('agent').filter(r => {
     if (r.tph === null && r.csat === null && r.iqs === null) return false;
     if (eligible && !eligible.has((r.key || '').toLowerCase())) return false;
     return true;
   });
+
+  // Restore original cachedData
+  cachedData.tph  = _saved.tph;
+  cachedData.csat = _saved.csat;
+  cachedData.iqs  = _saved.iqs;
   if (!rows.length) return [];
 
   // 2. Min-max normalise each KPI to 0-100 across all agents
@@ -2425,8 +2606,11 @@ function renderLeaderboard() {
 
   const body = rows.map((r, i) => {
     const rank   = i + 1;
-    const rCls   = rank <= 3 ? `rank-${rank}` : 'rank-n';
-    const badge  = rank <= 3 ? ['🥇','🥈','🥉'][rank - 1] : rank;
+    const isTop3 = rank <= 3;
+    const isTop10 = rank <= 10;
+    const rCls   = isTop3 ? `rank-${rank}` : isTop10 ? 'rank-top' : 'rank-n';
+    const badge  = isTop3 ? ['🥇','🥈','🥉'][rank - 1] : rank;
+    const rowCls = isTop10 ? ' class="top10"' : '';
 
     const scoreBar = `
       <div class="score-bar-wrap">
@@ -2448,7 +2632,7 @@ function renderLeaderboard() {
       w.aht  > 0 ? `<td class="num" style="color:var(--sub)">${r.normAht  !== null ? r.normAht  : '—'}</td>` : '',
     ].filter(Boolean).join('');
 
-    return `<tr>
+    return `<tr${rowCls}>
       <td style="text-align:center"><span class="rank-badge ${rCls}">${badge}</span></td>
       <td style="font-weight:600;font-size:.82rem">${escH(r.label)}</td>
       <td style="font-size:.75rem;color:var(--sub)">${escH(r.supervisor)}</td>
@@ -2482,7 +2666,7 @@ function renderLeaderboard() {
         <tbody>${body}</tbody>
       </table>
       <p style="font-size:.72rem;color:var(--muted);margin-top:.75rem">
-        Scores are normalised 0–100 within the current filtered dataset. An agent with a null KPI has that KPI excluded and the remaining weights are redistributed proportionally.
+        Period: <strong>${window._lbPeriodLabel || ''}</strong> · Showing top ${rows.length} agents · Scores normalised 0–100 within this dataset. Agents missing a KPI have its weight redistributed proportionally.
       </p>`;
 }
 
@@ -2510,9 +2694,278 @@ function downloadLeaderboardCSV() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// HIERARCHY TAB
+// ─────────────────────────────────────────────────────────────
+
+/** Populate the month picker, then render the tree. */
+function renderHierarchyTab() {
+  // Collect all available YYYY-MM values from TPH, CSAT and IQS data
+  const seen = new Set();
+  cachedData.tph.forEach(r  => { const ym = normYM(r.date    || ''); if (ym) seen.add(ym); });
+  cachedData.csat.forEach(r => { const ym = normYM(r.date    || ''); if (ym) seen.add(ym); });
+  cachedData.iqs.forEach(r  => { const ym = normYM(r.weekOf  || ''); if (ym) seen.add(ym); });
+
+  const months = Array.from(seen).sort().reverse();   // newest first
+
+  // Default: current calendar month, or latest in data
+  const nowYM = normYM(new Date().toISOString());
+  const defaultYM = months.includes(nowYM) ? nowYM : (months[0] || nowYM);
+  const ym = hierMonth || defaultYM;
+
+  // Rebuild month picker
+  const sel = document.getElementById('hier-month-select');
+  if (sel) {
+    sel.innerHTML = months.map(m => {
+      const [yr, mo] = m.split('-');
+      const label = new Date(+yr, +mo - 1, 1).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+      return `<option value="${m}"${m === ym ? ' selected' : ''}>${label}</option>`;
+    }).join('');
+  }
+
+  // Build and render the tree
+  const tree = buildHierTree(ym);
+  renderHierTree(tree, ym);
+}
+
+/** Handle month picker change. */
+function onHierMonthChange() {
+  hierMonth = document.getElementById('hier-month-select')?.value || '';
+  // Invalidate cache so the page re-renders
+  delete renderCache['hierarchy'];
+  renderHierarchyTab();
+  markCacheValid('hierarchy');
+}
+
+/**
+ * Aggregate TPH/CSAT/IQS records for a single month (YYYY-MM)
+ * into an AM → Supervisor → Agent tree.
+ */
+function buildHierTree(ym) {
+  // Step 1: accumulate per-agent-email accumulators
+  const acc = {};   // email → { am, supervisor, name, tickets, totalSec, ahtWSum, good, total, iqsPassed, iqsReviews }
+
+  const mkAcc = (r, nameField) => ({
+    am: r.am || '(No AM)',
+    supervisor: r.supervisor || '(No Supervisor)',
+    name: r[nameField] || r.agentEmail || '?',
+    tickets: 0, totalSec: 0, ahtWSum: 0,
+    good: 0, total: 0, iqsPassed: 0, iqsReviews: 0
+  });
+
+  // TPH
+  cachedData.tph.forEach(r => {
+    if (!r.date || normYM(r.date) !== ym) return;
+    const email = (r.agentEmail || '').toLowerCase();
+    if (!email) return;
+    if (!acc[email]) acc[email] = mkAcc(r, 'agentName');
+    const t = Number(r.handledTickets) || 0;
+    acc[email].tickets  += t;
+    acc[email].totalSec += Number(r.ticketTimeSec) || 0;
+    acc[email].ahtWSum  += (Number(r.ahtSeconds)   || 0) * t;
+    // Keep the latest am/supervisor/name we see for this agent
+    if (r.am)         acc[email].am = r.am;
+    if (r.supervisor) acc[email].supervisor = r.supervisor;
+    if (r.agentName)  acc[email].name = r.agentName;
+  });
+
+  // CSAT — no agentName field, so fall back to existing entry name or email
+  cachedData.csat.forEach(r => {
+    if (!r.date || normYM(r.date) !== ym) return;
+    const email = (r.agentEmail || '').toLowerCase();
+    if (!email) return;
+    if (!acc[email]) acc[email] = mkAcc(r, 'agentEmail');
+    acc[email].good  += Number(r.goodSurveys)  || 0;
+    acc[email].total += Number(r.totalSurveys) || 0;
+  });
+
+  // IQS
+  cachedData.iqs.forEach(r => {
+    const wo = r.weekOf || '';
+    if (!wo || normYM(wo) !== ym) return;
+    const email = (r.agentEmail || '').toLowerCase();
+    if (!email) return;
+    if (!acc[email]) acc[email] = mkAcc(r, 'agentName');
+    const reviews = Number(r.reviews || 0);
+    if (reviews > 0) {
+      acc[email].iqsPassed  += Number(r.passed || 0);
+      acc[email].iqsReviews += reviews;
+    }
+  });
+
+  // Enrich names from agents sheet if available
+  if (cachedData.agents.length) {
+    cachedData.agents.forEach(a => {
+      const email = (a.email || '').toLowerCase();
+      if (email && acc[email] && a.name) acc[email].name = a.name;
+    });
+  }
+
+  // Step 2: group agents by AM → Supervisor
+  const amMap = {};   // am → { supervisor → [agentRows] }
+  Object.entries(acc).forEach(([email, d]) => {
+    const am  = d.am;
+    const sup = d.supervisor;
+    if (!amMap[am]) amMap[am] = {};
+    if (!amMap[am][sup]) amMap[am][sup] = [];
+    amMap[am][sup].push({ email, ...d, kpis: hierKPIs(d) });
+  });
+
+  // Step 3: build sorted tree
+  const ams = Object.entries(amMap).map(([amName, supMap]) => {
+    const supervisors = Object.entries(supMap).map(([supName, agents]) => {
+      agents.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+      const supAgg = hierAggregate(agents);
+      return { name: supName, kpis: hierKPIs(supAgg), agentCount: agents.length, agents };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    const allAgents = supervisors.flatMap(s => s.agents);
+    const amAgg = hierAggregate(allAgents);
+    return {
+      name: amName, kpis: hierKPIs(amAgg),
+      agentCount: allAgents.length, supervisors
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  return { ams };
+}
+
+/** Compute KPIs from a raw accumulator object. */
+function hierKPIs(d) {
+  const hrs = (d.totalSec || 0) / 3600;
+  return {
+    tickets: d.tickets,
+    tph:  hrs > 0          ? Math.round((d.tickets / hrs) * 100) / 100              : null,
+    aht:  d.tickets > 0    ? Math.round(d.ahtWSum / d.tickets)                      : null,
+    csat: d.total > 0      ? Math.round((d.good / d.total) * 10000) / 100           : null,
+    iqs:  d.iqsReviews > 0 ? Math.round((d.iqsPassed / d.iqsReviews) * 10000) / 100 : null
+  };
+}
+
+/** Sum raw accumulator fields from an array of agent entries. */
+function hierAggregate(agents) {
+  const r = { tickets:0, totalSec:0, ahtWSum:0, good:0, total:0, iqsPassed:0, iqsReviews:0 };
+  agents.forEach(a => {
+    r.tickets    += a.tickets;
+    r.totalSec   += a.totalSec;
+    r.ahtWSum    += a.ahtWSum;
+    r.good       += a.good;
+    r.total      += a.total;
+    r.iqsPassed  += a.iqsPassed;
+    r.iqsReviews += a.iqsReviews;
+  });
+  return r;
+}
+
+/** Expand / collapse ALL AM and Supervisor nodes. */
+function hierExpandAll(expand) {
+  document.querySelectorAll('[data-hier-group]').forEach(el => {
+    el.style.display = expand ? '' : 'none';
+    const id = el.dataset.hierGroup;
+    hierOpen[id] = expand;
+  });
+  document.querySelectorAll('[data-hier-toggle]').forEach(el => {
+    el.classList.toggle('open', expand);
+  });
+}
+
+/** Toggle a single group (AM or Supervisor). */
+function hierToggle(id) {
+  const rows = document.querySelectorAll(`[data-hier-group="${id}"]`);
+  const isOpen = hierOpen[id] !== false; // default open
+  const nowOpen = !isOpen;
+  hierOpen[id] = nowOpen;
+  rows.forEach(row => { row.style.display = nowOpen ? '' : 'none'; });
+  const icon = document.querySelector(`[data-hier-toggle="${id}"]`);
+  if (icon) icon.classList.toggle('open', nowOpen);
+}
+
+/** Render a KPI cell using colorTier. */
+function hierCell(val, kpi, fmt) {
+  if (val === null || val === undefined) return `<td class="cell-val empty">—</td>`;
+  const tier = colorTier(val, kpi);
+  return `<td class="cell-val ${tier}">${fmt(val)}</td>`;
+}
+
+/** Render the hierarchy tree into #hier-tbody. */
+function renderHierTree(tree, ym) {
+  const tbody = document.getElementById('hier-tbody');
+  const stats = document.getElementById('hier-stats');
+  if (!tbody) return;
+
+  if (!tree.ams.length) {
+    tbody.closest('table').parentElement.parentElement.innerHTML =
+      `<div class="empty-state"><div class="empty-icon">📭</div><p>No data for ${ym}. Upload data for this month first.</p></div>`;
+    if (stats) stats.innerHTML = '';
+    return;
+  }
+
+  // Summary pills
+  const totalAgents  = tree.ams.reduce((s, am) => s + am.agentCount, 0);
+  const totalSups    = tree.ams.reduce((s, am) => s + am.supervisors.length, 0);
+  if (stats) {
+    stats.innerHTML =
+      `<span class="hier-stat-pill">👤 ${totalAgents} agents</span>` +
+      `<span class="hier-stat-pill">🧑‍💼 ${totalSups} supervisors</span>` +
+      `<span class="hier-stat-pill">🏢 ${tree.ams.length} AMs</span>`;
+  }
+
+  const rows = [];
+
+  tree.ams.forEach((am, ai) => {
+    const amId   = `am-${ai}`;
+    const isAmOpen = hierOpen[amId] !== false; // default open
+
+    rows.push(`<tr class="hier-row-am">
+      <td class="hier-name-am">
+        <span class="hier-toggle-icon${isAmOpen ? ' open' : ''}" data-hier-toggle="${amId}" onclick="hierToggle('${amId}')">▶</span>
+        <span onclick="hierToggle('${amId}')" class="hier-toggle">${escH(am.name)}</span>
+      </td>
+      <td class="num">${am.kpis.tickets > 0 ? am.kpis.tickets.toLocaleString() : '—'}</td>
+      ${hierCell(am.kpis.tph,  'tph',  v => v.toFixed(2))}
+      ${hierCell(am.kpis.aht,  'aht',  v => fmtVal(v,'aht'))}
+      ${hierCell(am.kpis.csat, 'csat', v => v.toFixed(1) + '%')}
+      ${hierCell(am.kpis.iqs,  'iqs',  v => v.toFixed(1) + '%')}
+    </tr>`);
+
+    am.supervisors.forEach((sup, si) => {
+      const supId  = `am-${ai}-sup-${si}`;
+      const isSupOpen = hierOpen[supId] !== false; // default open
+      const showSup   = isAmOpen;
+
+      rows.push(`<tr class="hier-row-sup" data-hier-group="${amId}" style="${showSup ? '' : 'display:none'}">
+        <td class="hier-name-sup">
+          <span class="hier-toggle-icon${isSupOpen ? ' open' : ''}" data-hier-toggle="${supId}" onclick="hierToggle('${supId}')">▶</span>
+          <span onclick="hierToggle('${supId}')" class="hier-toggle">${escH(sup.name)}</span>
+          <span style="font-size:.7rem;color:var(--muted);margin-left:.4rem">(${sup.agentCount})</span>
+        </td>
+        <td class="num">${sup.kpis.tickets > 0 ? sup.kpis.tickets.toLocaleString() : '—'}</td>
+        ${hierCell(sup.kpis.tph,  'tph',  v => v.toFixed(2))}
+        ${hierCell(sup.kpis.aht,  'aht',  v => fmtVal(v,'aht'))}
+        ${hierCell(sup.kpis.csat, 'csat', v => v.toFixed(1) + '%')}
+        ${hierCell(sup.kpis.iqs,  'iqs',  v => v.toFixed(1) + '%')}
+      </tr>`);
+
+      sup.agents.forEach(agent => {
+        const showAgent = isAmOpen && isSupOpen;
+        rows.push(`<tr class="hier-row-agent" data-hier-group="${supId}" style="${showAgent ? '' : 'display:none'}">
+          <td class="hier-name-agent">${escH(agent.name || agent.email)}</td>
+          <td class="num">${agent.kpis.tickets > 0 ? agent.kpis.tickets.toLocaleString() : '—'}</td>
+          ${hierCell(agent.kpis.tph,  'tph',  v => v.toFixed(2))}
+          ${hierCell(agent.kpis.aht,  'aht',  v => fmtVal(v,'aht'))}
+          ${hierCell(agent.kpis.csat, 'csat', v => v.toFixed(1) + '%')}
+          ${hierCell(agent.kpis.iqs,  'iqs',  v => v.toFixed(1) + '%')}
+        </tr>`);
+      });
+    });
+  });
+
+  tbody.innerHTML = rows.join('');
+}
+
+// ─────────────────────────────────────────────────────────────
 // NAVIGATION
 // ─────────────────────────────────────────────────────────────
-const PAGES = ['dashboard','weekly','monthly','tph-aht','csat-prog','iqs-prog','lifetime','leaderboard','admin'];
+const PAGES = ['dashboard','weekly','monthly','tph-aht','csat-prog','iqs-prog','lifetime','leaderboard','hierarchy','admin'];
 
 function navTo(page) {
   currentPage = page;
@@ -2547,6 +3000,7 @@ function _doRender(page) {
   else if (page === 'iqs-prog')    renderIQSProgChart();
   else if (page === 'lifetime')    renderLifetimeTable();
   else if (page === 'leaderboard') renderLeaderboard();
+  else if (page === 'hierarchy')   renderHierarchyTab();
   else if (page === 'admin')       renderAdminPage();
 }
 
@@ -3641,10 +4095,30 @@ async function startApp() {
   setupDropZone('iqs-drop',         'iqs-file');
   setupDropZone('period-hier-drop', 'period-hier-file');
 
-  // Auto-refresh every 5 minutes
+  // Auto-refresh: check every 60 s, but only fetch if the tab is visible
+  // AND data is at least REFETCH_AFTER_MS old.  This prevents the classic
+  // Chrome pattern where the interval fires the moment you return to the tab
+  // (because Chrome throttled it while it was in the background) and triggers
+  // a slow Apps-Script round-trip that freezes the UI for ~10 s.
   setInterval(async () => {
-    try { await apiFetch(); renderCurrentPage(); } catch(e) {}
-  }, 300000);
+    if (document.hidden) return;                              // tab not visible → skip
+    if (Date.now() - lastFetchTime < REFETCH_AFTER_MS) return; // fetched recently → skip
+    try { await apiFetch(true); renderCurrentPage(); } catch(e) {}
+  }, 60000); // check every 60 s (Chrome only fires this when tab is active anyway)
+
+  // When the user switches back to this tab:
+  //  • If data is fresh (< STALE_AFTER_MS) → just re-render instantly (cache hit, 0 ms)
+  //  • If data is stale → silently refresh in the background (no loading overlay)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !currentUser) return;
+    if (Date.now() - lastFetchTime > STALE_AFTER_MS) {
+      // Data is old — refresh silently then re-render
+      apiFetch(true).then(() => renderCurrentPage()).catch(() => {});
+    } else {
+      // Data is fresh — just make sure current page looks right (instant)
+      renderCurrentPage();
+    }
+  });
 }
 
 // ─── Entry point ─────────────────────────────────────────────
