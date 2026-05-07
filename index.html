@@ -495,14 +495,22 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
       <span class="badge-x">✕</span>
     </span>
     <div class="divider"></div>
-    <!-- Date range -->
+    <!-- Week picker (Sun–Sat) -->
+    <div class="filter-group">
+      <label>📅 Week</label>
+      <select id="f-week" onchange="onWeekFilterChange()" style="min-width:178px">
+        <option value="">All weeks</option>
+      </select>
+    </div>
+    <div class="divider"></div>
+    <!-- Date range (manual override — selecting a week above auto-fills these) -->
     <div class="filter-group">
       <label>From</label>
-      <input type="date" id="f-from" onchange="applyFilters()">
+      <input type="date" id="f-from" onchange="onDateRangeChange()">
     </div>
     <div class="filter-group">
       <label>To</label>
-      <input type="date" id="f-to" onchange="applyFilters()">
+      <input type="date" id="f-to" onchange="onDateRangeChange()">
     </div>
     <div class="divider"></div>
     <!-- Tenure -->
@@ -1092,6 +1100,7 @@ async function apiFetch() {
 
     updateRoleUI();
     populateSupervisorFilters();
+    populateWeekDropdown();
 
     // Update the data-window pill in the filter bar
     const pill = document.getElementById('data-window-pill');
@@ -2518,6 +2527,81 @@ function _doRender(page) {
 // ─────────────────────────────────────────────────────────────
 // FILTERS
 // ─────────────────────────────────────────────────────────────
+// ── Sun–Sat week helpers ──────────────────────────────────────────
+
+/**
+ * Returns the YYYY-MM-DD of the Sunday that starts the Sun–Sat week
+ * containing the given date string.
+ */
+function sunSatWeekStart(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  if (isNaN(d)) return '';
+  d.setDate(d.getDate() - d.getDay());   // getDay() 0 = Sunday
+  return d.toISOString().substring(0, 10);
+}
+
+/**
+ * Format a Sun–Sat week as a human-readable label.
+ * e.g. sunSatWeekStart = "2026-04-27"  →  "Apr 27–May 3, 2026"
+ */
+function formatWeekLabel(sundayStr) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const sun = new Date(sundayStr + 'T12:00:00');
+  const sat = new Date(sundayStr + 'T12:00:00');
+  sat.setDate(sat.getDate() + 6);
+  const sunLbl = MONTHS[sun.getMonth()] + ' ' + sun.getDate();
+  const satLbl = (sun.getMonth() !== sat.getMonth() ? MONTHS[sat.getMonth()] + ' ' : '') + sat.getDate();
+  return sunLbl + '–' + satLbl + ', ' + sun.getFullYear();
+}
+
+/**
+ * Rebuild the Week dropdown from all loaded data.
+ * Weeks are Sun–Sat; list is sorted most-recent-first.
+ * Preserves the currently selected value if it still exists.
+ */
+function populateWeekDropdown() {
+  const seen = new Set();
+  cachedData.tph.forEach(r  => { if (r.date)   { const s = sunSatWeekStart(r.date);   if (s) seen.add(s); } });
+  cachedData.csat.forEach(r => { if (r.date)   { const s = sunSatWeekStart(r.date);   if (s) seen.add(s); } });
+  cachedData.iqs.forEach(r  => { if (r.weekOf) { const s = sunSatWeekStart(r.weekOf); if (s) seen.add(s); } });
+
+  const weeks = [...seen].sort().reverse();  // most recent first
+  const sel = document.getElementById('f-week');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All weeks</option>' +
+    weeks.map(w => `<option value="${w}">${escH(formatWeekLabel(w))}</option>`).join('');
+  if (prev && weeks.includes(prev)) sel.value = prev;
+}
+
+/**
+ * Called when the Week dropdown changes.
+ * Auto-fills From/To with the exact Sun–Sat boundaries and triggers applyFilters.
+ */
+function onWeekFilterChange() {
+  const sunday = document.getElementById('f-week').value;
+  if (sunday) {
+    const sat = new Date(sunday + 'T12:00:00');
+    sat.setDate(sat.getDate() + 6);
+    document.getElementById('f-from').value = sunday;
+    document.getElementById('f-to').value   = sat.toISOString().substring(0, 10);
+  } else {
+    document.getElementById('f-from').value = '';
+    document.getElementById('f-to').value   = '';
+  }
+  applyFilters();
+}
+
+/**
+ * Called when the user edits From/To manually.
+ * Clears the Week dropdown (since it no longer matches) then applies filters.
+ */
+function onDateRangeChange() {
+  document.getElementById('f-week').value = '';
+  applyFilters();
+}
+
 function applyFilters() {
   activeFilters.dateFrom = document.getElementById('f-from').value;
   activeFilters.dateTo   = document.getElementById('f-to').value;
@@ -2571,10 +2655,11 @@ function clearTeamFilter() {
 
 function clearFilters() {
   activeFilters = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
-  document.getElementById('f-from').value  = '';
-  document.getElementById('f-to').value    = '';
-  document.getElementById('f-am').value    = '';
+  document.getElementById('f-from').value   = '';
+  document.getElementById('f-to').value     = '';
+  document.getElementById('f-am').value     = '';
   document.getElementById('f-tenure').value = '';
+  document.getElementById('f-week').value   = '';
   document.getElementById('team-badge').style.display = 'none';
   document.getElementById('active-filter-badge').style.display = 'none';
   onAMFilterChange();  // rebuild Team dropdown + re-render
