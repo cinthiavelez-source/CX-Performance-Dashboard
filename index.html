@@ -817,19 +817,24 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
           <select id="hier-month-select" onchange="onHierMonthChange()" style="min-width:140px"></select>
         </div>
         <div class="divider"></div>
-        <button class="btn-secondary" onclick="hierExpandAll(true)"  style="font-size:.78rem">▶ Expand All</button>
-        <button class="btn-secondary" onclick="hierExpandAll(false)" style="font-size:.78rem">▼ Collapse All</button>
+        <div class="filter-group">
+          <label>🔍 Search</label>
+          <input type="text" id="hier-search" placeholder="Email or name…"
+            oninput="hierApplySearch()"
+            style="padding:.3rem .6rem;border:1.5px solid var(--border);border-radius:.45rem;font-size:.78rem;outline:none;min-width:200px">
+        </div>
         <div id="hier-stats" style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap"></div>
       </div>
 
-      <!-- Tree table -->
+      <!-- Flat table -->
       <div class="card" style="padding:0;overflow:hidden">
         <div style="overflow-x:auto">
           <table class="hier-table" id="hier-table">
             <thead>
               <tr>
-                <th style="min-width:260px">Name / Email</th>
-                <th class="num-col" style="min-width:90px">Agents</th>
+                <th style="min-width:180px">Asst. Manager</th>
+                <th style="min-width:180px">Supervisor</th>
+                <th style="min-width:220px">Agent Email</th>
               </tr>
             </thead>
             <tbody id="hier-tbody">
@@ -2949,22 +2954,23 @@ function hierCell(val, kpi, fmt) {
   return `<td class="cell-val ${tier}">${fmt(val)}</td>`;
 }
 
-/** Render the hierarchy tree into #hier-tbody. */
+/** Render the hierarchy as a flat AM | Supervisor | Agent Email table. */
 function renderHierTree(tree, ym) {
   const tbody = document.getElementById('hier-tbody');
   const stats = document.getElementById('hier-stats');
   if (!tbody) return;
 
   if (!tree.ams.length) {
-    tbody.closest('table').parentElement.parentElement.innerHTML =
+    const wrap = tbody.closest('.card');
+    if (wrap) wrap.innerHTML =
       `<div class="empty-state"><div class="empty-icon">📭</div><p>No data for ${ym}. Upload data for this month first.</p></div>`;
     if (stats) stats.innerHTML = '';
     return;
   }
 
   // Summary pills
-  const totalAgents  = tree.ams.reduce((s, am) => s + am.agentCount, 0);
-  const totalSups    = tree.ams.reduce((s, am) => s + am.supervisors.length, 0);
+  const totalAgents = tree.ams.reduce((s, am) => s + am.agentCount, 0);
+  const totalSups   = tree.ams.reduce((s, am) => s + am.supervisors.length, 0);
   if (stats) {
     stats.innerHTML =
       `<span class="hier-stat-pill">👤 ${totalAgents} agents</span>` +
@@ -2972,43 +2978,36 @@ function renderHierTree(tree, ym) {
       `<span class="hier-stat-pill">🏢 ${tree.ams.length} AMs</span>`;
   }
 
+  // Build flat rows — one per agent, sorted AM → Supervisor → Email
   const rows = [];
-
-  tree.ams.forEach((am, ai) => {
-    const amId     = `am-${ai}`;
-    const isAmOpen = hierOpen[amId] !== false; // default open
-
-    rows.push(`<tr class="hier-row-am">
-      <td class="hier-name-am">
-        <span class="hier-toggle-icon${isAmOpen ? ' open' : ''}" data-hier-toggle="${amId}" onclick="hierToggle('${amId}')">▶</span>
-        <span onclick="hierToggle('${amId}')" class="hier-toggle">${escH(am.name)}</span>
-      </td>
-      <td class="num" style="font-weight:700">${am.agentCount}</td>
-    </tr>`);
-
-    am.supervisors.forEach((sup, si) => {
-      const supId     = `am-${ai}-sup-${si}`;
-      const isSupOpen = hierOpen[supId] !== false; // default open
-
-      rows.push(`<tr class="hier-row-sup" data-hier-group="${amId}" style="${isAmOpen ? '' : 'display:none'}">
-        <td class="hier-name-sup">
-          <span class="hier-toggle-icon${isSupOpen ? ' open' : ''}" data-hier-toggle="${supId}" onclick="hierToggle('${supId}')">▶</span>
-          <span onclick="hierToggle('${supId}')" class="hier-toggle">${escH(sup.name)}</span>
-        </td>
-        <td class="num">${sup.agentCount}</td>
-      </tr>`);
-
+  tree.ams.forEach(am => {
+    am.supervisors.forEach(sup => {
       sup.agents.forEach(agent => {
-        const showAgent = isAmOpen && isSupOpen;
-        rows.push(`<tr class="hier-row-agent" data-hier-group="${supId}" style="${showAgent ? '' : 'display:none'}">
-          <td class="hier-name-agent" style="font-size:.78rem;color:var(--sub)">${escH(agent.email)}</td>
-          <td></td>
-        </tr>`);
+        rows.push(
+          `<tr class="hier-row-agent" data-hier-row>` +
+          `<td style="font-weight:600;color:var(--brand)">${escH(am.name)}</td>` +
+          `<td style="font-weight:500">${escH(sup.name)}</td>` +
+          `<td style="font-size:.8rem;color:var(--sub)">${escH(agent.email)}</td>` +
+          `</tr>`
+        );
       });
     });
   });
 
   tbody.innerHTML = rows.join('');
+
+  // Re-apply any active search after re-render
+  hierApplySearch();
+}
+
+/** Filter visible rows by the search box value (email or supervisor or AM). */
+function hierApplySearch() {
+  const q = (document.getElementById('hier-search')?.value || '').toLowerCase().trim();
+  document.querySelectorAll('[data-hier-row]').forEach(tr => {
+    if (!q) { tr.style.display = ''; return; }
+    const text = tr.textContent.toLowerCase();
+    tr.style.display = text.includes(q) ? '' : 'none';
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
