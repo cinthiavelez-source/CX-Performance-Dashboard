@@ -958,18 +958,6 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
         </div>
       </div>
 
-      <!-- Audit / Login Log -->
-      <h3 style="margin-bottom:.75rem;margin-top:1.75rem">🔍 Login Audit Log</h3>
-      <div class="card">
-        <p style="font-size:.8rem;color:var(--sub);margin-bottom:.75rem">Every sign-in is recorded here. Timestamps are UTC.</p>
-        <div style="overflow-x:auto">
-          <table class="history-table">
-            <thead><tr><th>Timestamp (UTC)</th><th>Email</th><th>Browser / Device</th></tr></thead>
-            <tbody id="audit-log-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
     </div><!-- end admin page -->
 
   </div><!-- end main -->
@@ -992,7 +980,7 @@ const ALLOWED_DOMAIN      = 'cookunity.com';
 // ─────────────────────────────────────────────────────────────
 let currentUser = null;
 let cachedRole  = 'viewer';
-let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [], periodHierarchies: [], auditLog: [] };
+let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [], periodHierarchies: [] };
 let activeFilters = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
 let currentPage   = 'dashboard';
 
@@ -1097,8 +1085,6 @@ async function apiFetch() {
     cachedData.hierLog           = data.hierLog           || [];
     cachedData.periodHierarchies = data.periodHierarchies || [];
     cachedData.dataWindow        = data.dataWindow        || null;
-    // Audit log only returned to admins — gracefully ignore if absent
-    if (data.auditLog) cachedData.auditLog = data.auditLog;
 
     // New data from server — all cached renders are now stale
     dataVersion++;
@@ -2643,7 +2629,6 @@ function renderAdminPage() {
   renderHierarchyLog();
   renderPeriodHierarchyLog();
   renderRolesTable();
-  renderAuditLog();
 }
 
 function renderPeriodHierarchyLog() {
@@ -2807,6 +2792,50 @@ function splitCSVLine(line) {
   }
   result.push(cur);
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────
+// CASE-INSENSITIVE COLUMN LOOKUP
+// Tries each candidate name in order. For each name it first tries
+// an exact match, then a case-insensitive match against all keys.
+// Returns the trimmed string value, or '' if nothing found.
+// ─────────────────────────────────────────────────────────────
+function colVal(row, ...names) {
+  // Build a lower-case key → original-key map once per row
+  const lowerMap = {};
+  Object.keys(row).forEach(k => { lowerMap[k.toLowerCase().trim()] = k; });
+
+  for (const name of names) {
+    // 1. Exact match
+    if (name in row && row[name] !== undefined && String(row[name]).trim() !== '') {
+      return String(row[name]).trim();
+    }
+    // 2. Case-insensitive match
+    const orig = lowerMap[name.toLowerCase().trim()];
+    if (orig && row[orig] !== undefined && String(row[orig]).trim() !== '') {
+      return String(row[orig]).trim();
+    }
+  }
+  return '';
+}
+
+// Parse a hierarchy CSV row into a normalised agent object.
+// Tries every known column-name variant for each field so the
+// function works regardless of capitalisation or minor naming
+// differences between CSV exports.
+function parseHierarchyRow(r) {
+  return {
+    email:      colVal(r, 'C•U Email','CU Email','CU_Email','Email','Email Address').toLowerCase(),
+    name:       colVal(r, 'NAME','Name','Agent Name','Full Name'),
+    role:       colVal(r, 'ROLE','Role','Job Title','Position'),
+    supervisor: colVal(r, 'New Supervisor','Supervisor','supervisor','SUPERVISOR',
+                          'Supervisora','Team Lead','Direct Manager','Reporting Manager'),
+    am:         colVal(r, 'A.Manager','A. Manager','AM','Assistant Manager',
+                          'AManager','Area Manager','Manager'),
+    hireDate:   colVal(r, 'Hire Date','HireDate','Start Date','hire_date'),
+    team:       'CU - CX',
+    status:     'Active'
+  };
 }
 
 function parseTSVorCSV(text) {
@@ -3177,19 +3206,22 @@ function handleHierarchyFile(input) {
       const rows = parseTSVorCSV(e.target.result);
       if (!rows.length) throw new Error('No rows found.');
 
-      // TPH Hierarchy: A.Manager, New Supervisor, Hire Date, NAME, C•U Email, ROLE
-      const agents = rows.map(r => ({
-        email:      (r['C•U Email'] || r['CU Email'] || r['Email'] || '').toLowerCase(),
-        name:       r['NAME'] || r['Name'] || '',
-        role:       r['ROLE'] || r['Role'] || '',
-        supervisor: r['New Supervisor'] || r['Supervisor'] || '',
-        am:         r['A.Manager'] || r['AM'] || '',
-        hireDate:   r['Hire Date'] || r['HireDate'] || '',
-        team:       'CU - CX',
-        status:     'Active'
-      })).filter(a => a.email && a.name);
+      // Parse using the flexible case-insensitive helper
+      const agents = rows.map(parseHierarchyRow).filter(a => a.email && a.name);
 
-      if (!agents.length) throw new Error('No valid agent rows found. Check column headers match the TPH Hierarchy format.');
+      if (!agents.length) {
+        const found = Object.keys(rows[0] || {}).join(', ');
+        throw new Error(`No valid agent rows found.\nColumns detected: ${found}\nExpected columns: NAME (or "Agent Name"), C•U Email (or "Email"), ROLE, New Supervisor (or "Supervisor"), A.Manager (or "AM")`);
+      }
+
+      // Warn if supervisor resolved to empty for every agent (likely a column name mismatch)
+      const missingSuper = agents.filter(a => !a.supervisor).length;
+      if (missingSuper === agents.length) {
+        const found = Object.keys(rows[0] || {}).join(' | ');
+        showToast(`⚠️ Supervisor column not found — all ${missingSuper} agents have blank supervisor. Columns in file: ${found}`, '#F59E0B');
+      } else if (missingSuper > 0) {
+        showToast(`⚠️ ${missingSuper} of ${agents.length} agents have no supervisor mapped.`, '#F59E0B');
+      }
 
       const notes = document.getElementById('hier-notes').value;
       const res   = await apiPost({ action: 'updateHierarchy', agents, notes });
@@ -3235,19 +3267,27 @@ function handlePeriodHierarchyFile(input) {
       const rows = parseTSVorCSV(e.target.result);
       if (!rows.length) throw new Error('No rows found in file.');
 
-      // Same column mapping as the regular hierarchy upload
-      const agents = rows.map(r => ({
-        email:      (r['C•U Email'] || r['CU Email'] || r['Email'] || '').toLowerCase().trim(),
-        name:       (r['NAME'] || r['Name'] || '').trim(),
-        role:       (r['ROLE'] || r['Role'] || '').trim(),
-        supervisor: (r['New Supervisor'] || r['Supervisor'] || '').trim(),
-        am:         (r['A.Manager'] || r['AM'] || '').trim(),
-        hireDate:   (r['Hire Date'] || r['HireDate'] || '').trim(),
-        team:       'CU - CX',
-        status:     'Active'
-      })).filter(a => a.email && a.name);
+      // Parse using the flexible case-insensitive helper (same as regular hierarchy)
+      const agents = rows.map(parseHierarchyRow).filter(a => a.email && a.name);
 
-      if (!agents.length) throw new Error('No valid agent rows found. Check column headers: A.Manager, New Supervisor, Hire Date, NAME, C•U Email, ROLE.');
+      if (!agents.length) {
+        const found = Object.keys(rows[0] || {}).join(', ');
+        throw new Error(`No valid agent rows found.\nColumns detected: ${found}\nExpected columns: NAME, C•U Email (or "Email"), ROLE, New Supervisor (or "Supervisor"), A.Manager (or "AM")`);
+      }
+
+      // Warn if supervisor resolved to empty for every agent
+      const missingSuper = agents.filter(a => !a.supervisor).length;
+      if (missingSuper === agents.length) {
+        const found = Object.keys(rows[0] || {}).join(' | ');
+        setUploadStatus('period-hier', 'err',
+          `✗ Supervisor column not found — all agents have blank supervisor.\n` +
+          `Columns detected in your file: ${found}\n` +
+          `Expected one of: "New Supervisor", "Supervisor", "supervisora", "Team Lead"`);
+        input.value = '';
+        return;
+      } else if (missingSuper > 0) {
+        showToast(`⚠️ ${missingSuper} of ${agents.length} agents have no supervisor mapped.`, '#F59E0B');
+      }
 
       setUploadStatus('period-hier', 'processing',
         `Uploading ${agents.length} agents for ${periodFrom} → ${periodTo}… Re-stamping existing records…`);
