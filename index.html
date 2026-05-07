@@ -839,6 +839,77 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
         </div>
       </div>
 
+      <!-- Historical Period Hierarchies -->
+      <h3 style="margin-bottom:.75rem;margin-top:1.75rem">📅 Historical Period Hierarchies</h3>
+      <div class="card">
+        <p style="font-size:.82rem;color:var(--sub);margin-bottom:1rem">
+          Hierarchies change every ~3 months. Upload a hierarchy snapshot for a specific date range
+          (e.g. Jan–Mar 2026) so historical TPH, CSAT, and IQS records are correctly attributed to
+          the right supervisors and AMs. The system will immediately re-stamp all existing records
+          in that range and will use this snapshot automatically for any future uploads covering the same period.
+        </p>
+        <div class="admin-grid">
+          <div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.6rem">
+              <div>
+                <label>Period Start</label>
+                <input type="date" id="period-hier-from"
+                  style="width:100%;padding:.45rem .65rem;border:1.5px solid var(--border);border-radius:.45rem;font-size:.85rem;outline:none">
+              </div>
+              <div>
+                <label>Period End</label>
+                <input type="date" id="period-hier-to"
+                  style="width:100%;padding:.45rem .65rem;border:1.5px solid var(--border);border-radius:.45rem;font-size:.85rem;outline:none">
+              </div>
+            </div>
+            <label>Upload Hierarchy CSV (same format as current hierarchy)</label>
+            <div class="upload-zone" style="margin-top:.35rem" id="period-hier-drop"
+                 onclick="document.getElementById('period-hier-file').click()">
+              <div class="upload-icon">📅</div>
+              <h4>Period Hierarchy</h4>
+              <p>Columns: <strong>A.Manager</strong>, <strong>New Supervisor</strong>, <strong>Hire Date</strong>, <strong>NAME</strong>, <strong>C•U Email</strong>, <strong>ROLE</strong></p>
+              <button class="btn-upload" type="button">Choose File</button>
+            </div>
+            <input type="file" id="period-hier-file" class="file-input" accept=".csv"
+                   onchange="handlePeriodHierarchyFile(this)">
+            <div id="period-hier-status" class="upload-status mt-1"></div>
+          </div>
+          <div style="background:var(--bg);border-radius:.65rem;padding:1rem">
+            <h4 style="font-size:.85rem;font-weight:700;margin-bottom:.6rem;color:var(--text)">How it works</h4>
+            <ol style="font-size:.8rem;color:var(--sub);line-height:1.7;padding-left:1.1rem;margin:0">
+              <li>Select the date range for this hierarchy snapshot (e.g. 2026-01-01 → 2026-03-31)</li>
+              <li>Upload the hierarchy CSV that was valid during that period</li>
+              <li>The system re-stamps all existing records in that range immediately</li>
+              <li>Any future data uploads whose dates fall in this range will use this snapshot automatically</li>
+            </ol>
+            <p style="font-size:.78rem;color:var(--muted);margin-top:.75rem">
+              <strong>Overlap rule:</strong> if two periods overlap, the most recently uploaded snapshot takes priority for the overlapping dates.
+            </p>
+          </div>
+        </div>
+
+        <!-- Period hierarchy log -->
+        <h3 style="margin-top:1.5rem">Period Hierarchy Log</h3>
+        <div style="overflow-x:auto">
+          <table class="history-table" id="period-hier-log-table">
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Uploaded</th>
+                <th>By</th>
+                <th>Agents</th>
+                <th>TPH Re-stamped</th>
+                <th>CSAT Re-stamped</th>
+                <th>IQS Re-stamped</th>
+              </tr>
+            </thead>
+            <tbody id="period-hier-log-tbody">
+              <tr><td colspan="7" style="color:var(--muted);padding:.75rem">No period hierarchies yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Roles Management -->
       <h3 style="margin-bottom:.75rem;margin-top:1.75rem">User Roles</h3>
       <div class="card">
@@ -919,7 +990,7 @@ const ALLOWED_DOMAIN      = 'cookunity.com';
 // ─────────────────────────────────────────────────────────────
 let currentUser = null;
 let cachedRole  = 'viewer';
-let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [], auditLog: [] };
+let cachedData  = { tph: [], csat: [], iqs: [], agents: [], csatMap: [], uploadLog: [], hierLog: [], periodHierarchies: [], auditLog: [] };
 let activeFilters = { dateFrom: '', dateTo: '', am: '', team: '', tenure: '' };
 let currentPage   = 'dashboard';
 
@@ -997,8 +1068,9 @@ async function apiFetch() {
     cachedData.iqs       = data.iqsData   || [];
     cachedData.agents    = data.agents    || [];
     cachedData.csatMap   = data.csatMap   || [];
-    cachedData.uploadLog = data.uploadLog || [];
-    cachedData.hierLog   = data.hierLog   || [];
+    cachedData.uploadLog        = data.uploadLog        || [];
+    cachedData.hierLog          = data.hierLog          || [];
+    cachedData.periodHierarchies = data.periodHierarchies || [];
     // Audit log only returned to admins — gracefully ignore if absent
     if (data.auditLog) cachedData.auditLog = data.auditLog;
 
@@ -2508,8 +2580,34 @@ function populateSupervisorFilters() {
 function renderAdminPage() {
   renderUploadHistory();
   renderHierarchyLog();
+  renderPeriodHierarchyLog();
   renderRolesTable();
   renderAuditLog();
+}
+
+function renderPeriodHierarchyLog() {
+  const tbody = document.getElementById('period-hier-log-tbody');
+  if (!tbody) return;
+  const rows = [...(cachedData.periodHierarchies || [])].reverse();
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);padding:.75rem">No period hierarchies uploaded yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const from = escH(r.periodFrom || '—');
+    const to   = escH(r.periodTo   || '—');
+    const by   = escH((r.uploadedBy || '—').replace('@cookunity.com', ''));
+    const at   = escH(String(r.uploadedAt || '').substring(0, 16).replace('T', ' '));
+    return `<tr>
+      <td style="white-space:nowrap"><strong>${from}</strong> → <strong>${to}</strong></td>
+      <td style="white-space:nowrap;font-size:.8rem">${at}</td>
+      <td style="font-size:.82rem">${by}</td>
+      <td style="text-align:center">${escH(String(r.agentCount || 0))}</td>
+      <td style="text-align:center;color:${Number(r.tphStamped)  > 0 ? 'var(--green)' : 'var(--muted)'}">${escH(String(r.tphStamped  || 0))}</td>
+      <td style="text-align:center;color:${Number(r.csatStamped) > 0 ? 'var(--green)' : 'var(--muted)'}">${escH(String(r.csatStamped || 0))}</td>
+      <td style="text-align:center;color:${Number(r.iqsStamped)  > 0 ? 'var(--green)' : 'var(--muted)'}">${escH(String(r.iqsStamped  || 0))}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderAuditLog() {
@@ -3046,6 +3144,81 @@ function handleHierarchyFile(input) {
   reader.readAsText(file, 'UTF-8');
 }
 
+// ─────────────────────────────────────────────────────────────
+// FILE UPLOAD HANDLERS — PERIOD HIERARCHY
+// Same CSV format as the regular hierarchy file, but tied to a
+// specific date range chosen by the admin before uploading.
+// ─────────────────────────────────────────────────────────────
+function handlePeriodHierarchyFile(input) {
+  const file = input.files[0]; if (!file) return;
+
+  // Validate date range before parsing the file
+  const periodFrom = document.getElementById('period-hier-from').value;
+  const periodTo   = document.getElementById('period-hier-to').value;
+
+  if (!periodFrom || !periodTo) {
+    setUploadStatus('period-hier', 'err', '✗ Please select both a Period Start and Period End date before uploading.');
+    input.value = '';
+    return;
+  }
+  if (periodFrom > periodTo) {
+    setUploadStatus('period-hier', 'err', '✗ Period Start must be on or before Period End.');
+    input.value = '';
+    return;
+  }
+
+  setUploadStatus('period-hier', 'processing', `Parsing ${file.name}…`);
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const rows = parseTSVorCSV(e.target.result);
+      if (!rows.length) throw new Error('No rows found in file.');
+
+      // Same column mapping as the regular hierarchy upload
+      const agents = rows.map(r => ({
+        email:      (r['C•U Email'] || r['CU Email'] || r['Email'] || '').toLowerCase().trim(),
+        name:       (r['NAME'] || r['Name'] || '').trim(),
+        role:       (r['ROLE'] || r['Role'] || '').trim(),
+        supervisor: (r['New Supervisor'] || r['Supervisor'] || '').trim(),
+        am:         (r['A.Manager'] || r['AM'] || '').trim(),
+        hireDate:   (r['Hire Date'] || r['HireDate'] || '').trim(),
+        team:       'CU - CX',
+        status:     'Active'
+      })).filter(a => a.email && a.name);
+
+      if (!agents.length) throw new Error('No valid agent rows found. Check column headers: A.Manager, New Supervisor, Hire Date, NAME, C•U Email, ROLE.');
+
+      setUploadStatus('period-hier', 'processing',
+        `Uploading ${agents.length} agents for ${periodFrom} → ${periodTo}… Re-stamping existing records…`);
+
+      const res = await apiPost({
+        action:     'uploadPeriodHierarchy',
+        agents,
+        periodFrom,
+        periodTo,
+        fileName:   file.name
+      });
+
+      const msg = `✓ Period hierarchy saved · ${res.agentCount} agents · ` +
+                  `TPH: ${res.tphStamped} re-stamped · CSAT: ${res.csatStamped} re-stamped · IQS: ${res.iqsStamped} re-stamped`;
+      setUploadStatus('period-hier', 'ok', msg);
+      showToast(`✓ Period hierarchy uploaded. ${res.tphStamped + res.csatStamped + res.iqsStamped} records re-stamped.`, '#10B981');
+
+      // Clear date pickers for next upload
+      document.getElementById('period-hier-from').value = '';
+      document.getElementById('period-hier-to').value   = '';
+
+      await apiFetch();
+      renderAdminPage();
+    } catch (err) {
+      setUploadStatus('period-hier', 'err', '✗ ' + err.message);
+      showToast('Period hierarchy upload failed: ' + err.message, '#EF4444');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
 function handleCSATMapFile(input) {
   const file = input.files[0]; if (!file) return;
   setUploadStatus('csatmap', 'processing', `Parsing ${file.name}…`);
@@ -3207,9 +3380,10 @@ async function startApp() {
   updateRoleUI();
 
   // Setup drag & drop
-  setupDropZone('tph-drop',  'tph-file');
-  setupDropZone('csat-drop', 'csat-file');
-  setupDropZone('iqs-drop',  'iqs-file');
+  setupDropZone('tph-drop',         'tph-file');
+  setupDropZone('csat-drop',        'csat-file');
+  setupDropZone('iqs-drop',         'iqs-file');
+  setupDropZone('period-hier-drop', 'period-hier-file');
 
   // Auto-refresh every 5 minutes
   setInterval(async () => {
