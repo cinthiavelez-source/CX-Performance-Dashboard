@@ -518,6 +518,8 @@ label { font-size: .8rem; font-weight: 600; color: var(--sub); display: block; m
     </div>
     <button class="btn-clear-filters" onclick="clearFilters()">✕ Clear All</button>
     <span id="active-filter-badge" style="display:none" class="filter-badge">Filtered</span>
+    <!-- Data window pill — always visible so users know the loaded date range -->
+    <span id="data-window-pill" style="margin-left:auto;font-size:.72rem;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:2rem;padding:.2rem .65rem;white-space:nowrap" title="Only records within this date range are loaded. Contact your admin to extend the window."></span>
   </div>
 
   <!-- MAIN -->
@@ -1001,6 +1003,29 @@ let lifetimeLevel = 'agent';
 let lifetimeSortCol = 'tph', lifetimeSortDir = 'desc';
 let lbWeights = { tph: 40, csat: 40, iqs: 20, aht: 0 };
 
+// ─── Render cache ────────────────────────────────────────────
+// Tracks what each page was last rendered with so we can skip
+// expensive re-computation when nothing has actually changed.
+// Incremented by apiFetch (new server data) and applyFilters.
+let dataVersion   = 0;
+let filterVersion = 0;
+const renderCache = {};   // { pageId → cacheKey string }
+
+function pageParamsKey(page) {
+  // Encode the page-specific UI state that affects what gets rendered.
+  switch (page) {
+    case 'weekly':      return weeklyLevel  + '_' + weeklyKPI;
+    case 'monthly':     return monthlyLevel + '_' + monthlyKPI;
+    case 'lifetime':    return lifetimeLevel + '_' + lifetimeSortCol + '_' + lifetimeSortDir;
+    case 'leaderboard': return JSON.stringify(lbWeights);
+    default:            return '';
+  }
+}
+function buildCacheKey(page)  { return dataVersion + '|' + filterVersion + '|' + pageParamsKey(page); }
+function isCacheValid(page)   { return renderCache[page] === buildCacheKey(page); }
+function markCacheValid(page) { renderCache[page] = buildCacheKey(page); }
+function invalidateAllRenderCache() { Object.keys(renderCache).forEach(k => delete renderCache[k]); }
+
 // Chart instances (kept for destroy on re-render)
 const charts = {};
 
@@ -1068,14 +1093,27 @@ async function apiFetch() {
     cachedData.iqs       = data.iqsData   || [];
     cachedData.agents    = data.agents    || [];
     cachedData.csatMap   = data.csatMap   || [];
-    cachedData.uploadLog        = data.uploadLog        || [];
-    cachedData.hierLog          = data.hierLog          || [];
+    cachedData.uploadLog         = data.uploadLog         || [];
+    cachedData.hierLog           = data.hierLog           || [];
     cachedData.periodHierarchies = data.periodHierarchies || [];
+    cachedData.dataWindow        = data.dataWindow        || null;
     // Audit log only returned to admins — gracefully ignore if absent
     if (data.auditLog) cachedData.auditLog = data.auditLog;
 
+    // New data from server — all cached renders are now stale
+    dataVersion++;
+    invalidateAllRenderCache();
+
     updateRoleUI();
     populateSupervisorFilters();
+
+    // Update the data-window pill in the filter bar
+    const pill = document.getElementById('data-window-pill');
+    if (pill && cachedData.dataWindow) {
+      const { months, cutoff } = cachedData.dataWindow;
+      pill.textContent = `📅 Showing last ${months} months (from ${cutoff})`;
+      pill.title = `Data loaded from ${cutoff} onwards. To load more history, admins can add ?months=24 to the app URL.`;
+    }
   } catch (err) {
     showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
     throw err;
@@ -1883,6 +1921,7 @@ function setWeeklyLevel(lvl) {
   document.querySelectorAll('#weekly-level-toggle .toggle-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.level === lvl));
   renderWeeklyTable();
+  markCacheValid('weekly');
 }
 
 function renderWeeklyTable() {
@@ -1905,6 +1944,7 @@ function setMonthlyLevel(lvl) {
   document.querySelectorAll('#monthly-level-toggle .toggle-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.level === lvl));
   renderMonthlyTable();
+  markCacheValid('monthly');
 }
 
 function renderMonthlyTable() {
@@ -2114,6 +2154,7 @@ function setLifetimeLevel(lvl) {
   document.querySelectorAll('#lifetime-level-toggle .toggle-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.level === lvl));
   renderLifetimeTable();
+  markCacheValid('lifetime');
 }
 
 function buildLifetimeData(level) {
@@ -2187,6 +2228,7 @@ function sortLifetime(col) {
     lifetimeSortDir = 'desc';
   }
   renderLifetimeTable();
+  markCacheValid('lifetime');
 }
 
 function renderLifetimeTable() {
@@ -2299,6 +2341,7 @@ function updateWeights() {
   el.className   = 'lb-total ' + (total === 100 ? 'ok' : 'warn');
 
   renderLeaderboard();
+  markCacheValid('leaderboard');
 }
 
 function buildLeaderboardData() {
@@ -2456,19 +2499,34 @@ function navTo(page) {
     document.getElementById('page-' + p)?.classList.toggle('active', p === page);
     document.querySelector(`.nav-tab[data-page="${p}"]`)?.classList.toggle('active', p === page);
   });
-  renderCurrentPage();
+  // Defer the heavy computation to AFTER the browser paints the tab switch.
+  // This makes the navigation feel instant — the tab appears immediately, then
+  // content renders. On cached hits the setTimeout callback returns in <1ms.
+  setTimeout(() => renderCurrentPage(), 0);
 }
 
 function renderCurrentPage() {
-  if (currentPage === 'dashboard')   renderDashboard();
-  else if (currentPage === 'weekly')      renderWeeklyTable();
-  else if (currentPage === 'monthly')     renderMonthlyTable();
-  else if (currentPage === 'tph-aht')     renderTPHAHTChart();
-  else if (currentPage === 'csat-prog')   renderCSATProgChart();
-  else if (currentPage === 'iqs-prog')    renderIQSProgChart();
-  else if (currentPage === 'lifetime')    renderLifetimeTable();
-  else if (currentPage === 'leaderboard') renderLeaderboard();
-  else if (currentPage === 'admin')       renderAdminPage();
+  const page = currentPage;
+  // Skip expensive re-computation if data, filters, and page params are unchanged.
+  if (isCacheValid(page)) return;
+  _doRender(page);
+  markCacheValid(page);
+}
+
+// Dispatcher — separated from renderCurrentPage so direct callers
+// (level toggles, sort clicks, weight sliders) can still call the
+// specific render function without going through the cache check,
+// then manually mark the cache valid afterwards.
+function _doRender(page) {
+  if      (page === 'dashboard')   renderDashboard();
+  else if (page === 'weekly')      renderWeeklyTable();
+  else if (page === 'monthly')     renderMonthlyTable();
+  else if (page === 'tph-aht')     renderTPHAHTChart();
+  else if (page === 'csat-prog')   renderCSATProgChart();
+  else if (page === 'iqs-prog')    renderIQSProgChart();
+  else if (page === 'lifetime')    renderLifetimeTable();
+  else if (page === 'leaderboard') renderLeaderboard();
+  else if (page === 'admin')       renderAdminPage();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2496,6 +2554,9 @@ function applyFilters() {
 
   const active = Object.values(activeFilters).some(v => v);
   document.getElementById('active-filter-badge').style.display = active ? '' : 'none';
+  // Filters changed — all page renders are stale
+  filterVersion++;
+  invalidateAllRenderCache();
   renderCurrentPage();
 }
 
