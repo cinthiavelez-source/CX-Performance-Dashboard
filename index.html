@@ -1432,24 +1432,31 @@ async function submitHierarchyUpload() {
   let uploaded = 0;
   const errors = [];
 
-  for (const r of rows) {
+  // ── Send in chunks of 50 records per request ──────────────────────────────
+  // A single Apps Script call handles the whole chunk server-side, avoiding
+  // the 1-request-per-row problem that causes timeouts on large lists.
+  const CHUNK = 50;
+  const records = rows.map(r => ({
+    agent_email:     r.agent_email,
+    agent_name:      r.agent_name || emailToName[r.agent_email] || '',
+    supervisor_name: r.supervisor_name,
+    am_name:         r.am_name,
+    effective_from:  from,
+    effective_to:    to,
+    notes:           'Bulk import',
+  }));
+
+  for (let i = 0; i < records.length; i += CHUNK) {
+    const chunk = records.slice(i, i + CHUNK);
+    if (st) st.textContent = `Uploading ${Math.min(i + CHUNK, records.length)} / ${records.length}…`;
     try {
-      await apiPost({
-        action: 'saveHierarchy',
-        record: {
-          agent_email:     r.agent_email,
-          agent_name:      r.agent_name || emailToName[r.agent_email] || '',
-          supervisor_name: r.supervisor_name,
-          am_name:         r.am_name,
-          effective_from:  from,
-          effective_to:    to,
-          notes:           'Bulk import',
-        }
-      });
-      uploaded++;
-      if (st) st.textContent = `Uploading ${uploaded} / ${rows.length}…`;
+      const res = await apiPost({ action: 'bulkSaveHierarchy', records: chunk });
+      uploaded += res.added || 0;
+      if (res.errors && res.errors.length) {
+        res.errors.forEach(e => errors.push(e));
+      }
     } catch(err) {
-      errors.push(`${r.agent_email}: ${err.message}`);
+      errors.push(`Chunk ${Math.floor(i/CHUNK)+1}: ${err.message}`);
     }
   }
 
