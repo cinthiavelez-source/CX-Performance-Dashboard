@@ -10,28 +10,29 @@
 <style>
 /* ─── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', system-ui, -apple-system, sans-serif;
-       background: #F1F5F9; color: #1E293B; font-size: 14px; }
+body { font-family: Arial, Helvetica, sans-serif;
+       background: #FAFAF8; color: #1E293B; font-size: 14px; }
 a { color: inherit; text-decoration: none; }
-button { cursor: pointer; border: none; font-family: inherit; font-size: 13px; }
-select, input { font-family: inherit; font-size: 13px; }
+button { cursor: pointer; border: none; font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
+select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 
 /* ─── NAVBAR ──────────────────────────────────────────────── */
+/* Charcoal (#24272A) navbar — brand identity anchor */
 .navbar {
-  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  background: #24272A;
   padding: 0 1.5rem; display: flex; align-items: center;
   justify-content: space-between; min-height: 56px;
-  position: sticky; top: 0; z-index: 200; box-shadow: 0 2px 8px rgba(79,70,229,.35);
+  position: sticky; top: 0; z-index: 200; box-shadow: 0 2px 8px rgba(36,39,42,.6);
 }
 .navbar-brand { display: flex; align-items: center; gap: 10px; }
 .navbar-brand .logo { font-size: 22px; }
 .navbar-brand strong { color: #fff; font-size: 16px; font-weight: 700; }
-.navbar-brand span { color: rgba(255,255,255,.7); font-size: 12px; margin-left: 6px; }
+.navbar-brand span { color: rgba(255,255,255,.6); font-size: 12px; margin-left: 6px; }
 .navbar-right { display: flex; align-items: center; gap: 12px; }
-.user-chip { background: rgba(255,255,255,.15); border-radius: 20px;
+.user-chip { background: rgba(255,255,255,.12); border-radius: 20px;
   padding: 4px 12px; color: #fff; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #10B981; }
-.sync-dot.syncing { background: #F59E0B; animation: pulse 1s infinite; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #218848; }
+.sync-dot.syncing { background: #FFB81C; animation: pulse 1s infinite; }
 .sync-dot.err { background: #EF4444; }
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
 
@@ -41,8 +42,8 @@ select, input { font-family: inherit; font-size: 13px; }
 .tabnav button { padding: 0 18px; height: 46px; background: none; color: #64748B;
   font-weight: 500; border-bottom: 3px solid transparent; margin-bottom: -2px;
   white-space: nowrap; transition: all .2s; border-radius: 6px 6px 0 0; }
-.tabnav button:hover { color: #4F46E5; background: #F8F7FF; }
-.tabnav button.active { color: #4F46E5; border-bottom-color: #4F46E5; font-weight: 700; }
+.tabnav button:hover { color: #AA0061; background: #FFF0F7; }
+.tabnav button.active { color: #AA0061; border-bottom-color: #AA0061; font-weight: 700; }
 
 /* ─── FILTER BAR ──────────────────────────────────────────── */
 .filter-bar { background: #fff; border-bottom: 1px solid #E2E8F0;
@@ -52,15 +53,15 @@ select, input { font-family: inherit; font-size: 13px; }
 .filter-bar select, .filter-bar input[type=date] {
   border: 1px solid #CBD5E1; border-radius: 6px; padding: 5px 10px;
   color: #1E293B; background: #F8FAFC; min-width: 140px; height: 32px; }
-.filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: #4F46E5; }
+.filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: #AA0061; }
 .filter-sep { width: 1px; background: #E2E8F0; height: 30px; margin: 0 4px; }
-.btn-apply { background: #4F46E5; color: #fff; border-radius: 6px;
+.btn-apply { background: #AA0061; color: #fff; border-radius: 6px;
   padding: 6px 16px; font-weight: 600; height: 32px; transition: background .2s; }
-.btn-apply:hover { background: #4338CA; }
+.btn-apply:hover { background: #8B0050; }
 .btn-reset { background: #F1F5F9; color: #64748B; border-radius: 6px;
   padding: 6px 12px; font-weight: 500; height: 32px; border: 1px solid #CBD5E1; }
 .btn-reset:hover { background: #E2E8F0; }
-.period-badge { background: #EEF2FF; color: #4F46E5; border-radius: 4px;
+.period-badge { background: #FFF0F7; color: #AA0061; border-radius: 4px;
   padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 
 /* ─── MAIN CONTENT ────────────────────────────────────────── */
@@ -72,15 +73,15 @@ select, input { font-family: inherit; font-size: 13px; }
 .kpi-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem; margin-bottom: 1.25rem; }
 .kpi-card { background: #fff; border-radius: 12px; padding: 1rem 1.25rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,.07); border-left: 4px solid #4F46E5; }
+  box-shadow: 0 1px 3px rgba(0,0,0,.07); border-left: 4px solid #AA0061; }
 .kpi-card .kpi-label { font-size: 11px; font-weight: 600; color: #64748B;
   text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .kpi-card .kpi-value { font-size: 26px; font-weight: 800; color: #1E293B; line-height: 1; }
 .kpi-card .kpi-sub { font-size: 11px; color: #94A3B8; margin-top: 4px; }
-.kpi-card.green { border-left-color: #10B981; }
-.kpi-card.yellow { border-left-color: #F59E0B; }
-.kpi-card.purple { border-left-color: #8B5CF6; }
-.kpi-card.blue { border-left-color: #3B82F6; }
+.kpi-card.green  { border-left-color: #218848; }
+.kpi-card.yellow { border-left-color: #FFB81C; }
+.kpi-card.purple { border-left-color: #475CC7; }
+.kpi-card.blue   { border-left-color: #475CC7; }
 
 /* ─── PERFORMANCE TABLE ───────────────────────────────────── */
 .table-card { background: #fff; border-radius: 12px;
@@ -95,13 +96,14 @@ select, input { font-family: inherit; font-size: 13px; }
   text-transform: uppercase; letter-spacing: .05em; color: #64748B;
   padding: 8px 10px; border-bottom: 2px solid #E2E8F0; white-space: nowrap;
   position: sticky; top: 0; z-index: 10; }
-.perf-table th.week-hdr { background: linear-gradient(135deg,#4F46E5,#7C3AED);
+/* Week header columns — CookUnity brand palette per week */
+.perf-table th.week-hdr { background: #AA0061;
   color: #fff; text-align: center; border-bottom: none; font-size: 12px;
   padding: 7px 10px; letter-spacing: 0; }
-.perf-table th.week-hdr.w1 { background: linear-gradient(135deg,#3B82F6,#2563EB); }
-.perf-table th.week-hdr.w2 { background: linear-gradient(135deg,#8B5CF6,#7C3AED); }
-.perf-table th.week-hdr.w3 { background: linear-gradient(135deg,#4F46E5,#6366F1); }
-.perf-table th.week-hdr.wc { background: linear-gradient(135deg,#10B981,#059669); }
+.perf-table th.week-hdr.w1 { background: #475CC7; }   /* Sea   — Week -2 */
+.perf-table th.week-hdr.w2 { background: #AA0061; }   /* Magenta — Week -1 */
+.perf-table th.week-hdr.w3 { background: #FF6A14; }   /* Ranch — Week -0 */
+.perf-table th.week-hdr.wc { background: #218848; }   /* Earth — WTD/current */
 .perf-table th.sticky-col { position: sticky; z-index: 20; }
 .perf-table th.col-agent { left: 0; min-width: 170px; }
 .perf-table td { padding: 8px 10px; border-bottom: 1px solid #F1F5F9;
@@ -109,25 +111,25 @@ select, input { font-family: inherit; font-size: 13px; }
 .perf-table td.sticky-col { position: sticky; background: #fff; z-index: 5; }
 .perf-table td.col-agent { left: 0; font-weight: 600; color: #1E293B;
   border-right: 1px solid #E2E8F0; min-width: 170px; }
-.perf-table tbody tr:hover td { background: #F8F7FF !important; }
-.perf-table tbody tr:hover td.col-agent { background: #F0EDFF !important; }
+.perf-table tbody tr:hover td { background: #FFF0F7 !important; }
+.perf-table tbody tr:hover td.col-agent { background: #FFE8F4 !important; }
 .perf-table tfoot td { font-weight: 700; background: #F8FAFC !important;
-  border-top: 2px solid #E2E8F0; color: #4F46E5; }
-.perf-table tfoot td.col-agent { background: #F0EDFF !important; }
+  border-top: 2px solid #E2E8F0; color: #AA0061; }
+.perf-table tfoot td.col-agent { background: #FFF0F7 !important; }
 
 /* KPI cell coloring */
 .cell-kpi { text-align: right; font-variant-numeric: tabular-nums; }
-.cell-kpi.good  { color: #059669; background: #ECFDF5; }
-.cell-kpi.warn  { color: #B45309; background: #FFFBEB; }
+.cell-kpi.good  { color: #218848; background: #EDFAF1; }
+.cell-kpi.warn  { color: #8B6010; background: #FFFBEB; }
 .cell-kpi.bad   { color: #DC2626; background: #FEF2F2; }
 .cell-kpi.none  { color: #94A3B8; text-align: center; }
 .cell-meta { color: #64748B; font-size: 12px; }
-.group-hdr td { background: #EEF2FF !important; font-weight: 700;
-  color: #4F46E5; font-size: 12px; letter-spacing: .04em; }
-.group-hdr td.col-agent { background: #E0E7FF !important; }
-.subtotal-row td { background: #F0FDF4 !important; font-weight: 700;
-  color: #065F46; font-size: 12px; border-top: 1px solid #D1FAE5; }
-.subtotal-row td.col-agent { background: #DCFCE7 !important; }
+.group-hdr td { background: #FFF0F7 !important; font-weight: 700;
+  color: #AA0061; font-size: 12px; letter-spacing: .04em; }
+.group-hdr td.col-agent { background: #FFE8F4 !important; }
+.subtotal-row td { background: #EDFAF1 !important; font-weight: 700;
+  color: #1A5E32; font-size: 12px; border-top: 1px solid #D1FAE5; }
+.subtotal-row td.col-agent { background: #D1FAE5 !important; }
 .empty-state { text-align: center; padding: 3rem 1rem; color: #94A3B8; }
 .empty-state .emoji { font-size: 40px; margin-bottom: 10px; }
 .empty-state p { font-size: 14px; }
@@ -141,7 +143,7 @@ select, input { font-family: inherit; font-size: 13px; }
 .upload-card p.desc { font-size: 12px; color: #64748B; margin-bottom: 12px; line-height: 1.5; }
 .drop-zone { border: 2px dashed #CBD5E1; border-radius: 8px; padding: 1.5rem;
   text-align: center; cursor: pointer; transition: all .2s; background: #F8FAFC; }
-.drop-zone:hover, .drop-zone.drag-over { border-color: #4F46E5; background: #EEF2FF; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: #AA0061; background: #FFF0F7; }
 .drop-zone .dz-icon { font-size: 28px; margin-bottom: 6px; }
 .drop-zone p { font-size: 12px; color: #64748B; }
 .drop-zone input { display: none; }
@@ -159,16 +161,16 @@ select, input { font-family: inherit; font-size: 13px; }
   font-weight: 700; white-space: nowrap; }
 .preview-table td { padding: 3px 8px; border-bottom: 1px solid #F1F5F9; white-space: nowrap; }
 .upload-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
-.btn-upload { background: #4F46E5; color: #fff; border-radius: 6px; padding: 7px 16px;
+.btn-upload { background: #AA0061; color: #fff; border-radius: 6px; padding: 7px 16px;
   font-weight: 600; font-size: 12px; transition: background .2s; }
-.btn-upload:hover { background: #4338CA; }
+.btn-upload:hover { background: #8B0050; }
 .btn-upload:disabled { opacity: .5; cursor: not-allowed; }
 .clear-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748B; }
 .clear-check input { accent-color: #EF4444; }
 .upload-status { font-size: 12px; font-weight: 600; }
-.upload-status.ok { color: #059669; }
+.upload-status.ok  { color: #218848; }
 .upload-status.err { color: #DC2626; }
-.template-link { font-size: 11px; color: #4F46E5; text-decoration: underline;
+.template-link { font-size: 11px; color: #AA0061; text-decoration: underline;
   cursor: pointer; margin-top: 6px; display: inline-block; }
 
 /* ─── ADMIN / HIERARCHY TAB ───────────────────────────────── */
@@ -176,24 +178,42 @@ select, input { font-family: inherit; font-size: 13px; }
   box-shadow: 0 1px 3px rgba(0,0,0,.07); margin-bottom: 1.25rem; }
 .admin-section h3 { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .admin-section p.desc { font-size: 12px; color: #64748B; margin-bottom: 1rem; line-height: 1.5; }
-.btn-add { background: #10B981; color: #fff; border-radius: 6px; padding: 7px 14px;
-  font-weight: 600; font-size: 12px; margin-bottom: 1rem; }
-.btn-add:hover { background: #059669; }
+/* Button row: Add Record + Bulk Upload side by side */
+.admin-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+.btn-add { background: #218848; color: #fff; border-radius: 6px; padding: 7px 14px;
+  font-weight: 600; font-size: 12px; }
+.btn-add:hover { background: #196A37; }
+.btn-bulk { background: #475CC7; color: #fff; border-radius: 6px; padding: 7px 14px;
+  font-weight: 600; font-size: 12px; }
+.btn-bulk:hover { background: #3A4FA8; }
+/* Collapsible bulk upload panel */
+.hier-upload-panel { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px;
+  padding: 1rem; margin-bottom: 1rem; display: none; }
+.hier-upload-panel.open { display: block; }
+.hier-upload-panel h5 { font-weight: 700; font-size: 13px; margin-bottom: 8px; color: #1E293B; }
+.hier-date-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+.hier-date-row label { font-size: 11px; font-weight: 600; color: #64748B;
+  text-transform: uppercase; letter-spacing: .04em; display: flex; flex-direction: column; gap: 4px; }
+.hier-date-row input[type=date] { border: 1px solid #CBD5E1; border-radius: 6px;
+  padding: 5px 10px; font-size: 13px; background: #fff; color: #1E293B; }
+.hier-active-row { display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #64748B; margin-bottom: 10px; }
+.hier-active-row input { accent-color: #AA0061; }
 .admin-table-wrap { overflow-x: auto; }
 .admin-table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .admin-table th { background: #F8FAFC; padding: 8px 10px; text-align: left;
   font-weight: 700; font-size: 11px; color: #64748B; text-transform: uppercase;
   letter-spacing: .05em; border-bottom: 2px solid #E2E8F0; white-space: nowrap; }
 .admin-table td { padding: 7px 10px; border-bottom: 1px solid #F1F5F9; color: #1E293B; }
-.admin-table tbody tr:hover td { background: #F8F7FF; }
+.admin-table tbody tr:hover td { background: #FFF0F7; }
 .btn-sm { padding: 3px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; }
-.btn-edit { background: #EEF2FF; color: #4F46E5; }
-.btn-edit:hover { background: #E0E7FF; }
+.btn-edit { background: #FFF0F7; color: #AA0061; }
+.btn-edit:hover { background: #FFE8F4; }
 .btn-del { background: #FEF2F2; color: #DC2626; }
 .btn-del:hover { background: #FEE2E2; }
-.tag-good { background: #D1FAE5; color: #065F46; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
-.tag-view { background: #F1F5F9; color: #64748B; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
-.tag-admin { background: #EDE9FE; color: #7C3AED; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+.tag-good  { background: #D1FAE5; color: #1A5E32; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+.tag-view  { background: #F1F5F9; color: #64748B; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+.tag-admin { background: #FFF0F7; color: #AA0061; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
 
 /* ─── MODAL ───────────────────────────────────────────────── */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
@@ -208,38 +228,39 @@ select, input { font-family: inherit; font-size: 13px; }
 .form-group input, .form-group select, .form-group textarea {
   width: 100%; border: 1px solid #CBD5E1; border-radius: 7px; padding: 8px 11px;
   font-size: 13px; color: #1E293B; background: #F8FAFC; }
-.form-group input:focus, .form-group select:focus { outline: none; border-color: #4F46E5; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #AA0061; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 1.25rem; }
-.btn-save { background: #4F46E5; color: #fff; border-radius: 7px; padding: 9px 22px; font-weight: 700; }
-.btn-save:hover { background: #4338CA; }
+.btn-save { background: #AA0061; color: #fff; border-radius: 7px; padding: 9px 22px; font-weight: 700; }
+.btn-save:hover { background: #8B0050; }
 .btn-cancel { background: #F1F5F9; color: #64748B; border-radius: 7px; padding: 9px 18px; font-weight: 600; border: 1px solid #E2E8F0; }
 .btn-cancel:hover { background: #E2E8F0; }
 
 /* ─── LOGIN ───────────────────────────────────────────────── */
+/* Gradient from Charcoal → Magenta for the CookUnity brand feel */
 .login-overlay { display: none; position: fixed; inset: 0;
-  background: linear-gradient(135deg,#4F46E5,#7C3AED);
+  background: linear-gradient(135deg, #24272A 0%, #AA0061 100%);
   z-index: 1000; align-items: center; justify-content: center; }
 .login-overlay.open { display: flex; }
 .login-card { background: #fff; border-radius: 16px; padding: 2rem; width: 360px;
-  box-shadow: 0 30px 80px rgba(0,0,0,.3); text-align: center; }
+  box-shadow: 0 30px 80px rgba(0,0,0,.35); text-align: center; }
 .login-card .logo-big { font-size: 48px; margin-bottom: 10px; }
 .login-card h2 { font-weight: 800; font-size: 20px; margin-bottom: 4px; }
 .login-card .login-sub { font-size: 13px; color: #64748B; margin-bottom: 1rem; }
-.login-domain-note { background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px;
-  padding: 8px 14px; font-size: 12px; color: #3730A3; margin-bottom: 0; }
+.login-domain-note { background: #FFF0F7; border: 1px solid #FFB8D8; border-radius: 8px;
+  padding: 8px 14px; font-size: 12px; color: #8B0050; margin-bottom: 0; }
 
 /* ─── LOADING ─────────────────────────────────────────────── */
-.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,.8);
+.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,.85);
   z-index: 800; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
 .loading-overlay.open { display: flex; }
 .spinner { width: 36px; height: 36px; border: 4px solid #E2E8F0;
-  border-top-color: #4F46E5; border-radius: 50%; animation: spin .7s linear infinite; }
+  border-top-color: #AA0061; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-overlay p { color: #64748B; font-weight: 600; font-size: 13px; }
 
 /* ─── TOAST ───────────────────────────────────────────────── */
-.toast { position: fixed; bottom: 2rem; right: 2rem; color: #fff; background: #10B981;
+.toast { position: fixed; bottom: 2rem; right: 2rem; color: #fff; background: #218848;
   padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 13px;
   transform: translateY(120px); opacity: 0; transition: all .3s cubic-bezier(.34,1.56,.64,1);
   z-index: 9000; max-width: 360px; }
@@ -543,7 +564,49 @@ select, input { font-family: inherit; font-size: 13px; }
         When the org changes (every 2–3 months), add a new record with the new dates — historical data is preserved automatically.
         Leave <em>Effective To</em> blank for the current assignment.
       </p>
-      <button class="btn-add" onclick="openHierModal()">+ Add Hierarchy Record</button>
+      <!-- Button row: manual add + bulk CSV upload -->
+      <div class="admin-btn-row">
+        <button class="btn-add" onclick="openHierModal()">+ Add Record</button>
+        <button class="btn-bulk" onclick="toggleHierUploadPanel()">⬆ Bulk Upload CSV</button>
+      </div>
+
+      <!-- Collapsible bulk hierarchy upload panel -->
+      <div class="hier-upload-panel" id="hier-upload-panel">
+        <h5>⬆ Bulk Hierarchy Upload</h5>
+        <p style="font-size:12px;color:#64748B;margin-bottom:10px;line-height:1.5">
+          Upload a CSV with agent emails, supervisors and AMs. One row per agent.
+          Required columns: <em>Email, Supervisor, A. Manager</em>. Also supports <em>Agent Name</em> and <em>Status</em>.
+        </p>
+        <div class="hier-date-row">
+          <label>Effective From *
+            <input type="date" id="hier-bulk-from">
+          </label>
+          <label>Effective To <span style="font-weight:400;color:#94A3B8">(blank = current)</span>
+            <input type="date" id="hier-bulk-to">
+          </label>
+        </div>
+        <label class="hier-active-row">
+          <input type="checkbox" id="hier-active-only" checked>
+          Import only rows where Status = "Active"
+        </label>
+        <div class="drop-zone" id="dz-hier" onclick="document.getElementById('f-hier').click()"
+          ondragover="dzOver(event,'dz-hier')" ondragleave="dzLeave('dz-hier')" ondrop="dzDropHier(event)">
+          <div class="dz-icon">📋</div>
+          <p id="dz-hier-label">Click to select or drag hierarchy CSV here</p>
+          <input type="file" id="f-hier" accept=".csv" onchange="onHierFileSelect(event)">
+        </div>
+        <div class="mapper-box" id="mapper-hier">
+          <h5>Column Mapping</h5>
+          <div id="fields-hier"></div>
+          <div class="preview-table-wrap"><table class="preview-table" id="prev-hier"></table></div>
+          <div class="upload-actions">
+            <button class="btn-upload" id="btn-up-hier" onclick="submitHierarchyUpload()" disabled>Upload All</button>
+            <span class="template-link" onclick="downloadHierTemplate()">⬇ Download template</span>
+            <span class="upload-status" id="st-hier"></span>
+          </div>
+        </div>
+      </div>
+
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -1217,6 +1280,216 @@ function renderAMView() {
     `${getActivePeriods().map(p=>p.label).join(' | ')} · agents grouped by A.Manager`;
 }
 
+// ═══════════════════════════════════════════════════════════
+// HIERARCHY BULK CSV UPLOAD
+// ═══════════════════════════════════════════════════════════
+
+let hierParsedRows = [];  // raw CSV rows after parseCSV()
+let hierMappedRows = [];  // rows after column mapping + filter
+
+const HIER_FIELDS = [
+  { key:'agent_email',     label:'Agent Email *',      auto:['email','agent email','e-mail','correo'] },
+  { key:'agent_name',      label:'Agent Name',         auto:['agent name','name','nombre','agent'] },
+  { key:'supervisor_name', label:'Supervisor *',        auto:['supervisor','supervisor name','sup'] },
+  { key:'am_name',         label:'A. Manager *',        auto:['a. manager','am','assistant manager','a.manager','manager'] },
+  { key:'status',          label:'Status (optional)',   auto:['status','estado'] },
+];
+
+function toggleHierUploadPanel() {
+  const panel = document.getElementById('hier-upload-panel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) {
+    const fromEl = document.getElementById('hier-bulk-from');
+    if (fromEl && !fromEl.value) fromEl.value = todayStr();
+  }
+}
+
+function onHierFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => processHierCSV(ev.target.result);
+  reader.readAsText(file, 'UTF-8');
+}
+
+function dzDropHier(e) {
+  e.preventDefault();
+  dzLeave('dz-hier');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => processHierCSV(ev.target.result);
+  reader.readAsText(file, 'UTF-8');
+}
+
+function processHierCSV(text) {
+  hierParsedRows = parseCSV(text);
+  if (!hierParsedRows.length) {
+    showToast('CSV has no data rows.', '#EF4444');
+    return;
+  }
+  const labelEl = document.getElementById('dz-hier-label');
+  if (labelEl) labelEl.textContent = `✅ ${hierParsedRows.length} rows loaded — configure mapping below`;
+  showHierMapper(hierParsedRows);
+}
+
+function showHierMapper(rows) {
+  const headers = Object.keys(rows[0] || {});
+  const box      = document.getElementById('mapper-hier');
+  const fieldsEl = document.getElementById('fields-hier');
+  if (!box || !fieldsEl) return;
+
+  fieldsEl.innerHTML = HIER_FIELDS.map(f => {
+    const normH = headers.map(h => h.toLowerCase().trim());
+    let autoIdx = -1;
+    for (const hint of f.auto) {
+      const idx = normH.findIndex(h => h.includes(hint));
+      if (idx >= 0) { autoIdx = idx; break; }
+    }
+    const opts = headers.map((h, i) =>
+      `<option value="${escHtml(h)}"${i === autoIdx ? ' selected' : ''}>${escHtml(h)}</option>`
+    ).join('');
+    return `
+      <div class="mapper-row">
+        <label>${escHtml(f.label)}</label>
+        <select id="hmap-${f.key}" onchange="updateHierPreview()">
+          <option value="">(skip)</option>${opts}
+        </select>
+      </div>`;
+  }).join('');
+
+  box.style.display = 'block';
+  updateHierPreview();
+}
+
+function getHierMapping() {
+  const m = {};
+  HIER_FIELDS.forEach(f => {
+    const el = document.getElementById('hmap-' + f.key);
+    m[f.key] = el ? el.value : '';
+  });
+  return m;
+}
+
+function updateHierPreview() {
+  hierMappedRows = mapHierRows();
+  const preview = hierMappedRows.slice(0, 5);
+  const tbl = document.getElementById('prev-hier');
+  if (!tbl) return;
+
+  tbl.innerHTML = `
+    <thead><tr><th>Email</th><th>Agent Name</th><th>Supervisor</th><th>A. Manager</th><th>Status</th></tr></thead>
+    <tbody>${preview.map(r => `<tr>
+      <td>${escHtml(r.agent_email)}</td>
+      <td>${escHtml(r.agent_name)}</td>
+      <td>${escHtml(r.supervisor_name)}</td>
+      <td>${escHtml(r.am_name)}</td>
+      <td>${escHtml(r.status)}</td>
+    </tr>`).join('')}</tbody>`;
+
+  const btn = document.getElementById('btn-up-hier');
+  if (btn) btn.disabled = !hierMappedRows.length;
+}
+
+function mapHierRows() {
+  const m           = getHierMapping();
+  const activeOnly  = document.getElementById('hier-active-only')?.checked;
+  return hierParsedRows
+    .map(row => ({
+      agent_email:     (m.agent_email     ? (row[m.agent_email]     || '') : '').toLowerCase().trim(),
+      agent_name:      (m.agent_name      ? (row[m.agent_name]      || '') : '').trim(),
+      supervisor_name: (m.supervisor_name ? (row[m.supervisor_name] || '') : '').trim(),
+      am_name:         (m.am_name         ? (row[m.am_name]         || '') : '').trim(),
+      status:          (m.status          ? (row[m.status]          || '') : '').trim(),
+    }))
+    .filter(r => {
+      if (!r.agent_email || !r.supervisor_name || !r.am_name) return false;
+      if (activeOnly && r.status && r.status.toLowerCase() !== 'active') return false;
+      return true;
+    });
+}
+
+async function submitHierarchyUpload() {
+  const rows = mapHierRows();
+  if (!rows.length) {
+    showToast('No valid rows to upload. Check Email, Supervisor and AM column mapping.', '#EF4444');
+    return;
+  }
+  const from = document.getElementById('hier-bulk-from')?.value || '';
+  const to   = document.getElementById('hier-bulk-to')?.value   || '';
+  if (!from) {
+    showToast('Please set Effective From date before uploading.', '#FFB81C');
+    return;
+  }
+
+  const btn = document.getElementById('btn-up-hier');
+  const st  = document.getElementById('st-hier');
+  if (btn) btn.disabled = true;
+  if (st)  { st.className = 'upload-status'; st.textContent = ''; }
+
+  showLoading(true, `Uploading ${rows.length} hierarchy records…`);
+
+  let uploaded = 0;
+  const errors = [];
+
+  for (const r of rows) {
+    try {
+      await apiPost({
+        action: 'saveHierarchy',
+        record: {
+          agent_email:     r.agent_email,
+          agent_name:      r.agent_name || emailToName[r.agent_email] || '',
+          supervisor_name: r.supervisor_name,
+          am_name:         r.am_name,
+          effective_from:  from,
+          effective_to:    to,
+          notes:           'Bulk import',
+        }
+      });
+      uploaded++;
+      if (st) st.textContent = `Uploading ${uploaded} / ${rows.length}…`;
+    } catch(err) {
+      errors.push(`${r.agent_email}: ${err.message}`);
+    }
+  }
+
+  showLoading(false);
+
+  if (errors.length) {
+    showToast(`⚠️ ${uploaded} uploaded, ${errors.length} failed.`, '#FFB81C');
+    if (st) { st.className = 'upload-status err'; st.textContent = `${uploaded} ok, ${errors.length} failed`; }
+  } else {
+    showToast(`✅ ${uploaded} hierarchy records uploaded!`);
+    if (st) { st.className = 'upload-status ok'; st.textContent = `${uploaded} records added`; }
+    // Reset panel
+    document.getElementById('hier-upload-panel').classList.remove('open');
+    const labelEl = document.getElementById('dz-hier-label');
+    if (labelEl) labelEl.textContent = 'Click to select or drag hierarchy CSV here';
+    const fi = document.getElementById('f-hier');
+    if (fi) fi.value = '';
+    const mb = document.getElementById('mapper-hier');
+    if (mb) mb.style.display = 'none';
+    hierParsedRows = [];
+    hierMappedRows = [];
+  }
+
+  if (btn) btn.disabled = false;
+  await apiFetch();
+  renderHierarchyTable();
+  populateFilters();
+}
+
+function downloadHierTemplate() {
+  const csv = 'Email,Agent Name,Supervisor,A. Manager,Status\n' +
+    'agent@cookunity.com,Jane Doe,Maria Garcia,John Smith,Active\n' +
+    'agent2@cookunity.com,Carlos Lopez,Maria Garcia,John Smith,Active';
+  const blob = new Blob([csv], { type:'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'Hierarchy_Bulk_Template.csv';
+  a.click();
+}
+
 function renderHierarchyTable() {
   const tbody = document.getElementById('hier-tbody');
   if (!tbody) return;
@@ -1228,12 +1501,12 @@ function renderHierarchyTable() {
     (String(a.agent_name||'')).localeCompare(String(b.agent_name||'')));
   tbody.innerHTML = sorted.map(h => `
     <tr>
-      <td>${escHtml(h.agent_name||'')}</td>
+      <td>${escHtml(h.agent_name || h.agent_email || '')}</td>
       <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
       <td>${escHtml(h.supervisor_name||'')}</td>
       <td>${escHtml(h.am_name||'')}</td>
       <td>${escHtml(h.effective_from||'')}</td>
-      <td>${h.effective_to ? escHtml(h.effective_to) : '<span style="color:#10B981;font-weight:600">Current</span>'}</td>
+      <td>${h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>'}</td>
       <td style="color:#64748B;font-size:11px">${escHtml(h.notes||'')}</td>
       <td style="white-space:nowrap">
         <button class="btn-sm btn-edit" onclick='openHierModal(${JSON.stringify(h)})'>Edit</button>
@@ -1449,7 +1722,7 @@ function processCsvFile(file, type) {
   const reader = new FileReader();
   reader.onload = e => {
     const rows = parseCSV(e.target.result);
-    if (!rows.length) { showToast('CSV appears to be empty.', '#F59E0B'); return; }
+    if (!rows.length) { showToast('CSV appears to be empty.', '#FFB81C'); return; }
 
     parsedFiles[type] = rows;
     const headers = Object.keys(rows[0]);
@@ -1556,11 +1829,11 @@ function mapRows(type, rawRows, map) {
 
 async function submitUpload(type) {
   const rawRows = parsedFiles[type];
-  if (!rawRows || !rawRows.length) return showToast('No file loaded.', '#F59E0B');
+  if (!rawRows || !rawRows.length) return showToast('No file loaded.', '#FFB81C');
 
   const map     = getMapping(type);
   const rows    = mapRows(type, rawRows, map);
-  if (!rows.length) return showToast('No valid rows after mapping. Check column selections.', '#F59E0B');
+  if (!rows.length) return showToast('No valid rows after mapping. Check column selections.', '#FFB81C');
 
   const st  = document.getElementById(`st-${type}`);
   const btn = document.getElementById(`btn-up-${type}`);
@@ -1697,7 +1970,7 @@ async function saveHierarchy() {
     notes:           document.getElementById('hm-notes').value.trim(),
   };
   if (!record.agent_name || !record.supervisor_name || !record.am_name || !record.effective_from) {
-    return showToast('Please fill all required fields.', '#F59E0B');
+    return showToast('Please fill all required fields.', '#FFB81C');
   }
   showLoading(true, 'Saving…');
   try {
@@ -1736,7 +2009,7 @@ function closeRolesModal() { document.getElementById('roles-modal').classList.re
 async function saveRole() {
   const email = document.getElementById('rm-email').value.trim();
   const role  = document.getElementById('rm-role').value;
-  if (!email) return showToast('Email is required.', '#F59E0B');
+  if (!email) return showToast('Email is required.', '#FFB81C');
   showLoading(true, 'Saving…');
   try {
     await apiPost({ action:'updateRoles', subAction:'add', targetEmail:email, role });
@@ -1925,7 +2198,7 @@ function showLoading(on, msg) {
 function showToast(msg, color) {
   const t = document.getElementById('toast');
   t.textContent  = msg;
-  t.style.background = color || '#10B981';
+  t.style.background = color || '#218848';
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3500);
 }
