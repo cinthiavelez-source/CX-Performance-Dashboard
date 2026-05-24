@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CX Performance Dashboard — CookUnity</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<!-- Google Identity Services — powers the "Sign in with Google" button -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+/* ─── RESET & BASE ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif;
+       background: #F1F5F9; color: #1E293B; font-size: 14px; }
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; border: none; font-family: inherit; font-size: 13px; }
+select, input { font-family: inherit; font-size: 13px; }
+
+/* ─── NAVBAR ──────────────────────────────────────────────── */
+.navbar {
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+  padding: 0 1.5rem; display: flex; align-items: center;
+  justify-content: space-between; min-height: 56px;
+  position: sticky; top: 0; z-index: 200; box-shadow: 0 2px 8px rgba(79,70,229,.35);
+}
+.navbar-brand { display: flex; align-items: center; gap: 10px; }
+.navbar-brand .logo { font-size: 22px; }
+.navbar-brand strong { color: #fff; font-size: 16px; font-weight: 700; }
+.navbar-brand span { color: rgba(255,255,255,.7); font-size: 12px; margin-left: 6px; }
+.navbar-right { display: flex; align-items: center; gap: 12px; }
+.user-chip { background: rgba(255,255,255,.15); border-radius: 20px;
+  padding: 4px 12px; color: #fff; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #10B981; }
+.sync-dot.syncing { background: #F59E0B; animation: pulse 1s infinite; }
+.sync-dot.err { background: #EF4444; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+/* ─── TAB NAV ─────────────────────────────────────────────── */
+.tabnav { background: #fff; border-bottom: 2px solid #E2E8F0;
+  display: flex; align-items: center; padding: 0 1.5rem; gap: 2px; overflow-x: auto; }
+.tabnav button { padding: 0 18px; height: 46px; background: none; color: #64748B;
+  font-weight: 500; border-bottom: 3px solid transparent; margin-bottom: -2px;
+  white-space: nowrap; transition: all .2s; border-radius: 6px 6px 0 0; }
+.tabnav button:hover { color: #4F46E5; background: #F8F7FF; }
+.tabnav button.active { color: #4F46E5; border-bottom-color: #4F46E5; font-weight: 700; }
+
+/* ─── FILTER BAR ──────────────────────────────────────────── */
+.filter-bar { background: #fff; border-bottom: 1px solid #E2E8F0;
+  padding: 10px 1.5rem; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.filter-bar label { font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase;
+  letter-spacing: .05em; display: flex; flex-direction: column; gap: 3px; }
+.filter-bar select, .filter-bar input[type=date] {
+  border: 1px solid #CBD5E1; border-radius: 6px; padding: 5px 10px;
+  color: #1E293B; background: #F8FAFC; min-width: 140px; height: 32px; }
+.filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: #4F46E5; }
+.filter-sep { width: 1px; background: #E2E8F0; height: 30px; margin: 0 4px; }
+.btn-apply { background: #4F46E5; color: #fff; border-radius: 6px;
+  padding: 6px 16px; font-weight: 600; height: 32px; transition: background .2s; }
+.btn-apply:hover { background: #4338CA; }
+.btn-reset { background: #F1F5F9; color: #64748B; border-radius: 6px;
+  padding: 6px 12px; font-weight: 500; height: 32px; border: 1px solid #CBD5E1; }
+.btn-reset:hover { background: #E2E8F0; }
+.period-badge { background: #EEF2FF; color: #4F46E5; border-radius: 4px;
+  padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+
+/* ─── MAIN CONTENT ────────────────────────────────────────── */
+.main { padding: 1.25rem 1.5rem; max-width: 100%; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ─── SUMMARY CARDS ───────────────────────────────────────── */
+.kpi-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem; margin-bottom: 1.25rem; }
+.kpi-card { background: #fff; border-radius: 12px; padding: 1rem 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07); border-left: 4px solid #4F46E5; }
+.kpi-card .kpi-label { font-size: 11px; font-weight: 600; color: #64748B;
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.kpi-card .kpi-value { font-size: 26px; font-weight: 800; color: #1E293B; line-height: 1; }
+.kpi-card .kpi-sub { font-size: 11px; color: #94A3B8; margin-top: 4px; }
+.kpi-card.green { border-left-color: #10B981; }
+.kpi-card.yellow { border-left-color: #F59E0B; }
+.kpi-card.purple { border-left-color: #8B5CF6; }
+.kpi-card.blue { border-left-color: #3B82F6; }
+
+/* ─── PERFORMANCE TABLE ───────────────────────────────────── */
+.table-card { background: #fff; border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07); overflow: hidden; }
+.table-card-header { padding: 1rem 1.25rem; border-bottom: 1px solid #F1F5F9;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.table-card-header h3 { font-weight: 700; font-size: 15px; color: #1E293B; }
+.table-card-header p { font-size: 12px; color: #94A3B8; }
+.table-wrap { overflow-x: auto; max-height: 600px; }
+.perf-table { border-collapse: collapse; width: 100%; min-width: 900px; }
+.perf-table th { background: #F8FAFC; font-weight: 700; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em; color: #64748B;
+  padding: 8px 10px; border-bottom: 2px solid #E2E8F0; white-space: nowrap;
+  position: sticky; top: 0; z-index: 10; }
+.perf-table th.week-hdr { background: linear-gradient(135deg,#4F46E5,#7C3AED);
+  color: #fff; text-align: center; border-bottom: none; font-size: 12px;
+  padding: 7px 10px; letter-spacing: 0; }
+.perf-table th.week-hdr.w1 { background: linear-gradient(135deg,#3B82F6,#2563EB); }
+.perf-table th.week-hdr.w2 { background: linear-gradient(135deg,#8B5CF6,#7C3AED); }
+.perf-table th.week-hdr.w3 { background: linear-gradient(135deg,#4F46E5,#6366F1); }
+.perf-table th.week-hdr.wc { background: linear-gradient(135deg,#10B981,#059669); }
+.perf-table th.sticky-col { position: sticky; z-index: 20; }
+.perf-table th.col-agent { left: 0; min-width: 170px; }
+.perf-table td { padding: 8px 10px; border-bottom: 1px solid #F1F5F9;
+  font-size: 13px; color: #1E293B; white-space: nowrap; }
+.perf-table td.sticky-col { position: sticky; background: #fff; z-index: 5; }
+.perf-table td.col-agent { left: 0; font-weight: 600; color: #1E293B;
+  border-right: 1px solid #E2E8F0; min-width: 170px; }
+.perf-table tbody tr:hover td { background: #F8F7FF !important; }
+.perf-table tbody tr:hover td.col-agent { background: #F0EDFF !important; }
+.perf-table tfoot td { font-weight: 700; background: #F8FAFC !important;
+  border-top: 2px solid #E2E8F0; color: #4F46E5; }
+.perf-table tfoot td.col-agent { background: #F0EDFF !important; }
+
+/* KPI cell coloring */
+.cell-kpi { text-align: right; font-variant-numeric: tabular-nums; }
+.cell-kpi.good  { color: #059669; background: #ECFDF5; }
+.cell-kpi.warn  { color: #B45309; background: #FFFBEB; }
+.cell-kpi.bad   { color: #DC2626; background: #FEF2F2; }
+.cell-kpi.none  { color: #94A3B8; text-align: center; }
+.cell-meta { color: #64748B; font-size: 12px; }
+.group-hdr td { background: #EEF2FF !important; font-weight: 700;
+  color: #4F46E5; font-size: 12px; letter-spacing: .04em; }
+.group-hdr td.col-agent { background: #E0E7FF !important; }
+.subtotal-row td { background: #F0FDF4 !important; font-weight: 700;
+  color: #065F46; font-size: 12px; border-top: 1px solid #D1FAE5; }
+.subtotal-row td.col-agent { background: #DCFCE7 !important; }
+.empty-state { text-align: center; padding: 3rem 1rem; color: #94A3B8; }
+.empty-state .emoji { font-size: 40px; margin-bottom: 10px; }
+.empty-state p { font-size: 14px; }
+
+/* ─── UPLOAD TAB ──────────────────────────────────────────── */
+.upload-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr));
+  gap: 1.25rem; margin-bottom: 1.25rem; }
+.upload-card { background: #fff; border-radius: 12px; padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+.upload-card h4 { font-weight: 700; font-size: 14px; margin-bottom: 4px; color: #1E293B; }
+.upload-card p.desc { font-size: 12px; color: #64748B; margin-bottom: 12px; line-height: 1.5; }
+.drop-zone { border: 2px dashed #CBD5E1; border-radius: 8px; padding: 1.5rem;
+  text-align: center; cursor: pointer; transition: all .2s; background: #F8FAFC; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: #4F46E5; background: #EEF2FF; }
+.drop-zone .dz-icon { font-size: 28px; margin-bottom: 6px; }
+.drop-zone p { font-size: 12px; color: #64748B; }
+.drop-zone input { display: none; }
+.mapper-box { margin-top: 12px; background: #F8FAFC; border-radius: 8px; padding: 12px;
+  border: 1px solid #E2E8F0; display: none; }
+.mapper-box h5 { font-size: 12px; font-weight: 700; color: #64748B; margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: .05em; }
+.mapper-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mapper-row label { font-size: 12px; color: #1E293B; min-width: 140px; font-weight: 500; }
+.mapper-row select { border: 1px solid #CBD5E1; border-radius: 5px; padding: 4px 8px;
+  font-size: 12px; flex: 1; background: #fff; }
+.preview-table-wrap { overflow-x: auto; max-height: 180px; margin-top: 8px; }
+.preview-table { font-size: 11px; border-collapse: collapse; width: 100%; }
+.preview-table th { background: #E2E8F0; padding: 4px 8px; text-align: left;
+  font-weight: 700; white-space: nowrap; }
+.preview-table td { padding: 3px 8px; border-bottom: 1px solid #F1F5F9; white-space: nowrap; }
+.upload-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+.btn-upload { background: #4F46E5; color: #fff; border-radius: 6px; padding: 7px 16px;
+  font-weight: 600; font-size: 12px; transition: background .2s; }
+.btn-upload:hover { background: #4338CA; }
+.btn-upload:disabled { opacity: .5; cursor: not-allowed; }
+.clear-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748B; }
+.clear-check input { accent-color: #EF4444; }
+.upload-status { font-size: 12px; font-weight: 600; }
+.upload-status.ok { color: #059669; }
+.upload-status.err { color: #DC2626; }
+.template-link { font-size: 11px; color: #4F46E5; text-decoration: underline;
+  cursor: pointer; margin-top: 6px; display: inline-block; }
+
+/* ─── ADMIN / HIERARCHY TAB ───────────────────────────────── */
+.admin-section { background: #fff; border-radius: 12px; padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07); margin-bottom: 1.25rem; }
+.admin-section h3 { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+.admin-section p.desc { font-size: 12px; color: #64748B; margin-bottom: 1rem; line-height: 1.5; }
+.btn-add { background: #10B981; color: #fff; border-radius: 6px; padding: 7px 14px;
+  font-weight: 600; font-size: 12px; margin-bottom: 1rem; }
+.btn-add:hover { background: #059669; }
+.admin-table-wrap { overflow-x: auto; }
+.admin-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.admin-table th { background: #F8FAFC; padding: 8px 10px; text-align: left;
+  font-weight: 700; font-size: 11px; color: #64748B; text-transform: uppercase;
+  letter-spacing: .05em; border-bottom: 2px solid #E2E8F0; white-space: nowrap; }
+.admin-table td { padding: 7px 10px; border-bottom: 1px solid #F1F5F9; color: #1E293B; }
+.admin-table tbody tr:hover td { background: #F8F7FF; }
+.btn-sm { padding: 3px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+.btn-edit { background: #EEF2FF; color: #4F46E5; }
+.btn-edit:hover { background: #E0E7FF; }
+.btn-del { background: #FEF2F2; color: #DC2626; }
+.btn-del:hover { background: #FEE2E2; }
+.tag-good { background: #D1FAE5; color: #065F46; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+.tag-view { background: #F1F5F9; color: #64748B; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+.tag-admin { background: #EDE9FE; color: #7C3AED; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+
+/* ─── MODAL ───────────────────────────────────────────────── */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 500; align-items: center; justify-content: center; padding: 1rem; }
+.modal-overlay.open { display: flex; }
+.modal { background: #fff; border-radius: 14px; padding: 1.5rem; width: 100%;
+  max-width: 520px; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+.modal h3 { font-weight: 700; font-size: 16px; margin-bottom: 1rem; color: #1E293B; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; font-weight: 600; color: #64748B;
+  margin-bottom: 5px; text-transform: uppercase; letter-spacing: .04em; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; border: 1px solid #CBD5E1; border-radius: 7px; padding: 8px 11px;
+  font-size: 13px; color: #1E293B; background: #F8FAFC; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #4F46E5; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 1.25rem; }
+.btn-save { background: #4F46E5; color: #fff; border-radius: 7px; padding: 9px 22px; font-weight: 700; }
+.btn-save:hover { background: #4338CA; }
+.btn-cancel { background: #F1F5F9; color: #64748B; border-radius: 7px; padding: 9px 18px; font-weight: 600; border: 1px solid #E2E8F0; }
+.btn-cancel:hover { background: #E2E8F0; }
+
+/* ─── LOGIN ───────────────────────────────────────────────── */
+.login-overlay { display: none; position: fixed; inset: 0;
+  background: linear-gradient(135deg,#4F46E5,#7C3AED);
+  z-index: 1000; align-items: center; justify-content: center; }
+.login-overlay.open { display: flex; }
+.login-card { background: #fff; border-radius: 16px; padding: 2rem; width: 360px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.3); text-align: center; }
+.login-card .logo-big { font-size: 48px; margin-bottom: 10px; }
+.login-card h2 { font-weight: 800; font-size: 20px; margin-bottom: 4px; }
+.login-card .login-sub { font-size: 13px; color: #64748B; margin-bottom: 1rem; }
+.login-domain-note { background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px;
+  padding: 8px 14px; font-size: 12px; color: #3730A3; margin-bottom: 0; }
+
+/* ─── LOADING ─────────────────────────────────────────────── */
+.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,.8);
+  z-index: 800; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
+.loading-overlay.open { display: flex; }
+.spinner { width: 36px; height: 36px; border: 4px solid #E2E8F0;
+  border-top-color: #4F46E5; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay p { color: #64748B; font-weight: 600; font-size: 13px; }
+
+/* ─── TOAST ───────────────────────────────────────────────── */
+.toast { position: fixed; bottom: 2rem; right: 2rem; color: #fff; background: #10B981;
+  padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 13px;
+  transform: translateY(120px); opacity: 0; transition: all .3s cubic-bezier(.34,1.56,.64,1);
+  z-index: 9000; max-width: 360px; }
+.toast.show { transform: translateY(0); opacity: 1; }
+.no-data-note { background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px;
+  padding: 10px 14px; font-size: 12px; color: #9A3412; margin-bottom: 1rem; }
+@media (max-width: 768px) { .main { padding: 1rem; } .filter-bar { padding: 10px 1rem; } }
+</style>
+</head>
+<body>
+
+<!-- ─── LOADING ──────────────────────────────────────────── -->
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <p id="loading-msg">Loading data…</p>
+</div>
+
+<!-- ─── LOGIN ────────────────────────────────────────────── -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <div class="logo-big">🍳</div>
+    <h2>CX Performance Dashboard</h2>
+    <p class="login-sub">CookUnity Customer Experience Team</p>
+    <div class="login-domain-note">
+      🔒 Access restricted to <strong>@cookunity.com</strong> accounts
+    </div>
+    <!-- Google Sign-In button rendered here by GIS library -->
+    <div id="google-signin-btn" style="display:flex;justify-content:center;margin:1.25rem 0 0.5rem;min-height:44px;"></div>
+    <p id="login-error" style="display:none;color:#DC2626;font-size:12px;margin-top:8px;background:#FEF2F2;border-radius:6px;padding:8px 12px;text-align:left;"></p>
+    <p id="login-loading" style="color:#94A3B8;font-size:12px;margin-top:12px;">Loading sign-in…</p>
+  </div>
+</div>
+
+<!-- ─── HIERARCHY MODAL ───────────────────────────────────── -->
+<div class="modal-overlay" id="hier-modal">
+  <div class="modal">
+    <h3 id="hier-modal-title">Add Hierarchy Record</h3>
+    <input type="hidden" id="hm-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Agent Name *</label>
+        <input type="text" id="hm-agent-name" placeholder="Full name from TPH CSV">
+      </div>
+      <div class="form-group">
+        <label>Agent Email</label>
+        <input type="email" id="hm-agent-email" placeholder="agent@cookunity.com">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Supervisor Name *</label>
+        <input type="text" id="hm-supervisor" placeholder="Supervisor full name">
+      </div>
+      <div class="form-group">
+        <label>Assistant Manager *</label>
+        <input type="text" id="hm-am" placeholder="AM full name">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Effective From *</label>
+        <input type="date" id="hm-from">
+      </div>
+      <div class="form-group">
+        <label>Effective To <span style="font-weight:400;color:#94A3B8">(blank = current)</span></label>
+        <input type="date" id="hm-to">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <input type="text" id="hm-notes" placeholder="Optional — reason for change, etc.">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeHierModal()">Cancel</button>
+      <button class="btn-save" onclick="saveHierarchy()">Save Record</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── ROLES MODAL ───────────────────────────────────────── -->
+<div class="modal-overlay" id="roles-modal">
+  <div class="modal">
+    <h3>Add / Update Access</h3>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="rm-email" placeholder="colleague@cookunity.com">
+    </div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="rm-role">
+        <option value="viewer">Viewer (read-only)</option>
+        <option value="admin">Admin (upload + manage)</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeRolesModal()">Cancel</button>
+      <button class="btn-save" onclick="saveRole()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── NAVBAR ────────────────────────────────────────────── -->
+<nav class="navbar">
+  <div class="navbar-brand">
+    <span class="logo">🍳</span>
+    <strong>CX Performance</strong>
+    <span>CookUnity</span>
+  </div>
+  <div class="navbar-right">
+    <div class="user-chip">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="nav-user-name">Loading…</span>
+    </div>
+    <button id="btn-logout" onclick="doLogout()"
+      style="background:rgba(255,255,255,.15);color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;">
+      Sign out
+    </button>
+  </div>
+</nav>
+
+<!-- ─── TAB NAV ──────────────────────────────────────────── -->
+<div class="tabnav">
+  <button class="active" data-page="agent" onclick="navTo('agent')">👤 Agent View</button>
+  <button data-page="supervisor" onclick="navTo('supervisor')">🧑‍💼 Supervisor View</button>
+  <button data-page="am" onclick="navTo('am')">🏢 A.Manager View</button>
+  <button data-page="upload" onclick="navTo('upload')" id="btn-upload-tab">⬆️ Upload Data</button>
+  <button data-page="admin" onclick="navTo('admin')" id="btn-admin-tab" style="display:none">⚙️ Admin</button>
+</div>
+
+<!-- ─── FILTER BAR ────────────────────────────────────────── -->
+<div class="filter-bar">
+  <label>Agent
+    <select id="f-agent"><option value="">All Agents</option></select>
+  </label>
+  <label>Supervisor
+    <select id="f-supervisor"><option value="">All Supervisors</option></select>
+  </label>
+  <label>Asst. Manager
+    <select id="f-am"><option value="">All A.Managers</option></select>
+  </label>
+  <div class="filter-sep"></div>
+  <label>Period
+    <select id="f-period" onchange="onPeriodChange()">
+      <option value="3w">Last 3 Weeks</option>
+      <option value="1w">This Week</option>
+      <option value="1m">This Month</option>
+      <option value="custom">Custom Range</option>
+    </select>
+  </label>
+  <div id="f-custom-range" style="display:none;display:flex;gap:8px;align-items:center;">
+    <label>From <input type="date" id="f-date-from"></label>
+    <label>To <input type="date" id="f-date-to"></label>
+  </div>
+  <button class="btn-apply" onclick="applyFilters()">Apply</button>
+  <button class="btn-reset" onclick="resetFilters()">Reset</button>
+  <span class="period-badge" id="period-badge">Last 3 Weeks</span>
+</div>
+
+<!-- ─── MAIN ─────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- AGENT VIEW -->
+  <div class="page active" id="page-agent">
+    <div class="kpi-cards" id="agent-kpi-cards"></div>
+    <div class="table-card">
+      <div class="table-card-header">
+        <div>
+          <h3>Agent Performance</h3>
+          <p id="agent-table-subtitle">Last 3 weeks · all 4 KPIs per agent</p>
+        </div>
+        <button onclick="exportTable('agent-perf-table')"
+          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+          ⬇ Export CSV
+        </button>
+      </div>
+      <div class="table-wrap"><div id="agent-table-wrap"></div></div>
+    </div>
+  </div>
+
+  <!-- SUPERVISOR VIEW -->
+  <div class="page" id="page-supervisor">
+    <div class="kpi-cards" id="sup-kpi-cards"></div>
+    <div class="table-card">
+      <div class="table-card-header">
+        <div>
+          <h3>Supervisor View — Agents by Team</h3>
+          <p id="sup-table-subtitle">Last 3 weeks · select a supervisor to focus</p>
+        </div>
+      </div>
+      <div class="table-wrap"><div id="sup-table-wrap"></div></div>
+    </div>
+  </div>
+
+  <!-- AM VIEW -->
+  <div class="page" id="page-am">
+    <div class="kpi-cards" id="am-kpi-cards"></div>
+    <div class="table-card">
+      <div class="table-card-header">
+        <div>
+          <h3>Assistant Manager View — Agents by Region</h3>
+          <p id="am-table-subtitle">Last 3 weeks · select an AM to focus</p>
+        </div>
+      </div>
+      <div class="table-wrap"><div id="am-table-wrap"></div></div>
+    </div>
+  </div>
+
+  <!-- UPLOAD TAB -->
+  <div class="page" id="page-upload">
+    <div class="no-data-note" id="upload-admin-note" style="display:none">
+      ⚠️ Only admins can upload data. Contact <strong>cinthiavelez@cookunity.com</strong> to request access.
+    </div>
+    <div class="upload-grid" id="upload-grid">
+
+      <!-- TPH/AHT -->
+      <div class="upload-card">
+        <h4>📊 TPH / AHT Data</h4>
+        <p class="desc">Daily productivity export. Required columns: <em>Agent Name, Agent Email, Date, Valid Tickets, Avg Handle Time (mm:ss), Total Handle Time (hh:mm:ss), Total Time (hh:mm:ss)</em></p>
+        <div class="drop-zone" id="dz-tph" onclick="document.getElementById('f-tph').click()"
+          ondragover="dzOver(event,'dz-tph')" ondragleave="dzLeave('dz-tph')" ondrop="dzDrop(event,'tph')">
+          <div class="dz-icon">📁</div>
+          <p>Click to select or drag CSV here</p>
+          <input type="file" id="f-tph" accept=".csv" onchange="onFileSelect(event,'tph')">
+        </div>
+        <div class="mapper-box" id="mapper-tph">
+          <h5>Column Mapping</h5>
+          <div id="fields-tph"></div>
+          <div class="preview-table-wrap"><table class="preview-table" id="prev-tph"></table></div>
+          <div class="upload-actions">
+            <label class="clear-check">
+              <input type="checkbox" id="clear-tph"> Clear existing data for this date range first
+            </label>
+            <button class="btn-upload" id="btn-up-tph" onclick="submitUpload('tph')" disabled>Upload</button>
+            <span class="upload-status" id="st-tph"></span>
+          </div>
+        </div>
+        <span class="template-link" onclick="downloadTemplate('tph')">⬇ Download template</span>
+      </div>
+
+      <!-- CSAT -->
+      <div class="upload-card">
+        <h4>😊 CSAT Data</h4>
+        <p class="desc">Satisfaction survey export. Required columns: <em>Update - Date, Update ticket assignee, Changes - New value (good/bad/offered), Ticket ID</em><br>Only rows with <em>Changes - Field name = satisfaction_score</em> are imported.</p>
+        <div class="drop-zone" id="dz-csat" onclick="document.getElementById('f-csat').click()"
+          ondragover="dzOver(event,'dz-csat')" ondragleave="dzLeave('dz-csat')" ondrop="dzDrop(event,'csat')">
+          <div class="dz-icon">📁</div>
+          <p>Click to select or drag CSV here</p>
+          <input type="file" id="f-csat" accept=".csv" onchange="onFileSelect(event,'csat')">
+        </div>
+        <div class="mapper-box" id="mapper-csat">
+          <h5>Column Mapping</h5>
+          <div id="fields-csat"></div>
+          <div class="preview-table-wrap"><table class="preview-table" id="prev-csat"></table></div>
+          <div class="upload-actions">
+            <label class="clear-check">
+              <input type="checkbox" id="clear-csat"> Clear existing data for this date range first
+            </label>
+            <button class="btn-upload" id="btn-up-csat" onclick="submitUpload('csat')" disabled>Upload</button>
+            <span class="upload-status" id="st-csat"></span>
+          </div>
+        </div>
+        <span class="template-link" onclick="downloadTemplate('csat')">⬇ Download template</span>
+      </div>
+
+      <!-- IQA -->
+      <div class="upload-card">
+        <h4>🎯 IQA / Quality Review Data</h4>
+        <p class="desc">Quality review export. Required columns: <em>Review created, Reviewee, Reviewee email, Review score (e.g. "87.50%")</em></p>
+        <div class="drop-zone" id="dz-iqa" onclick="document.getElementById('f-iqa').click()"
+          ondragover="dzOver(event,'dz-iqa')" ondragleave="dzLeave('dz-iqa')" ondrop="dzDrop(event,'iqa')">
+          <div class="dz-icon">📁</div>
+          <p>Click to select or drag CSV here</p>
+          <input type="file" id="f-iqa" accept=".csv" onchange="onFileSelect(event,'iqa')">
+        </div>
+        <div class="mapper-box" id="mapper-iqa">
+          <h5>Column Mapping</h5>
+          <div id="fields-iqa"></div>
+          <div class="preview-table-wrap"><table class="preview-table" id="prev-iqa"></table></div>
+          <div class="upload-actions">
+            <label class="clear-check">
+              <input type="checkbox" id="clear-iqa"> Clear existing data for this date range first
+            </label>
+            <button class="btn-upload" id="btn-up-iqa" onclick="submitUpload('iqa')" disabled>Upload</button>
+            <span class="upload-status" id="st-iqa"></span>
+          </div>
+        </div>
+        <span class="template-link" onclick="downloadTemplate('iqa')">⬇ Download template</span>
+      </div>
+
+    </div><!-- /upload-grid -->
+  </div><!-- /upload page -->
+
+  <!-- ADMIN TAB -->
+  <div class="page" id="page-admin">
+
+    <!-- Hierarchy Log -->
+    <div class="admin-section">
+      <h3>📋 Reporting Hierarchy Log</h3>
+      <p class="desc">
+        Record which agent reports to which supervisor and AM, and for what date range.
+        When the org changes (every 2–3 months), add a new record with the new dates — historical data is preserved automatically.
+        Leave <em>Effective To</em> blank for the current assignment.
+      </p>
+      <button class="btn-add" onclick="openHierModal()">+ Add Hierarchy Record</button>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Agent Name</th><th>Agent Email</th>
+              <th>Supervisor</th><th>Asst. Manager</th>
+              <th>Effective From</th><th>Effective To</th>
+              <th>Notes</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="hier-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Roles -->
+    <div class="admin-section">
+      <h3>🔐 Access Control</h3>
+      <p class="desc">Control who can upload data and manage settings. Admins can upload CSVs, manage hierarchy and grant access. Viewers can only see the dashboards.</p>
+      <button class="btn-add" onclick="openRolesModal()">+ Add Access</button>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Role</th><th>Assigned By</th><th>Date</th><th>Actions</th></tr></thead>
+          <tbody id="roles-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /admin page -->
+
+</div><!-- /main -->
+
+<div id="toast" class="toast"></div>
+
+<!-- ─── SCRIPT ────────────────────────────────────────────── -->
+<script>'use strict';
+// ═══════════════════════════════════════════════════════════
+// CONFIGURATION — paste your /exec URL here after deploying
+// ═══════════════════════════════════════════════════════════
+const SCRIPT_URL      = 'https://script.google.com/macros/s/AKfycbzbpQ8kYi-aelZBInZ54gHo7dmuQaIwx78Fs39RWg5k1JPYKH8gJBfPR5p8GEpHxQmB/exec';
+const DEFAULT_ADMIN   = 'cinthiavelez@cookunity.com';
+const USER_KEY        = 'cx_perf_user_v1';
+
+// ─── GOOGLE SIGN-IN CONFIG ────────────────────────────────
+// Get your Client ID at: console.cloud.google.com
+//   → APIs & Services → Credentials → Create → OAuth 2.0 Client ID (Web app)
+//   → Add your dashboard URL to "Authorized JavaScript origins"
+const GOOGLE_CLIENT_ID = '754678176597-00nacmmqq706uuqie184t0o64tdpf6tp.apps.googleusercontent.com';
+const ALLOWED_DOMAIN   = 'cookunity.com'; // only this domain can sign in
+
+// ─── STATE ─────────────────────────────────────────────────
+let cachedData   = []; // required name — kept for pattern compatibility
+let rawTPH       = [];
+let rawCSAT      = [];
+let rawIQA       = [];
+let rawHierarchy = [];
+let cachedRole   = 'viewer';
+let currentPage  = 'agent';
+let currentUser  = null;
+let parsedFiles  = {}; // { tph: [...], csat: [...], iqa: [...] }
+
+// ─── EMAIL ↔ NAME LOOKUP MAPS (rebuilt after every data load) ─
+// Primary join key is now email. CSAT has no email field, so we
+// resolve agent names → emails via these maps at compute time.
+let nameToEmail = {}; // normName(agentName) → email
+let emailToName = {}; // email → canonical display name
+
+// active filter state
+let activeFilters = { agent:'', supervisor:'', am:'', dateFrom:'', dateTo:'' };
+let activePeriod  = '3w';
+
+// ═══════════════════════════════════════════════════════════
+// DATE & TIME UTILITIES
+// ═══════════════════════════════════════════════════════════
+
+function isoDate(s) {
+  if (!s) return '';
+  const str = String(s).split('T')[0].trim();
+  const parts = str.split('/');
+  if (parts.length === 3) {
+    // M/D/YYYY → YYYY-MM-DD
+    return `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+  }
+  return str;
+}
+
+function parseHHMMSS(str) {
+  // "hh:mm:ss" or "h:mm:ss" → total seconds
+  if (!str) return 0;
+  const parts = String(str).trim().split(':');
+  if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
+  if (parts.length === 2) return (+parts[0])*60 + (+parts[1]);
+  return 0;
+}
+
+function parseMMSS(str) {
+  // "mm:ss" or "m:ss" → total seconds
+  if (!str) return 0;
+  const parts = String(str).trim().split(':');
+  if (parts.length === 2) return (+parts[0])*60 + (+parts[1]);
+  return 0;
+}
+
+function fmtMMSS(secs) {
+  // seconds → "mm:ss" display
+  if (secs === null || secs === undefined || isNaN(secs) || secs <= 0) return '—';
+  const s = Math.round(secs);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2,'0')}`;
+}
+
+function fmtTPH(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return v.toFixed(1);
+}
+
+function fmtPct(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return v.toFixed(1) + '%';
+}
+
+function parseIQAScore(str) {
+  // "87.50%" → 87.5
+  if (!str) return null;
+  const n = parseFloat(String(str).replace('%','').trim());
+  return isNaN(n) ? null : n;
+}
+
+function normName(s) {
+  return String(s || '').toLowerCase().trim().replace(/\s+/g,' ');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EMAIL ↔ NAME MAP — rebuilt after every apiFetch()
+// Priority: Hierarchy > TPH > IQA  (CSAT has no agent email)
+// ═══════════════════════════════════════════════════════════
+function buildAgentMaps() {
+  nameToEmail = {};
+  emailToName = {};
+
+  function add(rawName, rawEmail) {
+    const e = String(rawEmail || '').toLowerCase().trim();
+    const n = String(rawName  || '').trim();
+    if (!e || !n || !e.includes('@')) return;
+    if (!nameToEmail[normName(n)]) nameToEmail[normName(n)] = e;
+    if (!emailToName[e])           emailToName[e]           = n;
+  }
+
+  // Hierarchy is the most authoritative source
+  rawHierarchy.forEach(h => add(h.agent_name, h.agent_email));
+  // TPH and IQA both carry agent email
+  rawTPH.forEach(r => add(r.agent_name, r.agent_email));
+  rawIQA.forEach(r => add(r.agent_name, r.agent_email));
+  // CSAT: email is optional — use it when present, otherwise resolved at compute time
+  rawCSAT.forEach(r => { if (r.agent_email) add(r.agent_name, r.agent_email); });
+}
+
+// ─── WEEK HELPERS ─────────────────────────────────────────
+
+function getMondayOf(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay(); // 0=Sun
+  const diff = (day === 0) ? -6 : 1 - day;
+  const m = new Date(d);
+  m.setDate(d.getDate() + diff);
+  return m.toISOString().split('T')[0];
+}
+
+function getSundayOf(mondayStr) {
+  const d = new Date(mondayStr + 'T12:00:00');
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().split('T')[0];
+}
+
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+function fmtWeekLabel(mondayStr) {
+  const d = new Date(mondayStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+}
+
+// Returns array of up to 3 week periods based on active period/filters
+function getActivePeriods() {
+  const today = todayStr();
+
+  if (activePeriod === '3w') {
+    const periods = [];
+    for (let i = 2; i >= 0; i--) {
+      const refDay = addDays(today, -i * 7);
+      const mon = getMondayOf(refDay);
+      const sun = getSundayOf(mon);
+      const isCurrentWk = (i === 0);
+      periods.push({
+        label: isCurrentWk ? `WTD ${fmtWeekLabel(mon)}` : `Wk ${fmtWeekLabel(mon)}`,
+        start: mon,
+        end:   isCurrentWk ? today : sun,
+        wk:    i === 2 ? 'w1' : i === 1 ? 'w2' : 'w3'
+      });
+    }
+    return periods;
+  }
+
+  if (activePeriod === '1w') {
+    const mon = getMondayOf(today);
+    return [{ label:`WTD ${fmtWeekLabel(mon)}`, start:mon, end:today, wk:'wc' }];
+  }
+
+  if (activePeriod === '1m') {
+    const d = new Date(today + 'T12:00:00');
+    const from = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+    return [{ label:'This Month', start:from, end:today, wk:'wc' }];
+  }
+
+  if (activePeriod === 'custom') {
+    const from = activeFilters.dateFrom || addDays(today, -29);
+    const to   = activeFilters.dateTo   || today;
+    return [{ label:`${from} → ${to}`, start:from, end:to, wk:'wc' }];
+  }
+
+  return [];
+}
+
+// ─── HIERARCHY LOOKUP (email-first, name fallback) ────────
+
+function getHierarchyForAgent(agentEmail, dateStr) {
+  const e = (agentEmail || '').toLowerCase().trim();
+  const d = dateStr || todayStr();
+
+  // ── 1. Match by email (most reliable) ──
+  let matches = rawHierarchy.filter(h => {
+    if ((h.agent_email || '').toLowerCase().trim() !== e) return false;
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    return d >= from && d <= to;
+  });
+
+  // ── 2. Fallback: match by name (for hierarchy records without email) ──
+  if (!matches.length) {
+    const nameKey = normName(emailToName[e] || '');
+    if (nameKey) {
+      matches = rawHierarchy.filter(h => {
+        if (normName(h.agent_name) !== nameKey) return false;
+        const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+        const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+        return d >= from && d <= to;
+      });
+    }
+  }
+
+  if (matches.length) {
+    matches.sort((a,b) => isoDate(String(b.effective_from||'')) > isoDate(String(a.effective_from||'')) ? 1 : -1);
+    return { supervisor: matches[0].supervisor_name||'—', am: matches[0].am_name||'—' };
+  }
+
+  // ── 3. Any record for this email (most recent, ignore date) ──
+  const anyByEmail = rawHierarchy
+    .filter(h => (h.agent_email||'').toLowerCase().trim() === e)
+    .sort((a,b) => isoDate(String(b.effective_from||'')) > isoDate(String(a.effective_from||'')) ? 1 : -1);
+  if (anyByEmail.length) return { supervisor: anyByEmail[0].supervisor_name||'—', am: anyByEmail[0].am_name||'—' };
+
+  return { supervisor: '—', am: '—' };
+}
+
+// ═══════════════════════════════════════════════════════════
+// KPI COMPUTATION  (email is the primary join key)
+//
+// TPH / IQA  → matched by agent_email (exact, lowercased)
+// CSAT       → has no email field; resolved via nameToEmail
+//              lookup built from TPH + IQA + Hierarchy data
+// ═══════════════════════════════════════════════════════════
+
+function computeKPIs(agentEmail, weekStart, weekEnd) {
+  const email   = (agentEmail || '').toLowerCase().trim();
+  // Resolve the agent's canonical name for CSAT matching
+  const nameKey = normName(emailToName[email] || '');
+
+  // ── TPH / AHT — matched by email ──
+  const tRows = rawTPH.filter(r => {
+    const d = isoDate(String(r.date||''));
+    return (r.agent_email||'').toLowerCase().trim() === email && d >= weekStart && d <= weekEnd;
+  });
+  const totalTickets  = tRows.reduce((s,r) => s + (+r.valid_tickets||0), 0);
+  const totalTimeSecs = tRows.reduce((s,r) => s + (+r.total_time_secs||0), 0);
+  const totalHandSecs = tRows.reduce((s,r) => s + (+r.total_handle_secs||0), 0);
+  const tph = (totalTimeSecs > 0) ? totalTickets / (totalTimeSecs / 3600) : null;
+  const aht = (totalTickets  > 0) ? totalHandSecs / totalTickets          : null;
+
+  // ── CSAT — email-first when stored, name-based as fallback ──
+  // Some CSAT exports include agent email; others only have agent name.
+  // We match by email when available, otherwise resolve via nameToEmail map.
+  const cRows = rawCSAT.filter(r => {
+    const d = isoDate(String(r.date||''));
+    if (d < weekStart || d > weekEnd) return false;
+    const rowEmail = (r.agent_email||'').toLowerCase().trim();
+    if (rowEmail) return rowEmail === email;           // email match (preferred)
+    if (!nameKey) return false;
+    return normName(r.agent_name) === nameKey;         // name fallback
+  });
+  const good    = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
+  const bad     = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
+  const csat    = (good + bad > 0) ? (good / (good + bad)) * 100 : null;
+  const surveys = cRows.length;
+
+  // ── IQA — matched by email ──
+  const iRows = rawIQA.filter(r => {
+    const d = isoDate(String(r.date||''));
+    return (r.agent_email||'').toLowerCase().trim() === email && d >= weekStart && d <= weekEnd;
+  });
+  const iqa = iRows.length > 0
+    ? iRows.reduce((s,r) => s + (+r.iqa_score||0), 0) / iRows.length
+    : null;
+
+  return { tph, ahtSecs: aht, csat, iqa, totalTickets, surveys, iqaCount: iRows.length };
+}
+
+// Aggregate KPIs for a group of agents (passed as array of emails)
+function computeGroupKPIs(agentEmails, weekStart, weekEnd) {
+  const emails   = agentEmails.map(e => (e||'').toLowerCase().trim());
+  // Resolve names for CSAT (which has no email in its export)
+  const nameKeys = emails.map(e => normName(emailToName[e]||'')).filter(Boolean);
+
+  // TPH / AHT — by email
+  const tRows = rawTPH.filter(r => {
+    const d = isoDate(String(r.date||''));
+    return emails.includes((r.agent_email||'').toLowerCase().trim()) && d >= weekStart && d <= weekEnd;
+  });
+  const totalTickets  = tRows.reduce((s,r) => s + (+r.valid_tickets||0), 0);
+  const totalTimeSecs = tRows.reduce((s,r) => s + (+r.total_time_secs||0), 0);
+  const totalHandSecs = tRows.reduce((s,r) => s + (+r.total_handle_secs||0), 0);
+  const tph     = (totalTimeSecs > 0) ? totalTickets / (totalTimeSecs / 3600) : null;
+  const ahtSecs = (totalTickets  > 0) ? totalHandSecs / totalTickets          : null;
+
+  // CSAT — email-first per row, name fallback for rows without email
+  const cRows = rawCSAT.filter(r => {
+    const d = isoDate(String(r.date||''));
+    if (d < weekStart || d > weekEnd) return false;
+    const rowEmail = (r.agent_email||'').toLowerCase().trim();
+    if (rowEmail) return emails.includes(rowEmail);           // email match
+    return nameKeys.includes(normName(r.agent_name));         // name fallback
+  });
+  const good = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
+  const bad  = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
+  const csat = (good + bad > 0) ? (good / (good + bad)) * 100 : null;
+
+  // IQA — by email
+  const iRows = rawIQA.filter(r => {
+    const d = isoDate(String(r.date||''));
+    return emails.includes((r.agent_email||'').toLowerCase().trim()) && d >= weekStart && d <= weekEnd;
+  });
+  const iqa = iRows.length > 0
+    ? iRows.reduce((s,r) => s + (+r.iqa_score||0), 0) / iRows.length
+    : null;
+
+  return { tph, ahtSecs, csat, iqa, totalTickets };
+}
+
+// ─── COLOR CODING ─────────────────────────────────────────
+// For each KPI, compare to set of all values to determine relative quartile
+function getKPIClass(value, allValues, lowerIsBetter) {
+  if (value === null || value === undefined || isNaN(value)) return 'none';
+  const sorted = allValues.filter(v => v !== null && !isNaN(v)).sort((a,b) => a-b);
+  if (sorted.length < 2) return '';
+  const p33 = sorted[Math.floor(sorted.length * .33)];
+  const p67 = sorted[Math.floor(sorted.length * .67)];
+  if (lowerIsBetter) {
+    if (value <= p33) return 'good';
+    if (value <= p67) return 'warn';
+    return 'bad';
+  } else {
+    if (value >= p67) return 'good';
+    if (value >= p33) return 'warn';
+    return 'bad';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// GET AGENT LIST  (deduped by email — email is primary key)
+// Returns array of { email, name } objects sorted by name.
+// CSAT agents with no known email are mapped via nameToEmail.
+// ═══════════════════════════════════════════════════════════
+
+function getAllAgents() {
+  const byEmail = {}; // email → displayName
+
+  function addAgent(rawEmail, rawName) {
+    const e = (rawEmail || '').toLowerCase().trim();
+    const n = String(rawName || '').trim();
+    if (e && e.includes('@') && n) {
+      if (!byEmail[e]) byEmail[e] = n;
+    }
+  }
+
+  // Hierarchy > TPH > IQA (all have email)
+  rawHierarchy.forEach(h => addAgent(h.agent_email, h.agent_name));
+  rawTPH.forEach(r  => addAgent(r.agent_email, r.agent_name));
+  rawIQA.forEach(r  => addAgent(r.agent_email, r.agent_name));
+
+  // CSAT has no email — resolve via nameToEmail lookup
+  rawCSAT.forEach(r => {
+    if (r.agent_name) {
+      const e = nameToEmail[normName(r.agent_name)];
+      if (e && !byEmail[e]) byEmail[e] = String(r.agent_name).trim();
+    }
+  });
+
+  return Object.entries(byEmail)
+    .map(([email, name]) => ({ email, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getAllSupervisors() {
+  return [...new Set(rawHierarchy.map(h => h.supervisor_name).filter(Boolean))].sort();
+}
+
+function getAllAMs() {
+  return [...new Set(rawHierarchy.map(h => h.am_name).filter(Boolean))].sort();
+}
+
+// Hierarchy lookup by email for today (used by filter dropdowns and grouping)
+function currentHier(agentEmail) {
+  return getHierarchyForAgent(agentEmail, todayStr());
+}
+
+// Filter agent objects { email, name } against active dropdown values
+function filteredAgents(agents) {
+  return agents.filter(agent => {
+    // Agent filter: value is email
+    if (activeFilters.agent && agent.email !== activeFilters.agent) return false;
+    // Supervisor / AM filters
+    if (activeFilters.supervisor || activeFilters.am) {
+      const hier = currentHier(agent.email);
+      if (activeFilters.supervisor && normName(hier.supervisor) !== normName(activeFilters.supervisor)) return false;
+      if (activeFilters.am         && normName(hier.am)         !== normName(activeFilters.am))         return false;
+    }
+    return true;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// POPULATE FILTER DROPDOWNS
+// Agent dropdown: value = email, display = name
+// Supervisor / AM dropdowns: value = name (no email available)
+// ═══════════════════════════════════════════════════════════
+
+function populateFilters() {
+  const agents = getAllAgents();
+  const sups   = getAllSupervisors();
+  const ams    = getAllAMs();
+
+  // Agent select: value=email so filtering is email-based
+  fillAgentSel('f-agent', agents, activeFilters.agent);
+  fillSel('f-supervisor', sups, 'All Supervisors', activeFilters.supervisor);
+  fillSel('f-am',         ams,  'All A.Managers',  activeFilters.am);
+}
+
+// Agent dropdown — value is email, display text is name
+function fillAgentSel(id, agents, currentEmail) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<option value="">All Agents</option>` +
+    agents.map(a =>
+      `<option value="${escHtml(a.email)}"${a.email === currentEmail ? ' selected' : ''}>${escHtml(a.name)}</option>`
+    ).join('');
+}
+
+// Generic select — value and display are the same string
+function fillSel(id, values, placeholder, current) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<option value="">${escHtml(placeholder)}</option>` +
+    values.map(v => `<option value="${escHtml(v)}"${normName(v)===normName(current)?'selected':''}>${escHtml(v)}</option>`).join('');
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════
+// SUMMARY KPI CARDS
+// ═══════════════════════════════════════════════════════════
+
+function renderKPICards(containerId, agents) {
+  // agents is [{email, name}] — extract emails for group computation
+  const emails = agents.map(a => a.email);
+  const periods = getActivePeriods();
+  const latestPeriod = periods[periods.length-1];
+  const kpis = computeGroupKPIs(emails, latestPeriod.start, latestPeriod.end);
+
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = `
+    <div class="kpi-card blue">
+      <div class="kpi-label">⚡ TPH (Latest Period)</div>
+      <div class="kpi-value">${fmtTPH(kpis.tph)}</div>
+      <div class="kpi-sub">Tickets per hour · ${kpis.totalTickets} tickets</div>
+    </div>
+    <div class="kpi-card yellow">
+      <div class="kpi-label">⏱ AHT (Latest Period)</div>
+      <div class="kpi-value">${fmtMMSS(kpis.ahtSecs)}</div>
+      <div class="kpi-sub">Avg handle time per ticket</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">😊 CSAT (Latest Period)</div>
+      <div class="kpi-value">${fmtPct(kpis.csat)}</div>
+      <div class="kpi-sub">Good / (Good + Bad) surveys</div>
+    </div>
+    <div class="kpi-card purple">
+      <div class="kpi-label">🎯 IQA (Latest Period)</div>
+      <div class="kpi-value">${fmtPct(kpis.iqa)}</div>
+      <div class="kpi-sub">Average quality review score</div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER PERFORMANCE TABLE
+// ═══════════════════════════════════════════════════════════
+
+function renderPerfTable(wrapId, agents, groupByField) {
+  const wrap    = document.getElementById(wrapId);
+  const periods = getActivePeriods();
+
+  if (!agents.length) {
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="emoji">📭</div>
+      <p>No agents match the current filters or no data has been uploaded yet.</p>
+    </div>`;
+    return;
+  }
+
+  // Pre-compute all KPIs indexed by email for coloring
+  // agents = [{email, name}]
+  const allKPIs = {}; // { email: { periodIdx: kpis } }
+  agents.forEach(a => {
+    allKPIs[a.email] = {};
+    periods.forEach((p,i) => { allKPIs[a.email][i] = computeKPIs(a.email, p.start, p.end); });
+  });
+
+  // Collect all values per KPI per period for relative quartile coloring
+  const allTPH  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].tph).filter(v=>v!==null));
+  const allAHT  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].ahtSecs).filter(v=>v!==null));
+  const allCSAT = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].csat).filter(v=>v!==null));
+  const allIQA  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].iqa).filter(v=>v!==null));
+
+  // Build table header
+  let html = `<table class="perf-table" id="agent-perf-table"><thead>`;
+  html += `<tr>
+    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent</th>
+    <th class="week-hdr" style="background:#334155" rowspan="2">Supervisor</th>
+    <th class="week-hdr" style="background:#475569" rowspan="2">A.Manager</th>`;
+  periods.forEach(p => {
+    html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`;
+  });
+  html += `</tr><tr>`;
+  periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
+  html += `</tr></thead><tbody>`;
+
+  // Group agents by supervisor or AM if requested
+  const groupedAgents = {};
+  if (groupByField) {
+    agents.forEach(a => {
+      const hier = currentHier(a.email);
+      const key  = groupByField === 'supervisor' ? hier.supervisor : hier.am;
+      if (!groupedAgents[key]) groupedAgents[key] = [];
+      groupedAgents[key].push(a);
+    });
+  } else {
+    groupedAgents['_all'] = agents;
+  }
+
+  Object.entries(groupedAgents).forEach(([group, groupAgents]) => {
+    // Group header row
+    if (groupByField) {
+      const label   = groupByField === 'supervisor' ? `👤 Supervisor: ${group}` : `🏢 A.Manager: ${group}`;
+      const colspan = 3 + periods.length * 4;
+      html += `<tr class="group-hdr">
+        <td class="sticky-col col-agent" colspan="${colspan}">${escHtml(label)}</td>
+      </tr>`;
+    }
+
+    // One row per agent — identified by email, displayed by name
+    groupAgents.forEach(agent => {
+      const hier = currentHier(agent.email);
+      html += `<tr>
+        <td class="sticky-col col-agent" title="${escHtml(agent.email)}">${escHtml(agent.name)}</td>
+        <td class="cell-meta">${escHtml(hier.supervisor)}</td>
+        <td class="cell-meta">${escHtml(hier.am)}</td>`;
+
+      periods.forEach((p, pi) => {
+        const k       = allKPIs[agent.email][pi];
+        const tphCls  = getKPIClass(k.tph,     allTPH[pi],  false);
+        const ahtCls  = getKPIClass(k.ahtSecs, allAHT[pi],  true);
+        const csatCls = getKPIClass(k.csat,    allCSAT[pi], false);
+        const iqaCls  = getKPIClass(k.iqa,     allIQA[pi],  false);
+        html += `
+          <td class="cell-kpi ${tphCls}">${k.tph     !== null ? fmtTPH(k.tph)         : '<span style="color:#CBD5E1">—</span>'}</td>
+          <td class="cell-kpi ${ahtCls}">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs)    : '<span style="color:#CBD5E1">—</span>'}</td>
+          <td class="cell-kpi ${csatCls}">${k.csat   !== null ? fmtPct(k.csat)        : '<span style="color:#CBD5E1">—</span>'}</td>
+          <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)         : '<span style="color:#CBD5E1">—</span>'}</td>`;
+      });
+      html += `</tr>`;
+    });
+
+    // Subtotal row for the group (when more than one agent)
+    if (groupByField && groupAgents.length > 1) {
+      html += `<tr class="subtotal-row">
+        <td class="sticky-col col-agent">Subtotal (${groupAgents.length} agents)</td>
+        <td colspan="2"></td>`;
+      periods.forEach(p => {
+        const sg = computeGroupKPIs(groupAgents.map(a => a.email), p.start, p.end);
+        html += `
+          <td class="cell-kpi">${sg.tph     !== null ? fmtTPH(sg.tph)      : '—'}</td>
+          <td class="cell-kpi">${sg.ahtSecs !== null ? fmtMMSS(sg.ahtSecs) : '—'}</td>
+          <td class="cell-kpi">${sg.csat    !== null ? fmtPct(sg.csat)     : '—'}</td>
+          <td class="cell-kpi">${sg.iqa     !== null ? fmtPct(sg.iqa)      : '—'}</td>`;
+      });
+      html += `</tr>`;
+    }
+  });
+
+  // Footer: full team aggregate
+  html += `</tbody><tfoot><tr>
+    <td class="sticky-col col-agent">TEAM TOTAL / AVG</td>
+    <td colspan="2"></td>`;
+  periods.forEach(p => {
+    const g = computeGroupKPIs(agents.map(a => a.email), p.start, p.end);
+    html += `
+      <td class="cell-kpi">${g.tph     !== null ? fmtTPH(g.tph)      : '—'}</td>
+      <td class="cell-kpi">${g.ahtSecs !== null ? fmtMMSS(g.ahtSecs) : '—'}</td>
+      <td class="cell-kpi">${g.csat    !== null ? fmtPct(g.csat)     : '—'}</td>
+      <td class="cell-kpi">${g.iqa     !== null ? fmtPct(g.iqa)      : '—'}</td>`;
+  });
+  html += `</tr></tfoot></table>`;
+  wrap.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAGE RENDERS
+// ═══════════════════════════════════════════════════════════
+
+function renderAgentView() {
+  const agents = filteredAgents(getAllAgents());
+  renderKPICards('agent-kpi-cards', agents);
+  renderPerfTable('agent-table-wrap', agents, null);
+  document.getElementById('agent-table-subtitle').textContent =
+    `${getActivePeriods().map(p=>p.label).join(' | ')} · ${agents.length} agent${agents.length!==1?'s':''}`;
+}
+
+function renderSupervisorView() {
+  const agents = filteredAgents(getAllAgents());
+  renderKPICards('sup-kpi-cards', agents);
+  renderPerfTable('sup-table-wrap', agents, 'supervisor');
+  document.getElementById('sup-table-subtitle').textContent =
+    `${getActivePeriods().map(p=>p.label).join(' | ')} · agents grouped by supervisor`;
+}
+
+function renderAMView() {
+  const agents = filteredAgents(getAllAgents());
+  renderKPICards('am-kpi-cards', agents);
+  renderPerfTable('am-table-wrap', agents, 'am');
+  document.getElementById('am-table-subtitle').textContent =
+    `${getActivePeriods().map(p=>p.label).join(' | ')} · agents grouped by A.Manager`;
+}
+
+function renderHierarchyTable() {
+  const tbody = document.getElementById('hier-tbody');
+  if (!tbody) return;
+  if (!rawHierarchy.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><p>No hierarchy records yet. Add records to link agents to supervisors and AMs.</p></td></tr>`;
+    return;
+  }
+  const sorted = [...rawHierarchy].sort((a,b) =>
+    (String(a.agent_name||'')).localeCompare(String(b.agent_name||'')));
+  tbody.innerHTML = sorted.map(h => `
+    <tr>
+      <td>${escHtml(h.agent_name||'')}</td>
+      <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
+      <td>${escHtml(h.supervisor_name||'')}</td>
+      <td>${escHtml(h.am_name||'')}</td>
+      <td>${escHtml(h.effective_from||'')}</td>
+      <td>${h.effective_to ? escHtml(h.effective_to) : '<span style="color:#10B981;font-weight:600">Current</span>'}</td>
+      <td style="color:#64748B;font-size:11px">${escHtml(h.notes||'')}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-sm btn-edit" onclick='openHierModal(${JSON.stringify(h)})'>Edit</button>
+        <button class="btn-sm btn-del" onclick="deleteHierarchy('${escHtml(String(h.id||''))}')">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+function renderRolesTable(roles) {
+  const tbody = document.getElementById('roles-tbody');
+  if (!tbody) return;
+  if (!roles || !roles.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#94A3B8;padding:1rem">No roles configured. Everyone has viewer access.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = roles.map(r => `
+    <tr>
+      <td>${escHtml(r.email||'')}</td>
+      <td><span class="tag-${r.role==='admin'?'admin':r.role==='viewer'?'view':'good'}">${escHtml(r.role||'viewer')}</span></td>
+      <td style="color:#64748B;font-size:12px">${escHtml(r.assignedBy||'')}</td>
+      <td style="color:#64748B;font-size:11px">${String(r.assignedDate||'').split('T')[0]}</td>
+      <td><button class="btn-sm btn-del" onclick="removeRole('${escHtml(String(r.email||''))}')">Remove</button></td>
+    </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════
+
+function navTo(page) {
+  currentPage = page;
+  ['agent','supervisor','am','upload','admin'].forEach(p => {
+    const el = document.getElementById('page-'+p);
+    if (el) el.classList.toggle('active', p === page);
+  });
+  document.querySelectorAll('.tabnav button[data-page]').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
+
+  // Show/hide upload note
+  const uploadNote = document.getElementById('upload-admin-note');
+  const uploadGrid = document.getElementById('upload-grid');
+  if (page === 'upload') {
+    const isAdm = isAdminUser();
+    if (uploadNote) uploadNote.style.display = isAdm ? 'none' : 'block';
+    if (uploadGrid) uploadGrid.style.display  = isAdm ? '' : 'none';
+  }
+
+  // Render page
+  if (page === 'agent')      renderAgentView();
+  if (page === 'supervisor') renderSupervisorView();
+  if (page === 'am')         renderAMView();
+  if (page === 'admin')      { renderHierarchyTable(); fetchRoles(); }
+}
+
+// ─── FILTER ACTIONS ───────────────────────────────────────
+
+function applyFilters() {
+  activeFilters.agent      = document.getElementById('f-agent').value;
+  activeFilters.supervisor = document.getElementById('f-supervisor').value;
+  activeFilters.am         = document.getElementById('f-am').value;
+  activePeriod             = document.getElementById('f-period').value;
+  if (activePeriod === 'custom') {
+    activeFilters.dateFrom = document.getElementById('f-date-from').value;
+    activeFilters.dateTo   = document.getElementById('f-date-to').value;
+  }
+  updatePeriodBadge();
+  navTo(currentPage);
+}
+
+function resetFilters() {
+  activeFilters = { agent:'', supervisor:'', am:'', dateFrom:'', dateTo:'' };
+  activePeriod  = '3w';
+  document.getElementById('f-agent').value      = '';
+  document.getElementById('f-supervisor').value = '';
+  document.getElementById('f-am').value         = '';
+  document.getElementById('f-period').value     = '3w';
+  document.getElementById('f-custom-range').style.display = 'none';
+  updatePeriodBadge();
+  navTo(currentPage);
+}
+
+function onPeriodChange() {
+  const v = document.getElementById('f-period').value;
+  document.getElementById('f-custom-range').style.display = v === 'custom' ? 'flex' : 'none';
+}
+
+function updatePeriodBadge() {
+  const labels = { '3w':'Last 3 Weeks', '1w':'This Week', '1m':'This Month', 'custom':'Custom Range' };
+  document.getElementById('period-badge').textContent = labels[activePeriod] || activePeriod;
+}
+
+// ═══════════════════════════════════════════════════════════
+// DATA FETCHING
+// ═══════════════════════════════════════════════════════════
+
+async function apiFetch() {
+  setSyncStatus('syncing');
+  showLoading(true, 'Loading performance data…');
+  try {
+    const u = currentUser;
+    const url = u
+      ? `${SCRIPT_URL}?email=${encodeURIComponent(u.email)}`
+      : SCRIPT_URL;
+    const res  = await fetch(url, { redirect:'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    rawTPH       = (data.tph       || []).map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+    rawCSAT      = (data.csat      || []).map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+    rawIQA       = (data.iqa       || []).map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+    rawHierarchy = (data.hierarchy || []);
+    cachedRole   = data.role || 'viewer';
+    cachedData   = rawTPH; // keep required var non-empty
+
+    // Rebuild email ↔ name maps so all KPI joins use email as primary key
+    buildAgentMaps();
+
+    updateRoleUI();
+    populateFilters();
+    setSyncStatus('ok');
+    return data;
+  } catch (err) {
+    console.error('Fetch error:', err);
+    showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
+    setSyncStatus('err');
+    return null;
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function apiPost(body) {
+  const u = currentUser;
+  const res = await fetch(SCRIPT_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    redirect:'follow',
+    body: JSON.stringify({ ...body, email: u?.email||'' })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+async function fetchRoles() {
+  try {
+    const u = currentUser;
+    const url = `${SCRIPT_URL}?action=getRoles&email=${encodeURIComponent(u?.email||'')}`;
+    const res  = await fetch(url, { redirect:'follow' });
+    const data = await res.json();
+    renderRolesTable(data.roles || []);
+  } catch(e) { /* silently fail if not admin */ }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CSV UPLOAD
+// ═══════════════════════════════════════════════════════════
+
+// Column mapping definitions per dataset type
+const FIELD_DEFS = {
+  tph: [
+    { key:'date',             label:'Date column',               required:true,  hints:['date','Date'] },
+    { key:'agent_name',       label:'Agent Name column',         required:true,  hints:['Agent Name','agent'] },
+    { key:'agent_email',      label:'Agent Email column',        required:false, hints:['Agent Email','email'] },
+    { key:'valid_tickets',    label:'Valid Tickets column',      required:true,  hints:['Valid Tickets','tickets'] },
+    { key:'aht_mmss',         label:'Avg Handle Time (mm:ss)',   required:true,  hints:['Avg Handle Time','AHT'] },
+    { key:'total_handle_hms', label:'Total Handle Time (hh:mm:ss)', required:true, hints:['Total Handle Time'] },
+    { key:'total_time_hms',   label:'Total Time (hh:mm:ss)',    required:true,  hints:['Total Time'] },
+  ],
+  csat: [
+    { key:'date',         label:'Date column',                          required:true,  hints:['Update - Date','date','Date'] },
+    { key:'agent_name',   label:'Agent Name column',                    required:true,  hints:['Update ticket assignee','agent'] },
+    { key:'agent_email',  label:'Agent Email column (optional — if available)', required:false, hints:['agent email','assignee email','agent_email'] },
+    { key:'satisfaction', label:'Rating column (good/bad/offered)',     required:true,  hints:['Changes - New value','satisfaction','rating'] },
+    { key:'ticket_id',    label:'Ticket ID column',                     required:false, hints:['Ticket ID','ticket'] },
+    { key:'field_filter', label:'Filter column (satisfaction_score rows)', required:false, hints:['Changes - Field name','field'] },
+  ],
+  iqa: [
+    { key:'date',        label:'Date column',              required:true,  hints:['Review created','date'] },
+    { key:'agent_name',  label:'Agent Name column',        required:true,  hints:['Reviewee','agent'] },
+    { key:'agent_email', label:'Agent Email column',       required:false, hints:['Reviewee email','email'] },
+    { key:'iqa_score',   label:'Score column (e.g. 87.50%)', required:true, hints:['Review score','score','iqa'] },
+  ]
+};
+
+function autoMap(headers, hints) {
+  for (const hint of hints) {
+    const found = headers.find(h => h.toLowerCase().includes(hint.toLowerCase()));
+    if (found) return found;
+  }
+  return '';
+}
+
+function onFileSelect(event, type) {
+  const file = event.target.files[0];
+  if (!file) return;
+  processCsvFile(file, type);
+}
+
+function dzOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('drag-over'); }
+function dzLeave(id)   { document.getElementById(id).classList.remove('drag-over'); }
+function dzDrop(e, type) {
+  e.preventDefault();
+  const id = 'dz-'+type;
+  document.getElementById(id).classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processCsvFile(file, type);
+}
+
+function processCsvFile(file, type) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const rows = parseCSV(e.target.result);
+    if (!rows.length) { showToast('CSV appears to be empty.', '#F59E0B'); return; }
+
+    parsedFiles[type] = rows;
+    const headers = Object.keys(rows[0]);
+    showMapper(type, headers, rows);
+    document.getElementById(`btn-up-${type}`).disabled = false;
+    document.getElementById(`st-${type}`).textContent = '';
+  };
+  reader.readAsText(file);
+}
+
+function showMapper(type, headers, rows) {
+  const box    = document.getElementById(`mapper-${type}`);
+  const fields = document.getElementById(`fields-${type}`);
+  const defs   = FIELD_DEFS[type];
+  box.style.display = 'block';
+
+  fields.innerHTML = defs.map(def => {
+    const suggested = autoMap(headers, def.hints);
+    const opts = headers.map(h =>
+      `<option value="${escHtml(h)}" ${h===suggested?'selected':''}>${escHtml(h)}</option>`
+    ).join('');
+    const req = def.required ? '<span style="color:#EF4444">*</span>' : '';
+    return `<div class="mapper-row">
+      <label>${escHtml(def.label)} ${req}</label>
+      <select id="map-${type}-${def.key}" onchange="updatePreview('${type}')">
+        <option value="">— skip —</option>${opts}
+      </select>
+    </div>`;
+  }).join('');
+
+  updatePreview(type);
+}
+
+function getMapping(type) {
+  const defs = FIELD_DEFS[type];
+  const map  = {};
+  defs.forEach(d => {
+    const el = document.getElementById(`map-${type}-${d.key}`);
+    if (el) map[d.key] = el.value;
+  });
+  return map;
+}
+
+function updatePreview(type) {
+  const rows = parsedFiles[type];
+  if (!rows || !rows.length) return;
+  const map      = getMapping(type);
+  const preview5 = mapRows(type, rows, map).slice(0, 5);
+  if (!preview5.length) return;
+
+  const headers  = Object.keys(preview5[0]);
+  const table    = document.getElementById(`prev-${type}`);
+  table.innerHTML = `
+    <thead><tr>${headers.map(h=>`<th>${escHtml(h)}</th>`).join('')}</tr></thead>
+    <tbody>${preview5.map(r=>`<tr>${headers.map(h=>`<td>${escHtml(String(r[h]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
+  `;
+}
+
+function mapRows(type, rawRows, map) {
+  if (type === 'tph') {
+    return rawRows.map(r => ({
+      date:             isoDate(r[map.date]     || ''),
+      agent_name:       r[map.agent_name]         || '',
+      agent_email:      r[map.agent_email]         || '',
+      valid_tickets:    r[map.valid_tickets]        || 0,
+      aht_seconds:      parseMMSS(r[map.aht_mmss]  || ''),
+      total_handle_secs:parseHHMMSS(r[map.total_handle_hms] || ''),
+      total_time_secs:  parseHHMMSS(r[map.total_time_hms]   || ''),
+    })).filter(r => r.date && r.agent_name);
+  }
+
+  if (type === 'csat') {
+    return rawRows
+      .filter(r => {
+        // Only import satisfaction_score rows if the filter column is mapped
+        if (map.field_filter && r[map.field_filter]) {
+          return String(r[map.field_filter]).toLowerCase() === 'satisfaction_score';
+        }
+        return true;
+      })
+      .map(r => ({
+        date:        isoDate(r[map.date]                           || ''),
+        agent_name:  r[map.agent_name]                              || '',
+        // agent_email is optional — stored when available so CSAT can be
+        // matched by email directly instead of relying on name-to-email lookup
+        agent_email: (r[map.agent_email]                           || '').toLowerCase().trim(),
+        satisfaction:(r[map.satisfaction]                           || '').toLowerCase().trim(),
+        ticket_id:   r[map.ticket_id]                              || '',
+      }))
+      .filter(r => r.date && r.agent_name && ['good','bad','offered'].includes(r.satisfaction));
+  }
+
+  if (type === 'iqa') {
+    return rawRows.map(r => ({
+      date:        isoDate(r[map.date]        || ''),
+      agent_name:  r[map.agent_name]           || '',
+      agent_email: r[map.agent_email]          || '',
+      iqa_score:   parseIQAScore(r[map.iqa_score] || '0'),
+    })).filter(r => r.date && r.agent_name);
+  }
+
+  return [];
+}
+
+async function submitUpload(type) {
+  const rawRows = parsedFiles[type];
+  if (!rawRows || !rawRows.length) return showToast('No file loaded.', '#F59E0B');
+
+  const map     = getMapping(type);
+  const rows    = mapRows(type, rawRows, map);
+  if (!rows.length) return showToast('No valid rows after mapping. Check column selections.', '#F59E0B');
+
+  const st  = document.getElementById(`st-${type}`);
+  const btn = document.getElementById(`btn-up-${type}`);
+  btn.disabled = true;
+  st.textContent = 'Uploading…';
+  st.className = 'upload-status';
+
+  try {
+    // Optional: clear existing data for the date range
+    if (document.getElementById(`clear-${type}`)?.checked) {
+      const dates = rows.map(r=>r.date).sort();
+      await apiPost({ action:'clearDateRange', sheetKey: type.toUpperCase(), dateFrom: dates[0], dateTo: dates[dates.length-1] });
+    }
+
+    // Upload in batches of 200 rows
+    const BATCH = 200;
+    let uploaded = 0;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
+      uploaded += batch.length;
+      st.textContent = `Uploading… ${uploaded}/${rows.length}`;
+    }
+
+    st.textContent = `✅ ${uploaded} rows uploaded!`;
+    st.className = 'upload-status ok';
+    showToast(`✅ ${uploaded} rows uploaded successfully!`);
+
+    // Refresh data
+    showLoading(true, 'Refreshing data…');
+    await apiFetch();
+    navTo(currentPage);
+
+  } catch(err) {
+    st.textContent = '❌ ' + err.message;
+    st.className = 'upload-status err';
+    showToast('Upload failed: ' + err.message, '#EF4444');
+  } finally {
+    btn.disabled = false;
+    showLoading(false);
+  }
+}
+
+// ─── CSV PARSER ───────────────────────────────────────────
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = parseLine(lines[0]);
+  return lines.slice(1).filter(l => l.trim()).map(l => {
+    const vals = parseLine(l);
+    const obj = {};
+    headers.forEach((h,i) => { obj[h.trim()] = (vals[i]||'').trim(); });
+    return obj;
+  });
+}
+
+function parseLine(line) {
+  const res = []; let cur = ''; let inQ = false;
+  for (let i=0; i<line.length; i++) {
+    const c = line[i];
+    if (c==='"') { inQ=!inQ; }
+    else if (c===',' && !inQ) { res.push(cur); cur=''; }
+    else cur += c;
+  }
+  res.push(cur);
+  return res;
+}
+
+// ─── TEMPLATE DOWNLOAD ────────────────────────────────────
+
+function downloadTemplate(type) {
+  const templates = {
+    tph:  'Agent Name,Agent Email,Date,Valid Tickets,Avg Handle Time (mm:ss),Total Handle Time (hh:mm:ss),Total Time (hh:mm:ss)\nJohn Smith,j.smith@cookunity.com,2026-01-15,36,5:25,3:15:08,5:51:56',
+    csat: 'Update - Date,Update ticket assignee,Changes - Field name,Changes - New value,Ticket ID\n1/15/2026,John Smith,satisfaction_score,good,1234567\n1/15/2026,John Smith,satisfaction_score,bad,1234568',
+    iqa:  'Review created,Reviewee,Reviewee email,Review score\n2026-01-15,John Smith,j.smith@cookunity.com,87.50%'
+  };
+  const label = { tph:'TPH_AHT_template', csat:'CSAT_template', iqa:'IQA_template' };
+  const blob  = new Blob([templates[type]], { type:'text/csv' });
+  const a     = document.createElement('a');
+  a.href      = URL.createObjectURL(blob);
+  a.download  = `${label[type]}.csv`;
+  a.click();
+}
+
+// ─── EXPORT TABLE ─────────────────────────────────────────
+
+function exportTable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  let csv = '';
+  table.querySelectorAll('tr').forEach(row => {
+    const cells = [...row.querySelectorAll('th,td')].map(c => `"${c.textContent.trim().replace(/"/g,'""')}"`);
+    csv += cells.join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type:'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `CX_Performance_Export_${todayStr()}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════
+// HIERARCHY MODAL
+// ═══════════════════════════════════════════════════════════
+
+function openHierModal(record) {
+  const isEdit = !!record;
+  document.getElementById('hier-modal-title').textContent = isEdit ? 'Edit Hierarchy Record' : 'Add Hierarchy Record';
+  document.getElementById('hm-id').value          = isEdit ? record.id          || '' : '';
+  document.getElementById('hm-agent-name').value  = isEdit ? record.agent_name  || '' : '';
+  document.getElementById('hm-agent-email').value = isEdit ? record.agent_email || '' : '';
+  document.getElementById('hm-supervisor').value  = isEdit ? record.supervisor_name || '' : '';
+  document.getElementById('hm-am').value           = isEdit ? record.am_name     || '' : '';
+  document.getElementById('hm-from').value         = isEdit ? isoDate(String(record.effective_from||'')) : '';
+  document.getElementById('hm-to').value           = isEdit ? isoDate(String(record.effective_to||''))   : '';
+  document.getElementById('hm-notes').value        = isEdit ? record.notes       || '' : '';
+  document.getElementById('hier-modal').classList.add('open');
+}
+
+function closeHierModal() {
+  document.getElementById('hier-modal').classList.remove('open');
+}
+
+async function saveHierarchy() {
+  const record = {
+    id:              document.getElementById('hm-id').value.trim(),
+    agent_name:      document.getElementById('hm-agent-name').value.trim(),
+    agent_email:     document.getElementById('hm-agent-email').value.trim(),
+    supervisor_name: document.getElementById('hm-supervisor').value.trim(),
+    am_name:         document.getElementById('hm-am').value.trim(),
+    effective_from:  document.getElementById('hm-from').value,
+    effective_to:    document.getElementById('hm-to').value,
+    notes:           document.getElementById('hm-notes').value.trim(),
+  };
+  if (!record.agent_name || !record.supervisor_name || !record.am_name || !record.effective_from) {
+    return showToast('Please fill all required fields.', '#F59E0B');
+  }
+  showLoading(true, 'Saving…');
+  try {
+    await apiPost({ action:'saveHierarchy', record });
+    closeHierModal();
+    showToast('✅ Hierarchy record saved!');
+    await apiFetch();
+    renderHierarchyTable();
+    populateFilters();
+  } catch(e) {
+    showToast('Error: ' + e.message, '#EF4444');
+  } finally { showLoading(false); }
+}
+
+async function deleteHierarchy(id) {
+  if (!confirm('Delete this hierarchy record?')) return;
+  showLoading(true, 'Deleting…');
+  try {
+    await apiPost({ action:'deleteHierarchy', id });
+    showToast('Deleted.');
+    await apiFetch();
+    renderHierarchyTable();
+    populateFilters();
+  } catch(e) {
+    showToast('Error: ' + e.message, '#EF4444');
+  } finally { showLoading(false); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ROLES MODAL
+// ═══════════════════════════════════════════════════════════
+
+function openRolesModal()  { document.getElementById('roles-modal').classList.add('open'); }
+function closeRolesModal() { document.getElementById('roles-modal').classList.remove('open'); }
+
+async function saveRole() {
+  const email = document.getElementById('rm-email').value.trim();
+  const role  = document.getElementById('rm-role').value;
+  if (!email) return showToast('Email is required.', '#F59E0B');
+  showLoading(true, 'Saving…');
+  try {
+    await apiPost({ action:'updateRoles', subAction:'add', targetEmail:email, role });
+    closeRolesModal();
+    showToast(`✅ ${role} access granted to ${email}`);
+    fetchRoles();
+  } catch(e) { showToast('Error: ' + e.message, '#EF4444'); }
+  finally { showLoading(false); }
+}
+
+async function removeRole(email) {
+  if (!confirm(`Remove access for ${email}?`)) return;
+  showLoading(true, 'Removing…');
+  try {
+    await apiPost({ action:'updateRoles', subAction:'remove', targetEmail:email });
+    showToast('Access removed.');
+    fetchRoles();
+  } catch(e) { showToast('Error: ' + e.message, '#EF4444'); }
+  finally { showLoading(false); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ROLE & USER HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function isAdminUser() {
+  return cachedRole === 'admin' ||
+    (currentUser && currentUser.email.toLowerCase() === DEFAULT_ADMIN.toLowerCase());
+}
+
+function updateRoleUI() {
+  const adminTab  = document.getElementById('btn-admin-tab');
+  if (adminTab) adminTab.style.display = isAdminUser() ? '' : 'none';
+}
+
+// ═══════════════════════════════════════════════════════════
+// GOOGLE SIGN-IN  (GIS — Google Identity Services)
+// Only @cookunity.com Google accounts are allowed.
+// ═══════════════════════════════════════════════════════════
+
+function getUser() {
+  try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; }
+}
+
+function setUser(u) { localStorage.setItem(USER_KEY, JSON.stringify(u)); }
+
+// Decode a Google JWT credential without any external library
+function parseJWT(token) {
+  const base64Url = token.split('.')[1];
+  const base64    = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonStr   = decodeURIComponent(
+    atob(base64).split('').map(c =>
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join('')
+  );
+  return JSON.parse(jsonStr);
+}
+
+// Called by GIS after the user picks their Google account
+function handleGoogleSignIn(response) {
+  try {
+    const payload = parseJWT(response.credential);
+    const email   = (payload.email || '').toLowerCase().trim();
+    const domain  = email.split('@')[1] || '';
+
+    // ── Domain gate: only @cookunity.com ──
+    if (domain !== ALLOWED_DOMAIN) {
+      showLoginError(
+        `⛔ Access denied. Only @${ALLOWED_DOMAIN} accounts can use this dashboard.\n` +
+        `You signed in as: ${email}`
+      );
+      // Immediately revoke so the session isn't cached
+      if (window.google) google.accounts.id.disableAutoSelect();
+      return;
+    }
+
+    const user = {
+      email,
+      name:    payload.name    || email,
+      picture: payload.picture || '',
+    };
+    setUser(user);
+    currentUser = user;
+
+    // Hide login overlay and start the app
+    document.getElementById('login-overlay').classList.remove('open');
+    updateNavUser(user);
+    initApp();
+
+  } catch (err) {
+    showLoginError('Sign-in error: ' + err.message);
+  }
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+// Initialize the Google Sign-In button — called once GIS script is loaded
+function initGoogleSignIn() {
+  if (!window.google || !window.google.accounts) {
+    // GIS script not yet ready — retry in 300 ms
+    setTimeout(initGoogleSignIn, 300);
+    return;
+  }
+
+  // Hide "Loading sign-in…" placeholder text
+  const loadingEl = document.getElementById('login-loading');
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  google.accounts.id.initialize({
+    client_id:              GOOGLE_CLIENT_ID,
+    callback:               handleGoogleSignIn,
+    auto_select:            true,   // silently re-signs returning users
+    cancel_on_tap_outside:  false,
+    hd:                     ALLOWED_DOMAIN, // hint: only show cookunity.com accounts
+  });
+
+  // Render the standard "Sign in with Google" button
+  google.accounts.id.renderButton(
+    document.getElementById('google-signin-btn'),
+    {
+      theme:          'filled_blue',
+      size:           'large',
+      shape:          'pill',
+      text:           'signin_with',
+      logo_alignment: 'left',
+      width:          280,
+    }
+  );
+
+  // Show One Tap dialog (silently re-authenticates returning users)
+  google.accounts.id.prompt(notification => {
+    // If One Tap is suppressed (user dismissed it before), the button is still shown
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      console.log('One Tap not shown:', notification.getNotDisplayedReason?.() || notification.getSkippedReason?.());
+    }
+  });
+}
+
+// Update navbar with user name (and avatar if available)
+function updateNavUser(user) {
+  const nameEl = document.getElementById('nav-user-name');
+  if (nameEl) nameEl.textContent = user.name || user.email;
+
+  // Show a small avatar next to the name if we have a picture URL
+  if (user.picture) {
+    const chip = nameEl?.closest('.user-chip');
+    if (chip && !chip.querySelector('img')) {
+      const img = document.createElement('img');
+      img.src    = user.picture;
+      img.alt    = user.name || '';
+      img.width  = 22;
+      img.height = 22;
+      img.style.cssText = 'border-radius:50%;margin-right:2px;vertical-align:middle;';
+      chip.prepend(img);
+    }
+  }
+}
+
+function doLogout() {
+  if (window.google && window.google.accounts) {
+    google.accounts.id.disableAutoSelect();
+    if (currentUser?.email) {
+      google.accounts.id.revoke(currentUser.email, () => {});
+    }
+  }
+  localStorage.removeItem(USER_KEY);
+  currentUser = null;
+  location.reload();
+}
+
+// ═══════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function showLoading(on, msg) {
+  const el = document.getElementById('loading');
+  el.classList.toggle('open', on);
+  if (msg) document.getElementById('loading-msg').textContent = msg;
+}
+
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent  = msg;
+  t.style.background = color || '#10B981';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function setSyncStatus(status) {
+  const dot = document.getElementById('sync-dot');
+  if (!dot) return;
+  dot.className = 'sync-dot' + (status==='syncing'?' syncing':status==='err'?' err':'');
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
+
+async function initApp() {
+  document.getElementById('nav-user-name').textContent = currentUser?.name || currentUser?.email || '?';
+  updateRoleUI();
+  populateFilters();
+  const data = await apiFetch();
+  if (data) {
+    updateRoleUI();
+    populateFilters();
+    navTo('agent');
+  }
+  // Auto-refresh every 3 minutes
+  setInterval(async () => {
+    await apiFetch();
+    navTo(currentPage);
+  }, 180000);
+}
+
+(function boot() {
+  const user = getUser();
+  if (!user) {
+    // Show login screen and initialise Google Sign-In button
+    document.getElementById('login-overlay').classList.add('open');
+    // Wait for the GIS <script async> to finish loading
+    if (document.readyState === 'complete') {
+      initGoogleSignIn();
+    } else {
+      window.addEventListener('load', initGoogleSignIn);
+    }
+  } else {
+    // Returning user — restore session without re-authenticating
+    currentUser = user;
+    updateNavUser(user);
+    initApp();
+  }
+})();
+</script>
+</body>
+</html>
