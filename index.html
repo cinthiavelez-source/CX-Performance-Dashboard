@@ -604,6 +604,8 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
             <span class="template-link" onclick="downloadHierTemplate()">⬇ Download template</span>
             <span class="upload-status" id="st-hier"></span>
           </div>
+          <!-- Persistent error log — visible until panel is closed -->
+          <div id="hier-err-box" style="display:none;margin-top:10px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:10px;font-size:11px;line-height:1.7;max-height:120px;overflow-y:auto;"></div>
         </div>
       </div>
 
@@ -1412,30 +1414,23 @@ function mapHierRows() {
 async function submitHierarchyUpload() {
   const rows = mapHierRows();
   if (!rows.length) {
-    showToast('No valid rows to upload. Check Email, Supervisor and AM column mapping.', '#EF4444');
+    showToast('No valid rows — make sure Email, Supervisor and A.Manager columns are mapped.', '#EF4444');
     return;
   }
   const from = document.getElementById('hier-bulk-from')?.value || '';
   const to   = document.getElementById('hier-bulk-to')?.value   || '';
   if (!from) {
-    showToast('Please set Effective From date before uploading.', '#FFB81C');
+    showToast('Please set Effective From date.', '#FFB81C');
     return;
   }
 
-  const btn = document.getElementById('btn-up-hier');
-  const st  = document.getElementById('st-hier');
-  if (btn) btn.disabled = true;
-  if (st)  { st.className = 'upload-status'; st.textContent = ''; }
+  const btn    = document.getElementById('btn-up-hier');
+  const st     = document.getElementById('st-hier');
+  const errBox = document.getElementById('hier-err-box');
+  if (btn)    btn.disabled = true;
+  if (st)     { st.className = 'upload-status'; st.textContent = ''; }
+  if (errBox) errBox.style.display = 'none';
 
-  showLoading(true, `Uploading ${rows.length} hierarchy records…`);
-
-  let uploaded = 0;
-  const errors = [];
-
-  // ── Send in chunks of 50 records per request ──────────────────────────────
-  // A single Apps Script call handles the whole chunk server-side, avoiding
-  // the 1-request-per-row problem that causes timeouts on large lists.
-  const CHUNK = 50;
   const records = rows.map(r => ({
     agent_email:     r.agent_email,
     agent_name:      r.agent_name || emailToName[r.agent_email] || '',
@@ -1446,44 +1441,113 @@ async function submitHierarchyUpload() {
     notes:           'Bulk import',
   }));
 
-  for (let i = 0; i < records.length; i += CHUNK) {
-    const chunk = records.slice(i, i + CHUNK);
-    if (st) st.textContent = `Uploading ${Math.min(i + CHUNK, records.length)} / ${records.length}…`;
-    try {
-      const res = await apiPost({ action: 'bulkSaveHierarchy', records: chunk });
-      uploaded += res.added || 0;
-      if (res.errors && res.errors.length) {
-        res.errors.forEach(e => errors.push(e));
+  let uploaded = 0;
+  const errors = [];
+
+  // ── Strategy A: bulkSaveHierarchy — all 50 records per request ─────────────
+  // Try the first chunk. If the backend returns "Unknown action" (old Code.gs),
+  // automatically fall back to Strategy B.
+  const CHUNK = 50;
+  let useBulk = true;
+
+  showLoading(true, `Uploading batch 1 / ${Math.ceil(records.length / CHUNK)}…`);
+  try {
+    const res = await apiPost({ action: 'bulkSaveHierarchy', records: records.slice(0, CHUNK) });
+    uploaded += res.added || 0;
+    (res.errors || []).forEach(e => errors.push(e));
+  } catch(err) {
+    if (/unknown action/i.test(err.message)) {
+      useBulk = false; // backend not yet updated — fall through to Strategy B
+    } else {
+      errors.push('Batch 1: ' + err.message);
+    }
+  }
+
+  if (useBulk) {
+    // Continue remaining chunks with bulkSaveHierarchy
+    for (let i = CHUNK; i < records.length; i += CHUNK) {
+      const batchNum   = Math.floor(i / CHUNK) + 1;
+      const totalBatch = Math.ceil(records.length / CHUNK);
+      showLoading(true, `Uploading batch ${batchNum} / ${totalBatch}…`);
+      try {
+        const res = await apiPost({ action: 'bulkSaveHierarchy', records: records.slice(i, i + CHUNK) });
+        uploaded += res.added || 0;
+        (res.errors || []).forEach(e => errors.push(e));
+      } catch(err) {
+        errors.push(`Batch ${batchNum}: ${err.message}`);
       }
-    } catch(err) {
-      errors.push(`Chunk ${Math.floor(i/CHUNK)+1}: ${err.message}`);
+    }
+  } else {
+    // ── Strategy B: concurrent saveHierarchy — 10 parallel requests at a time ─
+    // Works with the original Code.gs. Apps Script handles concurrent requests
+    // independently so no lock issues for simple appendRow calls.
+    const CONCURRENT = 10;
+    showLoading(true, `Uploading 0 / ${records.length} (parallel mode)…`);
+    for (let i = 0; i < records.length; i += CONCURRENT) {
+      showLoading(true, `Uploading ${Math.min(i + CONCURRENT, records.length)} / ${records.length}…`);
+      const batch   = records.slice(i, i + CONCURRENT);
+      const results = await Promise.allSettled(
+        batch.map(r => apiPost({ action: 'saveHierarchy', record: r }))
+      );
+      results.forEach((result, j) => {
+        if (result.status === 'fulfilled') {
+          uploaded++;
+        } else {
+          errors.push(`${records[i + j].agent_email}: ${result.reason?.message || 'failed'}`);
+        }
+      });
     }
   }
 
   showLoading(false);
 
-  if (errors.length) {
-    showToast(`⚠️ ${uploaded} uploaded, ${errors.length} failed.`, '#FFB81C');
-    if (st) { st.className = 'upload-status err'; st.textContent = `${uploaded} ok, ${errors.length} failed`; }
-  } else {
-    showToast(`✅ ${uploaded} hierarchy records uploaded!`);
-    if (st) { st.className = 'upload-status ok'; st.textContent = `${uploaded} records added`; }
-    // Reset panel
-    document.getElementById('hier-upload-panel').classList.remove('open');
-    const labelEl = document.getElementById('dz-hier-label');
-    if (labelEl) labelEl.textContent = 'Click to select or drag hierarchy CSV here';
-    const fi = document.getElementById('f-hier');
-    if (fi) fi.value = '';
-    const mb = document.getElementById('mapper-hier');
-    if (mb) mb.style.display = 'none';
-    hierParsedRows = [];
-    hierMappedRows = [];
+  // ── Update status label (persistent) ────────────────────────────────────────
+  if (st) {
+    if (uploaded === 0 && errors.length) {
+      st.className = 'upload-status err';
+      st.textContent = `Upload failed — ${errors.length} error(s)`;
+    } else if (errors.length) {
+      st.className = 'upload-status err';
+      st.textContent = `${uploaded} uploaded, ${errors.length} failed`;
+    } else {
+      st.className = 'upload-status ok';
+      st.textContent = `✅ ${uploaded} records added`;
+    }
+  }
+
+  // ── Show error details in persistent box ────────────────────────────────────
+  if (errBox && errors.length) {
+    errBox.style.display = 'block';
+    errBox.innerHTML =
+      `<strong style="color:#DC2626">⚠️ ${errors.length} error(s) — share this with your admin:</strong><br>` +
+      errors.slice(0, 15).map(e => escHtml(e)).join('<br>') +
+      (errors.length > 15 ? `<br>…and ${errors.length - 15} more` : '');
   }
 
   if (btn) btn.disabled = false;
-  await apiFetch();
-  renderHierarchyTable();
-  populateFilters();
+
+  if (uploaded > 0) {
+    if (!errors.length) {
+      showToast(`✅ ${uploaded} hierarchy records saved!`);
+      // Reset the panel only on full success
+      document.getElementById('hier-upload-panel').classList.remove('open');
+      const labelEl = document.getElementById('dz-hier-label');
+      if (labelEl) labelEl.textContent = 'Click to select or drag hierarchy CSV here';
+      const fi = document.getElementById('f-hier');
+      if (fi) fi.value = '';
+      const mb = document.getElementById('mapper-hier');
+      if (mb) mb.style.display = 'none';
+      hierParsedRows = [];
+      hierMappedRows = [];
+    } else {
+      showToast(`⚠️ ${uploaded} saved, ${errors.length} failed — see details above`, '#FFB81C');
+    }
+    await apiFetch();
+    renderHierarchyTable();
+    populateFilters();
+  } else {
+    showToast(`❌ Nothing uploaded — check error details in the panel`, '#EF4444');
+  }
 }
 
 function downloadHierTemplate() {
