@@ -452,10 +452,19 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <h3>Agent Performance</h3>
           <p id="agent-table-subtitle">Last 3 weeks · all 4 KPIs per agent</p>
         </div>
-        <button onclick="exportTable('agent-perf-table')"
-          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
-          ⬇ Export CSV
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="agent-mode-pills" style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
+            <button id="agent-mode-wow" onclick="setTabMode('agent','wow')"
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+            <button id="agent-mode-mom" onclick="setTabMode('agent','mom')"
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+          </div>
+          <button onclick="exportTable('agent-perf-table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
       <div class="table-wrap"><div id="agent-table-wrap"></div></div>
     </div>
@@ -470,10 +479,19 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <h3>Supervisor View — Agents by Team</h3>
           <p id="sup-table-subtitle">Last 3 weeks · select a supervisor to focus</p>
         </div>
-        <button onclick="exportTableBySelector('#sup-table-wrap table')"
-          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
-          ⬇ Export CSV
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
+            <button id="supervisor-mode-wow" onclick="setTabMode('supervisor','wow')"
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+            <button id="supervisor-mode-mom" onclick="setTabMode('supervisor','mom')"
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+          </div>
+          <button onclick="exportTableBySelector('#sup-table-wrap table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
       <div class="table-wrap"><div id="sup-table-wrap"></div></div>
     </div>
@@ -488,10 +506,19 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <h3>Assistant Manager View — Agents by Region</h3>
           <p id="am-table-subtitle">Last 3 weeks · select an AM to focus</p>
         </div>
-        <button onclick="exportTableBySelector('#am-table-wrap table')"
-          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
-          ⬇ Export CSV
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
+            <button id="am-mode-wow" onclick="setTabMode('am','wow')"
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+            <button id="am-mode-mom" onclick="setTabMode('am','mom')"
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+          </div>
+          <button onclick="exportTableBySelector('#am-table-wrap table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
       <div class="table-wrap"><div id="am-table-wrap"></div></div>
     </div>
@@ -512,12 +539,23 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <h3>📋 CSAT by Contact Reason</h3>
           <p id="cr-subtitle">Ranked by volume · color = relative CSAT quartile</p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span style="font-size:12px;color:#64748B;font-weight:600">Sort by:</span>
-          <button id="cr-sort-vol"  onclick="setCRSort('vol')"
-            style="background:#AA0061;color:#fff;border-radius:5px;padding:4px 12px;font-size:12px;font-weight:600">Volume ▼</button>
-          <button id="cr-sort-csat" onclick="setCRSort('csat')"
-            style="background:#F1F5F9;color:#64748B;border-radius:5px;padding:4px 12px;font-size:12px;font-weight:600;border:1px solid #E2E8F0">CSAT%</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <!-- WoW / MoM toggle -->
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
+            <button id="cr-mode-wow" onclick="setTabMode('cr','wow')"
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+            <button id="cr-mode-mom" onclick="setTabMode('cr','mom')"
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+          </div>
+          <!-- Sort toggle -->
+          <div style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">Sort:</span>
+            <button id="cr-sort-vol"  onclick="setCRSort('vol')"
+              style="background:#475CC7;color:#fff;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;border:1px solid #475CC7">Volume ▼</button>
+            <button id="cr-sort-csat" onclick="setCRSort('csat')"
+              style="background:#F1F5F9;color:#64748B;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;border:1px solid #E2E8F0">CSAT%</button>
+          </div>
           <button onclick="exportTableBySelector('#cr-table-wrap table')"
             style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
             ⬇ Export CSV
@@ -757,6 +795,13 @@ let sortState = { col: null, dir: 1 }; // dir: 1=asc, -1=desc
 let activeFilters = { agent:'', supervisor:'', am:'', dateFrom:'', dateTo:'' };
 let activePeriod  = '3w';
 
+// ─── PER-TAB WoW/MoM TOGGLE STATE ───────────────────────────
+// Each view tab tracks whether to show last-3 weeks or last-3 months independently.
+let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow' };
+
+// ─── CHART.JS INSTANCES (destroyed & recreated on render) ────
+let chartInstances = {};
+
 // ═══════════════════════════════════════════════════════════
 // DATE & TIME UTILITIES
 // ═══════════════════════════════════════════════════════════
@@ -962,6 +1007,77 @@ function getActivePeriods() {
   }
 
   return [];
+}
+
+// ─── PER-TAB PERIOD HELPERS ───────────────────────────────
+// Returns exactly 3 period objects regardless of the global filter.
+// mode 'wow' → last 3 Sun–Sat weeks  |  'mom' → last 3 calendar months
+function getTabPeriods(tab) {
+  const mode  = tabPeriodMode[tab] || 'wow';
+  const today = todayStr();
+  const wkCls = ['w1', 'w2', 'wc'];  // header CSS classes per position
+
+  if (mode === 'mom') {
+    const now = new Date(today + 'T12:00:00');
+    return [2, 1, 0].map((i, idx) => {
+      const d    = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y    = d.getFullYear(), m = d.getMonth();
+      const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
+      const last = new Date(y, m+1, 0);
+      const to   = i === 0 ? today : `${y}-${String(m+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+      return {
+        label: d.toLocaleDateString('en-US', { month:'short', year:'numeric' }) + (i === 0 ? ' MTD' : ''),
+        start: from, end: to,
+        wk: wkCls[idx]
+      };
+    });
+  }
+
+  // WoW: last 3 Sun–Sat weeks
+  return [2, 1, 0].map((i, idx) => {
+    const ref = addDays(today, -i * 7);
+    const sun = getWeekStartOf(ref);
+    const sat = getWeekEndOf(sun);
+    return {
+      label: i === 0 ? `WTD ${fmtWeekLabel(sun)}` : `Wk ${fmtWeekLabel(sun)}`,
+      start: sun, end: i === 0 ? today : sat,
+      wk: wkCls[idx]
+    };
+  });
+}
+
+// Switches a tab's mode, updates pill-button styles, and re-renders.
+function setTabMode(tab, mode) {
+  tabPeriodMode[tab] = mode;
+  ['wow','mom'].forEach(m => {
+    const btn = document.getElementById(`${tab}-mode-${m}`);
+    if (!btn) return;
+    const active = m === mode;
+    btn.style.background   = active ? '#AA0061' : '#F1F5F9';
+    btn.style.color        = active ? '#fff'    : '#64748B';
+    btn.style.borderColor  = active ? '#AA0061' : '#E2E8F0';
+  });
+  if (tab === 'agent')      renderAgentView();
+  if (tab === 'supervisor') renderSupervisorView();
+  if (tab === 'am')         renderAMView();
+  if (tab === 'cr')         renderContactReasonView();
+}
+
+// Renders the WoW/MoM pill-toggle HTML (used inside each tab's table-card-header)
+function tabModePills(tab) {
+  const m = tabPeriodMode[tab] || 'wow';
+  const pill = (key, label) => {
+    const active = key === m;
+    const bg  = active ? '#AA0061' : '#F1F5F9';
+    const col = active ? '#fff'    : '#64748B';
+    const bc  = active ? '#AA0061' : '#E2E8F0';
+    return `<button id="${tab}-mode-${key}" onclick="setTabMode('${tab}','${key}')"
+      style="background:${bg};color:${col};border:1px solid ${bc};border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">${label}</button>`;
+  };
+  return `<div style="display:flex;gap:4px;align-items:center">
+    <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
+    ${pill('wow','📅 WoW (Last 3)')}${pill('mom','📆 MoM (Last 3)')}
+  </div>`;
 }
 
 // ─── HIERARCHY LOOKUP (email-first, name fallback) ────────
@@ -1332,7 +1448,7 @@ function periodHeaders(periods, extraColBefore, extraColAfter) {
 
 function renderAgentView() {
   const agents  = filteredAgents(getAllAgents());
-  const periods = getActivePeriods();
+  const periods = getTabPeriods('agent');   // always last 3 WoW or MoM per tab toggle
   renderKPICards('agent-kpi-cards', agents);
 
   const wrap = document.getElementById('agent-table-wrap');
@@ -1376,8 +1492,9 @@ function renderAgentView() {
   html += `</tr></tfoot></table>`;
   wrap.innerHTML = html;
 
+  const agentModeLabel = tabPeriodMode.agent === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('agent-table-subtitle').textContent =
-    `${periods.map(p=>p.label).join(' | ')} · ${agents.length} agent${agents.length!==1?'s':''}`;
+    `${agentModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${agents.length} agent${agents.length!==1?'s':''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1393,7 +1510,7 @@ function toggleDrillDown(groupKey, btn, labelCollapse, labelExpand) {
 
 function renderSupervisorView() {
   const allAgents = filteredAgents(getAllAgents());
-  const periods   = getActivePeriods();
+  const periods   = getTabPeriods('supervisor');
   renderKPICards('sup-kpi-cards', allAgents);
 
   const wrap = document.getElementById('sup-table-wrap');
@@ -1455,8 +1572,9 @@ function renderSupervisorView() {
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
+  const supModeLabel = tabPeriodMode.supervisor === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('sup-table-subtitle').textContent =
-    `${periods.map(p=>p.label).join(' | ')} · ${supNames.length} supervisor${supNames.length!==1?'s':''}`;
+    `${supModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${supNames.length} supervisor${supNames.length!==1?'s':''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1465,7 +1583,7 @@ function renderSupervisorView() {
 
 function renderAMView() {
   const allAgents = filteredAgents(getAllAgents());
-  const periods   = getActivePeriods();
+  const periods   = getTabPeriods('am');
   renderKPICards('am-kpi-cards', allAgents);
 
   const wrap = document.getElementById('am-table-wrap');
@@ -1546,8 +1664,9 @@ function renderAMView() {
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
+  const amModeLabel = tabPeriodMode.am === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('am-table-subtitle').textContent =
-    `${periods.map(p=>p.label).join(' | ')} · ${amNames.length} A.Manager${amNames.length!==1?'s':''}`;
+    `${amModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${amNames.length} A.Manager${amNames.length!==1?'s':''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1665,7 +1784,75 @@ function renderGeneralView() {
   }
 
   const agentLabel = `${agents.length} agent${agents.length!==1?'s':''}`;
+
+  // ── KPI chart data prep ──────────────────────────────────────────────────────
+  // Charts show last 8 weeks (top row) and last 6 months (bottom row), always.
+  // We pass labels + datasets after setting innerHTML so canvases exist in DOM.
+  const wowLabels = wowWeeks.map(w => w.label);
+  const momLabels = momMonths.map(m => m.label);
+  const wowCSAT   = wowWeeks.map(w => w.kpis.csat   !== null ? +w.kpis.csat.toFixed(2)   : null);
+  const wowIQA    = wowWeeks.map(w => w.kpis.iqa    !== null ? +w.kpis.iqa.toFixed(2)    : null);
+  const wowTPH    = wowWeeks.map(w => w.kpis.tph    !== null ? +w.kpis.tph.toFixed(2)    : null);
+  const wowAHT    = wowWeeks.map(w => w.kpis.ahtSecs !== null ? +(w.kpis.ahtSecs/60).toFixed(2) : null); // mins
+  const momCSAT   = momMonths.map(m => m.kpis.csat   !== null ? +m.kpis.csat.toFixed(2)   : null);
+  const momIQA    = momMonths.map(m => m.kpis.iqa    !== null ? +m.kpis.iqa.toFixed(2)    : null);
+  const momTPH    = momMonths.map(m => m.kpis.tph    !== null ? +m.kpis.tph.toFixed(2)    : null);
+  const momAHT    = momMonths.map(m => m.kpis.ahtSecs !== null ? +(m.kpis.ahtSecs/60).toFixed(2) : null);
+
   wrap.innerHTML = `
+    <!-- ══ CHARTS ROW 1: WoW ══════════════════════════════════ -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+      <div class="table-card" style="padding:0">
+        <div class="table-card-header" style="padding:12px 16px 8px">
+          <div>
+            <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQA% — WoW</h3>
+            <p style="font-size:11px">Last 8 weeks · team average</p>
+          </div>
+        </div>
+        <div style="padding:0 16px 16px;position:relative;height:200px">
+          <canvas id="chart-wow-quality"></canvas>
+        </div>
+      </div>
+      <div class="table-card" style="padding:0">
+        <div class="table-card-header" style="padding:12px 16px 8px">
+          <div>
+            <h3 style="font-size:14px">⚡ TPH &amp; ⏱ AHT — WoW</h3>
+            <p style="font-size:11px">Last 8 weeks · TPH = bars (left), AHT min = line (right)</p>
+          </div>
+        </div>
+        <div style="padding:0 16px 16px;position:relative;height:200px">
+          <canvas id="chart-wow-productivity"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ CHARTS ROW 2: MoM ══════════════════════════════════ -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+      <div class="table-card" style="padding:0">
+        <div class="table-card-header" style="padding:12px 16px 8px">
+          <div>
+            <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQA% — MoM</h3>
+            <p style="font-size:11px">Last 6 months · team average</p>
+          </div>
+        </div>
+        <div style="padding:0 16px 16px;position:relative;height:200px">
+          <canvas id="chart-mom-quality"></canvas>
+        </div>
+      </div>
+      <div class="table-card" style="padding:0">
+        <div class="table-card-header" style="padding:12px 16px 8px">
+          <div>
+            <h3 style="font-size:14px">⚡ TPH &amp; ⏱ AHT — MoM</h3>
+            <p style="font-size:11px">Last 6 months · TPH = bars (left), AHT min = line (right)</p>
+          </div>
+        </div>
+        <div style="padding:0 16px 16px;position:relative;height:200px">
+          <canvas id="chart-mom-productivity"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TABLES ══════════════════════════════════════════════ -->
     <div class="table-card" style="margin-bottom:1.5rem">
       <div class="table-card-header">
         <div><h3>📅 Week-over-Week KPI Trend</h3>
@@ -1688,152 +1875,386 @@ function renderGeneralView() {
       </div>
       <div class="table-wrap" id="mom-trend-table">${trendTable(momMonths,'label',false)}</div>
     </div>`;
+
+  // ── Draw charts after DOM is updated ──────────────────────────────────────────
+  requestAnimationFrame(() => initGeneralCharts(
+    wowLabels, wowCSAT, wowIQA, wowTPH, wowAHT,
+    momLabels, momCSAT, momIQA, momTPH, momAHT
+  ));
 }
 
 // ═══════════════════════════════════════════════════════════
-// CONTACT REASON VIEW
-// Groups CSAT rows by contact_reason for the active period/filters.
-// Shows: volume, good, bad, CSAT%, share of total — sortable.
+// GENERAL PERFORMANCE — Chart.js chart initializer
+// Called via requestAnimationFrame after wrap.innerHTML is set.
+// Destroys any previously created instances before redrawing.
 // ═══════════════════════════════════════════════════════════
 
-let crSortBy = 'vol'; // 'vol' | 'csat'
+function initGeneralCharts(
+  wowLabels, wowCSAT, wowIQA, wowTPH, wowAHT,
+  momLabels, momCSAT, momIQA, momTPH, momAHT
+) {
+  // Destroy stale instances (avoids ghost tooltips + memory leak on re-render)
+  ['wow-quality','wow-productivity','mom-quality','mom-productivity'].forEach(id => {
+    if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+  });
+
+  // Shared Chart.js config helpers
+  const gridColor  = 'rgba(0,0,0,.06)';
+  const fontColor  = '#64748B';
+  const baseFont   = { family:'Arial,Helvetica,sans-serif', size:10 };
+
+  function lineDataset(label, data, color, yAxisID) {
+    return {
+      label, data, yAxisID,
+      borderColor: color, backgroundColor: color + '22',
+      pointBackgroundColor: color, pointRadius: 4, pointHoverRadius: 6,
+      tension: 0.35, fill: false, borderWidth: 2,
+      spanGaps: true
+    };
+  }
+
+  function barDataset(label, data, color, yAxisID) {
+    return {
+      type: 'bar', label, data, yAxisID,
+      backgroundColor: color + 'CC', borderColor: color,
+      borderWidth: 1, borderRadius: 4,
+      spanGaps: true
+    };
+  }
+
+  function qualityAxes(leftLabel) {
+    return {
+      y: {
+        type:'linear', position:'left',
+        title:{ display:true, text:leftLabel, font:baseFont, color:fontColor },
+        ticks:{ color:fontColor, font:baseFont,
+          callback: v => v !== null ? v.toFixed(1)+'%' : '' },
+        grid:{ color:gridColor },
+        min: 0, max: 100
+      }
+    };
+  }
+
+  function productivityAxes() {
+    return {
+      yTPH: {
+        type:'linear', position:'left',
+        title:{ display:true, text:'TPH', font:baseFont, color:'#475CC7' },
+        ticks:{ color:'#475CC7', font:baseFont },
+        grid:{ color:gridColor }
+      },
+      yAHT: {
+        type:'linear', position:'right',
+        title:{ display:true, text:'AHT (min)', font:baseFont, color:'#FF6A14' },
+        ticks:{ color:'#FF6A14', font:baseFont },
+        grid:{ drawOnChartArea:false }
+      }
+    };
+  }
+
+  function commonOptions(labels, scales, tooltipCallback) {
+    return {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'top', labels:{ font:baseFont, color:fontColor, boxWidth:10, padding:10 } },
+        tooltip: {
+          callbacks: {
+            label: tooltipCallback ||
+              (ctx => ctx.parsed.y !== null ? `${ctx.dataset.label}: ${ctx.parsed.y}` : null)
+          }
+        }
+      },
+      scales
+    };
+  }
+
+  // ── WoW Quality Chart (CSAT + IQA lines) ──────────────────────────────────────
+  const wowQualityCtx = document.getElementById('chart-wow-quality');
+  if (wowQualityCtx) {
+    chartInstances['wow-quality'] = new Chart(wowQualityCtx, {
+      type: 'line',
+      data: {
+        labels: wowLabels,
+        datasets: [
+          lineDataset('CSAT%', wowCSAT, '#218848', 'y'),
+          lineDataset('IQA%',  wowIQA,  '#475CC7', 'y')
+        ]
+      },
+      options: commonOptions(wowLabels, qualityAxes('Score %'),
+        ctx => ctx.parsed.y !== null ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%` : null)
+    });
+  }
+
+  // ── WoW Productivity Chart (TPH bars + AHT line, dual axis) ────────────────
+  const wowProdCtx = document.getElementById('chart-wow-productivity');
+  if (wowProdCtx) {
+    chartInstances['wow-productivity'] = new Chart(wowProdCtx, {
+      type: 'bar',
+      data: {
+        labels: wowLabels,
+        datasets: [
+          barDataset('TPH',      wowTPH, '#475CC7', 'yTPH'),
+          { ...lineDataset('AHT (min)', wowAHT, '#FF6A14', 'yAHT'), type:'line' }
+        ]
+      },
+      options: commonOptions(wowLabels, productivityAxes(),
+        ctx => {
+          if (ctx.parsed.y === null) return null;
+          return ctx.dataset.label === 'AHT (min)'
+            ? `AHT: ${ctx.parsed.y.toFixed(1)} min`
+            : `TPH: ${ctx.parsed.y.toFixed(2)}`;
+        })
+    });
+  }
+
+  // ── MoM Quality Chart ─────────────────────────────────────────────────────────
+  const momQualityCtx = document.getElementById('chart-mom-quality');
+  if (momQualityCtx) {
+    chartInstances['mom-quality'] = new Chart(momQualityCtx, {
+      type: 'line',
+      data: {
+        labels: momLabels,
+        datasets: [
+          lineDataset('CSAT%', momCSAT, '#218848', 'y'),
+          lineDataset('IQA%',  momIQA,  '#475CC7', 'y')
+        ]
+      },
+      options: commonOptions(momLabels, qualityAxes('Score %'),
+        ctx => ctx.parsed.y !== null ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%` : null)
+    });
+  }
+
+  // ── MoM Productivity Chart ────────────────────────────────────────────────────
+  const momProdCtx = document.getElementById('chart-mom-productivity');
+  if (momProdCtx) {
+    chartInstances['mom-productivity'] = new Chart(momProdCtx, {
+      type: 'bar',
+      data: {
+        labels: momLabels,
+        datasets: [
+          barDataset('TPH',      momTPH, '#475CC7', 'yTPH'),
+          { ...lineDataset('AHT (min)', momAHT, '#FF6A14', 'yAHT'), type:'line' }
+        ]
+      },
+      options: commonOptions(momLabels, productivityAxes(),
+        ctx => {
+          if (ctx.parsed.y === null) return null;
+          return ctx.dataset.label === 'AHT (min)'
+            ? `AHT: ${ctx.parsed.y.toFixed(1)} min`
+            : `TPH: ${ctx.parsed.y.toFixed(2)}`;
+        })
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTACT REASON VIEW — WoW/MoM comparison (last 3 cycles)
+// Respects agent / supervisor / AM filters.
+// ═══════════════════════════════════════════════════════════
+
+let crSortBy = 'vol'; // 'vol' = 3-month total volume | 'csat' = current month CSAT%
 
 function setCRSort(by) {
   crSortBy = by;
-  document.getElementById('cr-sort-vol').style.background  = by === 'vol'  ? '#AA0061' : '#F1F5F9';
-  document.getElementById('cr-sort-vol').style.color       = by === 'vol'  ? '#fff'    : '#64748B';
-  document.getElementById('cr-sort-csat').style.background = by === 'csat' ? '#AA0061' : '#F1F5F9';
-  document.getElementById('cr-sort-csat').style.color      = by === 'csat' ? '#fff'    : '#64748B';
+  const vBtn = document.getElementById('cr-sort-vol');
+  const cBtn = document.getElementById('cr-sort-csat');
+  if (vBtn) { vBtn.style.background  = by === 'vol'  ? '#475CC7' : '#F1F5F9'; vBtn.style.color  = by === 'vol'  ? '#fff' : '#64748B'; vBtn.style.borderColor = by === 'vol'  ? '#475CC7' : '#E2E8F0'; }
+  if (cBtn) { cBtn.style.background  = by === 'csat' ? '#475CC7' : '#F1F5F9'; cBtn.style.color  = by === 'csat' ? '#fff' : '#64748B'; cBtn.style.borderColor = by === 'csat' ? '#475CC7' : '#E2E8F0'; }
   renderContactReasonView();
 }
 
 function renderContactReasonView() {
-  const agents  = filteredAgents(getAllAgents());
-  const emails  = new Set(agents.map(a => a.email.toLowerCase()));
-  const nameKeys= new Set(agents.map(a => normName(a.name)));
-  const periods = getActivePeriods();
-  const p       = periods[periods.length - 1]; // use the latest/only period
-  const wrap    = document.getElementById('cr-table-wrap');
-
+  const agents   = filteredAgents(getAllAgents());
+  const emails   = new Set(agents.map(a => a.email.toLowerCase()));
+  const nameKeys = new Set(agents.map(a => normName(a.name)));
+  const wrap     = document.getElementById('cr-table-wrap');
   if (!wrap) return;
 
-  // Collect all CSAT rows in period matching current agent filter
-  const rows = rawCSAT.filter(r => {
-    const d = r.date;
-    if (d < p.start || d > p.end) return false;
+  // ── Build periods from per-tab toggle (WoW = last 3 weeks, MoM = last 3 months) ─
+  // getTabPeriods returns {label, start, end, wk} — CR view maps start→from, end→to
+  const crMode  = tabPeriodMode.cr || 'wow';
+  const rawPeriods = getTabPeriods('cr');
+  const months = rawPeriods.map(p => ({
+    label: p.label,
+    from:  p.start,
+    to:    p.end,
+    isCurrent: p === rawPeriods[rawPeriods.length - 1]
+  }));
+
+  // ── Helper: CSAT stats for a set of rows filtered to a date window ───────────
+  function statsForPeriod(allRows, from, to) {
+    const subset = allRows.filter(r => r.date >= from && r.date <= to);
+    let good = 0, bad = 0, total = 0;
+    subset.forEach(r => {
+      const s = String(r.satisfaction).toLowerCase();
+      if (s === 'good') good++;
+      else if (s === 'bad') bad++;
+      total++;
+    });
+    return { good, bad, total, csat: good + bad > 0 ? (good / (good + bad)) * 100 : null };
+  }
+
+  // ── Filter CSAT rows to current agents (all 3 months combined) ───────────────
+  const agentRows = rawCSAT.filter(r => {
     const re = (r.agent_email || '').toLowerCase().trim();
     if (re) return emails.has(re);
     return nameKeys.has(normName(r.agent_name));
   });
 
-  if (!rows.length) {
+  if (!agentRows.length) {
     document.getElementById('cr-kpi-cards').innerHTML = '';
-    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><p>No CSAT data for the selected period. Upload CSAT data with a Contact Reason column first.</p></div>`;
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><p>No CSAT data found. Upload CSAT data with a Contact Reason column first.</p></div>`;
     document.getElementById('cr-subtitle').textContent = 'No data';
     return;
   }
 
-  // Group by contact_reason
-  const byReason = {};
-  rows.forEach(r => {
-    const reason = (r.contact_reason || '').trim() || '(No reason)';
-    if (!byReason[reason]) byReason[reason] = { good:0, bad:0, offered:0, total:0 };
-    const s = String(r.satisfaction).toLowerCase();
-    if (s === 'good')    byReason[reason].good++;
-    else if (s === 'bad') byReason[reason].bad++;
-    else if (s === 'offered') byReason[reason].offered++;
-    byReason[reason].total++;
+  // ── Collect all unique reasons across all 3 months ───────────────────────────
+  const allReasons = [...new Set(agentRows.map(r => (r.contact_reason||'').trim() || '(No reason)'))];
+
+  // ── Build per-reason, per-month stats ─────────────────────────────────────────
+  // reasonData[reason] = { totalVol3M, months: [{good,bad,total,csat}, ...] }
+  const reasonData = {};
+  allReasons.forEach(reason => {
+    const reasonRows = agentRows.filter(r => ((r.contact_reason||'').trim() || '(No reason)') === reason);
+    const mStats = months.map(mo => statsForPeriod(reasonRows, mo.from, mo.to));
+    const totalVol = mStats.reduce((s, ms) => s + ms.total, 0);
+    reasonData[reason] = { totalVol, months: mStats };
   });
 
-  // Build sorted rows
-  let reasonRows = Object.entries(byReason).map(([reason, d]) => ({
-    reason,
-    good:    d.good,
-    bad:     d.bad,
-    offered: d.offered,
-    total:   d.total,
-    csat:    d.good + d.bad > 0 ? (d.good / (d.good + d.bad)) * 100 : null
-  }));
-
+  // ── Sort ──────────────────────────────────────────────────────────────────────
+  let reasonRows = Object.entries(reasonData).map(([reason, d]) => ({ reason, ...d }));
   if (crSortBy === 'csat') {
-    reasonRows.sort((a, b) => (b.csat ?? -1) - (a.csat ?? -1));
+    // Sort by current month CSAT% desc (nulls last)
+    reasonRows.sort((a, b) => (b.months[2].csat ?? -1) - (a.months[2].csat ?? -1));
   } else {
-    reasonRows.sort((a, b) => b.total - a.total);
+    reasonRows.sort((a, b) => b.totalVol - a.totalVol);
   }
 
-  const grandTotal = rows.length;
-  const allCSATs   = reasonRows.map(r => r.csat).filter(v => v !== null);
+  const grandTotal3M  = reasonRows.reduce((s, r) => s + r.totalVol, 0);
+  const curMonthStats = statsForPeriod(agentRows, months[2].from, months[2].to);
+  const prevMonthStats= statsForPeriod(agentRows, months[1].from, months[1].to);
 
-  // KPI cards
-  const overallGood  = rows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
-  const overallBad   = rows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
-  const overallCSAT  = overallGood + overallBad > 0 ? (overallGood / (overallGood + overallBad)) * 100 : null;
-  const topReason    = reasonRows[0];
-  const worstReason  = [...reasonRows].filter(r => r.csat !== null && r.total >= 5).sort((a,b) => a.csat - b.csat)[0];
+  // ── KPI Cards ─────────────────────────────────────────────────────────────────
+  // Biggest mover = reason with highest absolute CSAT swing between M-1 and current
+  const biggestMover = reasonRows
+    .filter(r => r.months[1].csat !== null && r.months[2].csat !== null && r.months[2].total >= 5)
+    .sort((a, b) => Math.abs(b.months[2].csat - b.months[1].csat) - Math.abs(a.months[2].csat - a.months[1].csat))[0];
+  const moverDelta = biggestMover
+    ? (biggestMover.months[2].csat - biggestMover.months[1].csat)
+    : null;
 
+  const worstCurrent = reasonRows
+    .filter(r => r.months[2].csat !== null && r.months[2].total >= 5)
+    .sort((a, b) => a.months[2].csat - b.months[2].csat)[0];
+
+  // CSAT delta current vs prior month
+  const csatDelta = curMonthStats.csat !== null && prevMonthStats.csat !== null
+    ? curMonthStats.csat - prevMonthStats.csat : null;
+  const deltaSign  = csatDelta !== null ? (csatDelta >= 0 ? '+' : '') : '';
+  const deltaColor = csatDelta !== null ? (csatDelta >= 0 ? '#218848' : '#DC2626') : '#94A3B8';
+
+  const crCycleLabelCard = crMode === 'mom' ? '3-Month' : '3-Week';
   const crCards = document.getElementById('cr-kpi-cards');
   if (crCards) crCards.innerHTML = `
     <div class="kpi-card blue">
-      <div class="kpi-label">📋 Total Tickets</div>
-      <div class="kpi-value">${grandTotal.toLocaleString()}</div>
-      <div class="kpi-sub">${reasonRows.length} distinct contact reasons</div>
+      <div class="kpi-label">📋 ${crCycleLabelCard} Total Tickets</div>
+      <div class="kpi-value">${grandTotal3M.toLocaleString()}</div>
+      <div class="kpi-sub">${reasonRows.length} reasons · ${months[0].label} – ${months[2].label} · ${crCycleLabelCard}</div>
     </div>
     <div class="kpi-card green">
-      <div class="kpi-label">😊 Overall CSAT</div>
-      <div class="kpi-value">${fmtPct(overallCSAT)}</div>
-      <div class="kpi-sub">${overallGood} good · ${overallBad} bad</div>
+      <div class="kpi-label">😊 ${months[2].label} CSAT</div>
+      <div class="kpi-value">${fmtPct(curMonthStats.csat)}</div>
+      <div class="kpi-sub" style="color:${deltaColor};font-weight:600">${csatDelta !== null ? deltaSign + csatDelta.toFixed(1) + 'pp vs ' + months[1].label : 'vs prior month n/a'}</div>
     </div>
     <div class="kpi-card yellow">
-      <div class="kpi-label">🏆 Highest Volume</div>
-      <div class="kpi-value" style="font-size:16px;line-height:1.2">${escHtml(topReason?.reason || '—')}</div>
-      <div class="kpi-sub">${topReason?.total ?? 0} tickets · ${fmtPct(topReason?.csat ?? null)}</div>
+      <div class="kpi-label">📈 Biggest Mover</div>
+      <div class="kpi-value" style="font-size:15px;line-height:1.3">${escHtml(biggestMover?.reason || '—')}</div>
+      <div class="kpi-sub" style="color:${moverDelta !== null ? (moverDelta >= 0 ? '#218848' : '#DC2626') : '#94A3B8'};font-weight:600">
+        ${moverDelta !== null ? (moverDelta >= 0 ? '+' : '') + moverDelta.toFixed(1) + 'pp ' + months[1].label + '→' + months[2].label : 'n/a'}
+      </div>
     </div>
     <div class="kpi-card" style="border-left-color:#EF4444">
-      <div class="kpi-label">⚠️ Needs Attention</div>
-      <div class="kpi-value" style="font-size:16px;line-height:1.2">${escHtml(worstReason?.reason || '—')}</div>
-      <div class="kpi-sub">${worstReason ? fmtPct(worstReason.csat) + ' · ' + worstReason.total + ' tickets' : 'n/a (min 5 tickets)'}</div>
+      <div class="kpi-label">⚠️ Needs Attention (${months[2].label})</div>
+      <div class="kpi-value" style="font-size:15px;line-height:1.3">${escHtml(worstCurrent?.reason || '—')}</div>
+      <div class="kpi-sub">${worstCurrent ? fmtPct(worstCurrent.months[2].csat) + ' · ' + worstCurrent.months[2].total + ' tickets' : 'n/a (min 5 tickets)'}</div>
     </div>`;
 
-  // Build table
-  let html = `<table class="perf-table">
-    <thead><tr>
-      <th class="sticky-col col-agent week-hdr" style="background:#1E293B"># Reason</th>
-      <th class="week-hdr w3" style="text-align:right">Tickets</th>
-      <th class="week-hdr w1" style="text-align:right">Good</th>
-      <th class="week-hdr w1" style="text-align:right">Bad</th>
-      <th class="week-hdr w2" style="text-align:right">Offered</th>
-      <th class="week-hdr wc" style="text-align:right">CSAT %</th>
-      <th class="week-hdr" style="background:#475CC7;text-align:right">% of Total</th>
-    </tr></thead><tbody>`;
+  // ── Table ──────────────────────────────────────────────────────────────────────
+  // Colors computed per-column (each month's CSAT quartile relative to that month's values)
+  const mAllCSATs = months.map((_, mi) =>
+    reasonRows.map(r => r.months[mi].csat).filter(v => v !== null)
+  );
+
+  const mColors = ['#475CC7','#AA0061','#218848']; // Sea, Magenta, Earth per month
+
+  let html = `<table class="perf-table" style="min-width:820px">
+    <thead>
+      <tr>
+        <th class="sticky-col col-agent week-hdr" style="background:#1E293B;min-width:180px" rowspan="2"># Contact Reason</th>
+        <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">${crCycleLabelCard} Vol</th>`;
+  months.forEach((mo, mi) => {
+    html += `<th colspan="2" class="week-hdr" style="background:${mColors[mi]};text-align:center">${escHtml(mo.label)}</th>`;
+  });
+  html += `<th class="week-hdr" style="background:#1E293B;font-size:10px;text-align:center" rowspan="2">Δ Last 2M</th>
+      </tr><tr>`;
+  months.forEach((_, mi) => {
+    html += `<th class="week-hdr" style="background:${mColors[mi]};opacity:.85;font-size:10px;padding:4px 6px">Vol</th>
+             <th class="week-hdr" style="background:${mColors[mi]};opacity:.85;font-size:10px;padding:4px 6px">CSAT%</th>`;
+  });
+  html += `</tr></thead><tbody>`;
 
   reasonRows.forEach((r, i) => {
-    const csatCls  = getKPIClass(r.csat, allCSATs, false);
-    const sharePct = grandTotal > 0 ? (r.total / grandTotal * 100).toFixed(1) : '—';
+    const prevC = r.months[1].csat, currC = r.months[2].csat;
+    let deltaCell = `<td class="cell-kpi none">—</td>`;
+    if (prevC !== null && currC !== null) {
+      const d    = currC - prevC;
+      const bg   = d >= 0 ? '#EDFAF1' : '#FEF2F2';
+      const col  = d >= 0 ? '#218848' : '#DC2626';
+      const sign = d >= 0 ? '+' : '';
+      deltaCell  = `<td class="cell-kpi" style="background:${bg};color:${col};font-weight:700;font-size:11px;text-align:center">${sign}${d.toFixed(1)}pp</td>`;
+    }
+
     html += `<tr>
-      <td class="sticky-col col-agent"><span style="color:#94A3B8;font-size:11px;margin-right:6px">${i+1}</span>${escHtml(r.reason)}</td>
-      <td class="cell-kpi" style="text-align:right;font-weight:700">${r.total.toLocaleString()}</td>
-      <td class="cell-kpi" style="text-align:right;color:#218848">${r.good.toLocaleString()}</td>
-      <td class="cell-kpi" style="text-align:right;color:#DC2626">${r.bad.toLocaleString()}</td>
-      <td class="cell-kpi" style="text-align:right;color:#94A3B8">${r.offered.toLocaleString()}</td>
-      <td class="cell-kpi ${csatCls}" style="text-align:right;font-weight:700">${r.csat !== null ? fmtPct(r.csat) : '—'}</td>
-      <td class="cell-kpi" style="text-align:right;color:#475CC7;font-weight:600">${sharePct}%</td>
-    </tr>`;
+      <td class="sticky-col col-agent">
+        <span style="color:#94A3B8;font-size:11px;margin-right:6px">${i+1}</span>${escHtml(r.reason)}
+      </td>
+      <td class="cell-kpi" style="text-align:center;font-weight:700;color:#334155">${r.totalVol.toLocaleString()}</td>`;
+
+    r.months.forEach((ms, mi) => {
+      const csatCls = getKPIClass(ms.csat, mAllCSATs[mi], false);
+      html += `<td class="cell-kpi" style="text-align:center;color:#64748B;font-size:12px">${ms.total > 0 ? ms.total.toLocaleString() : '—'}</td>
+               <td class="cell-kpi ${csatCls}" style="text-align:center;font-weight:700">${ms.csat !== null ? fmtPct(ms.csat) : '—'}</td>`;
+    });
+
+    html += `${deltaCell}</tr>`;
   });
 
-  // Footer totals
+  // Footer
+  const footerMonthStats = months.map(mo => statsForPeriod(agentRows, mo.from, mo.to));
+  const footerDelta = footerMonthStats[1].csat !== null && footerMonthStats[2].csat !== null
+    ? footerMonthStats[2].csat - footerMonthStats[1].csat : null;
+
   html += `</tbody><tfoot><tr>
-    <td class="sticky-col col-agent">TOTAL</td>
-    <td class="cell-kpi" style="text-align:right;font-weight:700">${grandTotal.toLocaleString()}</td>
-    <td class="cell-kpi" style="text-align:right;color:#218848;font-weight:700">${overallGood.toLocaleString()}</td>
-    <td class="cell-kpi" style="text-align:right;color:#DC2626;font-weight:700">${overallBad.toLocaleString()}</td>
-    <td class="cell-kpi" style="text-align:right;color:#94A3B8;font-weight:700">${rows.filter(r=>String(r.satisfaction).toLowerCase()==='offered').length.toLocaleString()}</td>
-    <td class="cell-kpi" style="text-align:right;font-weight:700;color:#AA0061">${fmtPct(overallCSAT)}</td>
-    <td class="cell-kpi" style="text-align:right;color:#475CC7;font-weight:700">100%</td>
-  </tr></tfoot></table>`;
+    <td class="sticky-col col-agent" style="font-weight:700;color:#AA0061">TEAM TOTAL</td>
+    <td class="cell-kpi" style="text-align:center;font-weight:700;color:#AA0061">${grandTotal3M.toLocaleString()}</td>`;
+  footerMonthStats.forEach(ms => {
+    html += `<td class="cell-kpi" style="text-align:center;font-weight:700">${ms.total.toLocaleString()}</td>
+             <td class="cell-kpi" style="text-align:center;font-weight:700;color:#AA0061">${fmtPct(ms.csat)}</td>`;
+  });
+  if (footerDelta !== null) {
+    const bg  = footerDelta >= 0 ? '#EDFAF1' : '#FEF2F2';
+    const col = footerDelta >= 0 ? '#218848' : '#DC2626';
+    html += `<td class="cell-kpi" style="background:${bg};color:${col};font-weight:700;font-size:11px;text-align:center">${footerDelta >= 0 ? '+' : ''}${footerDelta.toFixed(1)}pp</td>`;
+  } else {
+    html += `<td class="cell-kpi none">—</td>`;
+  }
+  html += `</tr></tfoot></table>`;
 
   wrap.innerHTML = html;
+  const crCycleLabel = crMode === 'mom' ? '3-month' : '3-week';
   document.getElementById('cr-subtitle').textContent =
-    `${p.label} · ${agents.length} agent${agents.length!==1?'s':''} · ${reasonRows.length} reasons · sorted by ${crSortBy === 'vol' ? 'volume' : 'CSAT%'}`;
+    `${months[0].label} → ${months[2].label} · ${agents.length} agent${agents.length!==1?'s':''} · ${reasonRows.length} reasons · sorted by ${crSortBy === 'vol' ? `${crCycleLabel} volume` : 'current CSAT%'}`;
 }
 
 // ═══════════════════════════════════════════════════════════
