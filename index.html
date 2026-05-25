@@ -333,6 +333,13 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
     </div>
     <div class="form-row">
       <div class="form-group">
+        <label>Team</label>
+        <input type="text" id="hm-team" placeholder="e.g. Retention, Billing, Tech Support…">
+      </div>
+      <div class="form-group"><!-- spacer --></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
         <label>Effective From *</label>
         <input type="date" id="hm-from">
       </div>
@@ -419,6 +426,9 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   </label>
   <label>Asst. Manager
     <select id="f-am"><option value="">All A.Managers</option></select>
+  </label>
+  <label>Team
+    <select id="f-team"><option value="">All Teams</option></select>
   </label>
   <div class="filter-sep"></div>
   <label>Period
@@ -712,7 +722,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <thead>
             <tr>
               <th>Agent Name</th><th>Agent Email</th>
-              <th>Supervisor</th><th>Asst. Manager</th>
+              <th>Supervisor</th><th>Asst. Manager</th><th>Team</th>
               <th>Effective From</th><th>Effective To</th>
               <th>Notes</th><th>Actions</th>
             </tr>
@@ -792,7 +802,7 @@ let thresholds = { tph: null, ahtSecs: null, csat: 85, iqa: 90 };
 let sortState = { col: null, dir: 1 }; // dir: 1=asc, -1=desc
 
 // active filter state
-let activeFilters = { agent:'', supervisor:'', am:'', dateFrom:'', dateTo:'' };
+let activeFilters = { agent:'', supervisor:'', am:'', team:'', dateFrom:'', dateTo:'' };
 let activePeriod  = '3w';
 
 // ─── PER-TAB WoW/MoM TOGGLE STATE ───────────────────────────
@@ -1109,16 +1119,16 @@ function getHierarchyForAgent(agentEmail, dateStr) {
 
   if (matches.length) {
     matches.sort((a,b) => isoDate(String(b.effective_from||'')) > isoDate(String(a.effective_from||'')) ? 1 : -1);
-    return { supervisor: matches[0].supervisor_name||'—', am: matches[0].am_name||'—' };
+    return { supervisor: matches[0].supervisor_name||'—', am: matches[0].am_name||'—', team: matches[0].team||'' };
   }
 
   // ── 3. Any record for this email (most recent, ignore date) ──
   const anyByEmail = rawHierarchy
     .filter(h => (h.agent_email||'').toLowerCase().trim() === e)
     .sort((a,b) => isoDate(String(b.effective_from||'')) > isoDate(String(a.effective_from||'')) ? 1 : -1);
-  if (anyByEmail.length) return { supervisor: anyByEmail[0].supervisor_name||'—', am: anyByEmail[0].am_name||'—' };
+  if (anyByEmail.length) return { supervisor: anyByEmail[0].supervisor_name||'—', am: anyByEmail[0].am_name||'—', team: anyByEmail[0].team||'' };
 
-  return { supervisor: '—', am: '—' };
+  return { supervisor: '—', am: '—', team: '' };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1283,6 +1293,13 @@ function getAllAMs() {
     .sort((a, b) => (a.email || a.name).localeCompare(b.email || b.name));
 }
 
+function getAllTeams() {
+  // Returns sorted unique team names from hierarchy records (ignores blank teams)
+  const seen = new Set();
+  rawHierarchy.forEach(h => { if (h.team && h.team.trim()) seen.add(h.team.trim()); });
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
 // Hierarchy lookup by email for today (used by filter dropdowns and grouping)
 function currentHier(agentEmail) {
   return getHierarchyForAgent(agentEmail, todayStr());
@@ -1294,11 +1311,10 @@ function currentHier(agentEmail) {
 function filteredAgents(agents) {
   return agents.filter(agent => {
     if (activeFilters.agent && agent.email !== activeFilters.agent) return false;
-    if (activeFilters.supervisor || activeFilters.am) {
+    if (activeFilters.supervisor || activeFilters.am || activeFilters.team) {
       const hier = currentHier(agent.email);
       if (activeFilters.supervisor) {
         const fSup = activeFilters.supervisor;
-        // fSup may be an email or a name — match both ways
         const matchByName  = normName(hier.supervisor) === normName(fSup);
         const matchByEmail = fSup.includes('@') && nameToEmail[normName(hier.supervisor)] === fSup.toLowerCase().trim();
         if (!matchByName && !matchByEmail) return false;
@@ -1308,6 +1324,10 @@ function filteredAgents(agents) {
         const matchByName  = normName(hier.am) === normName(fAM);
         const matchByEmail = fAM.includes('@') && nameToEmail[normName(hier.am)] === fAM.toLowerCase().trim();
         if (!matchByName && !matchByEmail) return false;
+      }
+      if (activeFilters.team) {
+        // Team filter: exact match (case-insensitive)
+        if (normName(hier.team) !== normName(activeFilters.team)) return false;
       }
     }
     return true;
@@ -1324,11 +1344,12 @@ function populateFilters() {
   const agents = getAllAgents();
   const sups   = getAllSupervisors();
   const ams    = getAllAMs();
+  const teams  = getAllTeams();
 
-  // All dropdowns use email as value when available; display is email (or name fallback)
   fillAgentSel('f-agent',      agents, activeFilters.agent);
   fillPersonSel('f-supervisor', sups,  'All Supervisors', activeFilters.supervisor);
   fillPersonSel('f-am',         ams,   'All A.Managers',  activeFilters.am);
+  fillSel('f-team', teams, 'All Teams', activeFilters.team);
 }
 
 // Agent dropdown — value=email, display=email (name on hover via title)
@@ -1470,7 +1491,8 @@ function renderAgentView() {
   const allIQA  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].iqa).filter(v=>v!==null));
 
   let html = `<table class="perf-table" id="agent-perf-table"><thead><tr>
-    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent Email</th>`;
+    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent Email</th>
+    <th class="week-hdr" style="background:#334155;text-align:center;white-space:nowrap" rowspan="2">Team</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `</tr><tr>`;
   periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
@@ -1479,7 +1501,12 @@ function renderAgentView() {
   agents.forEach(agent => {
     const lastK   = allKPIs[agent.email][periods.length - 1];
     const warnRow = thresholdRowStyle(lastK);
-    html += `<tr${warnRow}><td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>`;
+    const agentTeam = currentHier(agent.email).team || '';
+    const teamBadge = agentTeam
+      ? `<span style="background:#EEF4FF;color:#475CC7;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600;white-space:nowrap">${escHtml(agentTeam)}</span>`
+      : `<span style="color:#CBD5E1;font-size:11px">—</span>`;
+    html += `<tr${warnRow}><td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>
+      <td style="text-align:center">${teamBadge}</td>`;
     periods.forEach((_,pi) => {
       html += kpiCells(allKPIs[agent.email][pi], allTPH[pi], allAHT[pi], allCSAT[pi], allIQA[pi]);
     });
@@ -1487,7 +1514,7 @@ function renderAgentView() {
   });
 
   // Footer
-  html += `</tbody><tfoot><tr><td class="sticky-col col-agent">TEAM TOTAL / AVG</td>`;
+  html += `</tbody><tfoot><tr><td class="sticky-col col-agent">TEAM TOTAL / AVG</td><td></td>`;
   periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(agents.map(a=>a.email), p.start, p.end)); });
   html += `</tr></tfoot></table>`;
   wrap.innerHTML = html;
@@ -2269,6 +2296,7 @@ const HIER_FIELDS = [
   { key:'agent_name',      label:'Agent Name',         auto:['agent name','name','nombre','agent'] },
   { key:'supervisor_name', label:'Supervisor *',        auto:['supervisor','supervisor name','sup'] },
   { key:'am_name',         label:'A. Manager *',        auto:['a. manager','am','assistant manager','a.manager','manager'] },
+  { key:'team',            label:'Team',                auto:['team','equipo','grupo','queue','skill'] },
   { key:'status',          label:'Status (optional)',   auto:['status','estado'] },
 ];
 
@@ -2355,12 +2383,13 @@ function updateHierPreview() {
   if (!tbl) return;
 
   tbl.innerHTML = `
-    <thead><tr><th>Email</th><th>Agent Name</th><th>Supervisor</th><th>A. Manager</th><th>Status</th></tr></thead>
+    <thead><tr><th>Email</th><th>Agent Name</th><th>Supervisor</th><th>A. Manager</th><th>Team</th><th>Status</th></tr></thead>
     <tbody>${preview.map(r => `<tr>
       <td>${escHtml(r.agent_email)}</td>
       <td>${escHtml(r.agent_name)}</td>
       <td>${escHtml(r.supervisor_name)}</td>
       <td>${escHtml(r.am_name)}</td>
+      <td>${escHtml(r.team||'')}</td>
       <td>${escHtml(r.status)}</td>
     </tr>`).join('')}</tbody>`;
 
@@ -2377,6 +2406,7 @@ function mapHierRows() {
       agent_name:      (m.agent_name      ? (row[m.agent_name]      || '') : '').trim(),
       supervisor_name: (m.supervisor_name ? (row[m.supervisor_name] || '') : '').trim(),
       am_name:         (m.am_name         ? (row[m.am_name]         || '') : '').trim(),
+      team:            (m.team            ? (row[m.team]            || '') : '').trim(),
       status:          (m.status          ? (row[m.status]          || '') : '').trim(),
     }))
     .filter(r => {
@@ -2411,6 +2441,7 @@ async function submitHierarchyUpload() {
     agent_name:      r.agent_name || emailToName[r.agent_email] || '',
     supervisor_name: r.supervisor_name,
     am_name:         r.am_name,
+    team:            r.team || '',
     effective_from:  from,
     effective_to:    to,
     notes:           'Bulk import',
@@ -2526,9 +2557,9 @@ async function submitHierarchyUpload() {
 }
 
 function downloadHierTemplate() {
-  const csv = 'Email,Agent Name,Supervisor,A. Manager,Status\n' +
-    'agent@cookunity.com,Jane Doe,Maria Garcia,John Smith,Active\n' +
-    'agent2@cookunity.com,Carlos Lopez,Maria Garcia,John Smith,Active';
+  const csv = 'Email,Agent Name,Supervisor,A. Manager,Team,Status\n' +
+    'agent@cookunity.com,Jane Doe,Maria Garcia,John Smith,Retention,Active\n' +
+    'agent2@cookunity.com,Carlos Lopez,Maria Garcia,John Smith,Billing,Active';
   const blob = new Blob([csv], { type:'text/csv' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
@@ -2540,7 +2571,7 @@ function renderHierarchyTable() {
   const tbody = document.getElementById('hier-tbody');
   if (!tbody) return;
   if (!rawHierarchy.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><p>No hierarchy records yet. Add records to link agents to supervisors and AMs.</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><p>No hierarchy records yet. Add records to link agents to supervisors and AMs.</p></td></tr>`;
     return;
   }
   const sorted = [...rawHierarchy].sort((a,b) =>
@@ -2551,6 +2582,7 @@ function renderHierarchyTable() {
       <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
       <td>${escHtml(h.supervisor_name||'')}</td>
       <td>${escHtml(h.am_name||'')}</td>
+      <td>${h.team ? `<span style="background:#EEF4FF;color:#475CC7;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">${escHtml(h.team)}</span>` : '<span style="color:#CBD5E1">—</span>'}</td>
       <td>${escHtml(h.effective_from||'')}</td>
       <td>${h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>'}</td>
       <td style="color:#64748B;font-size:11px">${escHtml(h.notes||'')}</td>
@@ -2620,6 +2652,7 @@ function applyFilters() {
   activeFilters.agent      = document.getElementById('f-agent').value;
   activeFilters.supervisor = document.getElementById('f-supervisor').value;
   activeFilters.am         = document.getElementById('f-am').value;
+  activeFilters.team       = document.getElementById('f-team').value;
 
   const fromVal = document.getElementById('f-date-from').value;
   const toVal   = document.getElementById('f-date-to').value;
@@ -2641,11 +2674,12 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  activeFilters = { agent:'', supervisor:'', am:'', dateFrom:'', dateTo:'' };
+  activeFilters = { agent:'', supervisor:'', am:'', team:'', dateFrom:'', dateTo:'' };
   activePeriod  = '3w';
   document.getElementById('f-agent').value      = '';
   document.getElementById('f-supervisor').value = '';
   document.getElementById('f-am').value         = '';
+  document.getElementById('f-team').value       = '';
   document.getElementById('f-period').value     = '3w';
   document.getElementById('f-date-from').value  = '';
   document.getElementById('f-date-to').value    = '';
@@ -3060,6 +3094,7 @@ function openHierModal(record) {
   document.getElementById('hm-agent-email').value = isEdit ? record.agent_email || '' : '';
   document.getElementById('hm-supervisor').value  = isEdit ? record.supervisor_name || '' : '';
   document.getElementById('hm-am').value           = isEdit ? record.am_name     || '' : '';
+  document.getElementById('hm-team').value         = isEdit ? record.team        || '' : '';
   document.getElementById('hm-from').value         = isEdit ? isoDate(String(record.effective_from||'')) : '';
   document.getElementById('hm-to').value           = isEdit ? isoDate(String(record.effective_to||''))   : '';
   document.getElementById('hm-notes').value        = isEdit ? record.notes       || '' : '';
@@ -3077,6 +3112,7 @@ async function saveHierarchy() {
     agent_email:     document.getElementById('hm-agent-email').value.trim(),
     supervisor_name: document.getElementById('hm-supervisor').value.trim(),
     am_name:         document.getElementById('hm-am').value.trim(),
+    team:            document.getElementById('hm-team').value.trim(),
     effective_from:  document.getElementById('hm-from').value,
     effective_to:    document.getElementById('hm-to').value,
     notes:           document.getElementById('hm-notes').value.trim(),
