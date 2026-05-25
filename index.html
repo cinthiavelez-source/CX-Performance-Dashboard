@@ -269,6 +269,11 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   padding: 10px 14px; font-size: 12px; color: #9A3412; margin-bottom: 1rem; }
 @media (max-width: 768px) { .main { padding: 1rem; } .filter-bar { padding: 10px 1rem; } }
 
+/* ─── THRESHOLD ALERT ROW ────────────────────────────────── */
+/* rows below any threshold get a red left border + pale tint  */
+tr[style*="border-left:3px solid #EF4444"] td { background: #FFF8F8 !important; }
+tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !important; }
+
 /* ─── DRILL-DOWN ROWS & EXPAND BUTTON ────────────────────── */
 .btn-expand { background: #475CC7; color: #fff; border-radius: 5px;
   padding: 3px 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -377,6 +382,11 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
     <span>CookUnity</span>
   </div>
   <div class="navbar-right">
+    <span id="sync-label" style="color:rgba(255,255,255,.5);font-size:11px;white-space:nowrap"></span>
+    <button onclick="manualRefresh()" title="Reload data from Google Sheets"
+      style="background:rgba(255,255,255,.12);color:#fff;border-radius:6px;padding:5px 10px;font-size:13px;border:none;">
+      🔄
+    </button>
     <div class="user-chip">
       <div class="sync-dot" id="sync-dot"></div>
       <span id="nav-user-name">Loading…</span>
@@ -415,6 +425,8 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
       <option value="3w">Last 3 Weeks</option>
       <option value="1w">This Week</option>
       <option value="1m">This Month</option>
+      <option value="lm">Last Month</option>
+      <option value="q">This Quarter</option>
       <option value="custom">Custom Range</option>
     </select>
   </label>
@@ -457,6 +469,10 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
           <h3>Supervisor View — Agents by Team</h3>
           <p id="sup-table-subtitle">Last 3 weeks · select a supervisor to focus</p>
         </div>
+        <button onclick="exportTableBySelector('#sup-table-wrap table')"
+          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+          ⬇ Export CSV
+        </button>
       </div>
       <div class="table-wrap"><div id="sup-table-wrap"></div></div>
     </div>
@@ -471,6 +487,10 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
           <h3>Assistant Manager View — Agents by Region</h3>
           <p id="am-table-subtitle">Last 3 weeks · select an AM to focus</p>
         </div>
+        <button onclick="exportTableBySelector('#am-table-wrap table')"
+          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+          ⬇ Export CSV
+        </button>
       </div>
       <div class="table-wrap"><div id="am-table-wrap"></div></div>
     </div>
@@ -683,12 +703,29 @@ let cachedRole   = 'viewer';
 let currentPage  = 'agent';
 let currentUser  = null;
 let parsedFiles  = {}; // { tph: [...], csat: [...], iqa: [...] }
+let lastSyncTime = null;
 
 // ─── EMAIL ↔ NAME LOOKUP MAPS (rebuilt after every data load) ─
-// Primary join key is now email. CSAT has no email field, so we
-// resolve agent names → emails via these maps at compute time.
-let nameToEmail = {}; // normName(agentName) → email
-let emailToName = {}; // email → canonical display name
+let nameToEmail = {};
+let emailToName = {};
+
+// ─── PERFORMANCE INDEXES (rebuilt at load — O(1) lookups) ─────
+// Instead of scanning full arrays on every KPI compute call,
+// we pre-group rows by agent_email at load time.
+let tphIndex  = {}; // email → [rows]
+let csatIndex = {}; // email → [rows] ; also keyed by normName for name fallback
+let iqaIndex  = {}; // email → [rows]
+let csatNameIndex = {}; // normName → [rows]  (CSAT name fallback)
+
+// ─── KPI MEMOIZATION CACHE ────────────────────────────────────
+// Key: "email|start|end". Cleared whenever new data is loaded.
+let kpiCache = {};
+
+// ─── PERFORMANCE THRESHOLDS (editable via Admin tab) ──────────
+let thresholds = { tph: null, ahtSecs: null, csat: 85, iqa: 90 };
+
+// ─── SORT STATE ───────────────────────────────────────────────
+let sortState = { col: null, dir: 1 }; // dir: 1=asc, -1=desc
 
 // active filter state
 let activeFilters = { agent:'', supervisor:'', am:'', dateFrom:'', dateTo:'' };
@@ -781,6 +818,34 @@ function buildAgentMaps() {
   rawCSAT.forEach(r => { if (r.agent_email) add(r.agent_name, r.agent_email); });
 }
 
+// ─── PERFORMANCE INDEXES ──────────────────────────────────────
+// Pre-group raw rows by agent_email (and name for CSAT) so that
+// computeKPIs does O(1) lookup instead of O(N) scan of full arrays.
+// Called once after every apiFetch().
+function buildIndexes() {
+  tphIndex = {}; csatIndex = {}; iqaIndex = {}; csatNameIndex = {};
+  kpiCache = {}; // clear memo cache whenever source data changes
+
+  rawTPH.forEach(r => {
+    const e = (r.agent_email||'').toLowerCase().trim();
+    if (e) (tphIndex[e] = tphIndex[e] || []).push(r);
+  });
+
+  rawIQA.forEach(r => {
+    const e = (r.agent_email||'').toLowerCase().trim();
+    if (e) (iqaIndex[e] = iqaIndex[e] || []).push(r);
+  });
+
+  rawCSAT.forEach(r => {
+    // index by email when available
+    const e = (r.agent_email||'').toLowerCase().trim();
+    if (e) (csatIndex[e] = csatIndex[e] || []).push(r);
+    // always index by normalized name for fallback
+    const n = normName(r.agent_name||'');
+    if (n) (csatNameIndex[n] = csatNameIndex[n] || []).push(r);
+  });
+}
+
 // ─── WEEK HELPERS (Sun → Sat) ─────────────────────────────
 // CookUnity weeks run Sunday through Saturday.
 
@@ -846,6 +911,24 @@ function getActivePeriods() {
     return [{ label:'This Month', start:from, end:today, wk:'wc' }];
   }
 
+  if (activePeriod === 'lm') {
+    const d  = new Date(today + 'T12:00:00');
+    const lm = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const y  = lm.getFullYear(), m = lm.getMonth();
+    const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
+    const last = new Date(y, m+1, 0);
+    const to   = `${y}-${String(m+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+    return [{ label: lm.toLocaleDateString('en-US',{month:'long',year:'numeric'}), start:from, end:to, wk:'w2' }];
+  }
+
+  if (activePeriod === 'q') {
+    const d   = new Date(today + 'T12:00:00');
+    const qStart = new Date(d.getFullYear(), Math.floor(d.getMonth()/3)*3, 1);
+    const from  = `${qStart.getFullYear()}-${String(qStart.getMonth()+1).padStart(2,'0')}-01`;
+    const q     = Math.floor(d.getMonth()/3)+1;
+    return [{ label:`Q${q} ${qStart.getFullYear()}`, start:from, end:today, wk:'w3' }];
+  }
+
   if (activePeriod === 'custom') {
     const from = activeFilters.dateFrom || addDays(today, -29);
     const to   = activeFilters.dateTo   || today;
@@ -905,88 +988,74 @@ function getHierarchyForAgent(agentEmail, dateStr) {
 // ═══════════════════════════════════════════════════════════
 
 function computeKPIs(agentEmail, weekStart, weekEnd) {
-  const email   = (agentEmail || '').toLowerCase().trim();
-  // Resolve the agent's canonical name for CSAT matching
+  const email = (agentEmail || '').toLowerCase().trim();
+  const cacheKey = `${email}|${weekStart}|${weekEnd}`;
+  if (kpiCache[cacheKey]) return kpiCache[cacheKey];
+
   const nameKey = normName(emailToName[email] || '');
 
-  // ── TPH / AHT — matched by email ──
-  const tRows = rawTPH.filter(r => {
-    const d = isoDate(String(r.date||''));
-    return (r.agent_email||'').toLowerCase().trim() === email && d >= weekStart && d <= weekEnd;
-  });
+  // TPH / AHT — use pre-built index: O(k) where k = rows for this agent
+  const tRows = (tphIndex[email] || []).filter(r => r.date >= weekStart && r.date <= weekEnd);
   const totalTickets  = tRows.reduce((s,r) => s + (+r.valid_tickets||0), 0);
   const totalTimeSecs = tRows.reduce((s,r) => s + (+r.total_time_secs||0), 0);
   const totalHandSecs = tRows.reduce((s,r) => s + (+r.total_handle_secs||0), 0);
   const tph = (totalTimeSecs > 0) ? totalTickets / (totalTimeSecs / 3600) : null;
   const aht = (totalTickets  > 0) ? totalHandSecs / totalTickets          : null;
 
-  // ── CSAT — email-first when stored, name-based as fallback ──
-  // Some CSAT exports include agent email; others only have agent name.
-  // We match by email when available, otherwise resolve via nameToEmail map.
-  const cRows = rawCSAT.filter(r => {
-    const d = isoDate(String(r.date||''));
-    if (d < weekStart || d > weekEnd) return false;
-    const rowEmail = (r.agent_email||'').toLowerCase().trim();
-    if (rowEmail) return rowEmail === email;           // email match (preferred)
-    if (!nameKey) return false;
-    return normName(r.agent_name) === nameKey;         // name fallback
-  });
+  // CSAT — email index first, name-index fallback
+  const byEmail = (csatIndex[email] || []).filter(r => r.date >= weekStart && r.date <= weekEnd);
+  const byName  = byEmail.length ? [] : (nameKey ? (csatNameIndex[nameKey]||[]).filter(r => r.date >= weekStart && r.date <= weekEnd) : []);
+  const cRows   = byEmail.length ? byEmail : byName;
   const good    = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
   const bad     = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
   const csat    = (good + bad > 0) ? (good / (good + bad)) * 100 : null;
   const surveys = cRows.length;
 
-  // ── IQA — matched by email ──
-  const iRows = rawIQA.filter(r => {
-    const d = isoDate(String(r.date||''));
-    return (r.agent_email||'').toLowerCase().trim() === email && d >= weekStart && d <= weekEnd;
-  });
-  const iqa = iRows.length > 0
-    ? iRows.reduce((s,r) => s + (+r.iqa_score||0), 0) / iRows.length
-    : null;
+  // IQA — use pre-built index
+  const iRows   = (iqaIndex[email] || []).filter(r => r.date >= weekStart && r.date <= weekEnd);
+  const iqa     = iRows.length > 0 ? iRows.reduce((s,r) => s + (+r.iqa_score||0), 0) / iRows.length : null;
 
-  return { tph, ahtSecs: aht, csat, iqa, totalTickets, surveys, iqaCount: iRows.length };
+  const result  = { tph, ahtSecs: aht, csat, iqa, totalTickets, surveys, iqaCount: iRows.length };
+  kpiCache[cacheKey] = result;
+  return result;
 }
 
-// Aggregate KPIs for a group of agents (passed as array of emails)
+// Aggregate KPIs for a group — sum individual computeKPIs results (each already memoized)
 function computeGroupKPIs(agentEmails, weekStart, weekEnd) {
-  const emails   = agentEmails.map(e => (e||'').toLowerCase().trim());
-  // Resolve names for CSAT (which has no email in its export)
-  const nameKeys = emails.map(e => normName(emailToName[e]||'')).filter(Boolean);
+  const emails = agentEmails.map(e => (e||'').toLowerCase().trim()).filter(Boolean);
+  let totalTickets = 0, totalTimeSecs = 0, totalHandSecs = 0;
+  let goodCount = 0, badCount = 0;
+  let iqaSum = 0, iqaN = 0;
 
-  // TPH / AHT — by email
-  const tRows = rawTPH.filter(r => {
-    const d = isoDate(String(r.date||''));
-    return emails.includes((r.agent_email||'').toLowerCase().trim()) && d >= weekStart && d <= weekEnd;
+  emails.forEach(email => {
+    const nameKey = normName(emailToName[email]||'');
+    // TPH
+    (tphIndex[email]||[]).filter(r => r.date >= weekStart && r.date <= weekEnd).forEach(r => {
+      totalTickets  += (+r.valid_tickets||0);
+      totalTimeSecs += (+r.total_time_secs||0);
+      totalHandSecs += (+r.total_handle_secs||0);
+    });
+    // CSAT
+    const byEmail = (csatIndex[email]||[]).filter(r => r.date >= weekStart && r.date <= weekEnd);
+    const cRows   = byEmail.length ? byEmail : (nameKey ? (csatNameIndex[nameKey]||[]).filter(r => r.date >= weekStart && r.date <= weekEnd) : []);
+    cRows.forEach(r => {
+      const s = String(r.satisfaction).toLowerCase();
+      if (s === 'good') goodCount++;
+      else if (s === 'bad') badCount++;
+    });
+    // IQA
+    (iqaIndex[email]||[]).filter(r => r.date >= weekStart && r.date <= weekEnd).forEach(r => {
+      iqaSum += (+r.iqa_score||0); iqaN++;
+    });
   });
-  const totalTickets  = tRows.reduce((s,r) => s + (+r.valid_tickets||0), 0);
-  const totalTimeSecs = tRows.reduce((s,r) => s + (+r.total_time_secs||0), 0);
-  const totalHandSecs = tRows.reduce((s,r) => s + (+r.total_handle_secs||0), 0);
-  const tph     = (totalTimeSecs > 0) ? totalTickets / (totalTimeSecs / 3600) : null;
-  const ahtSecs = (totalTickets  > 0) ? totalHandSecs / totalTickets          : null;
 
-  // CSAT — email-first per row, name fallback for rows without email
-  const cRows = rawCSAT.filter(r => {
-    const d = isoDate(String(r.date||''));
-    if (d < weekStart || d > weekEnd) return false;
-    const rowEmail = (r.agent_email||'').toLowerCase().trim();
-    if (rowEmail) return emails.includes(rowEmail);           // email match
-    return nameKeys.includes(normName(r.agent_name));         // name fallback
-  });
-  const good = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
-  const bad  = cRows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
-  const csat = (good + bad > 0) ? (good / (good + bad)) * 100 : null;
-
-  // IQA — by email
-  const iRows = rawIQA.filter(r => {
-    const d = isoDate(String(r.date||''));
-    return emails.includes((r.agent_email||'').toLowerCase().trim()) && d >= weekStart && d <= weekEnd;
-  });
-  const iqa = iRows.length > 0
-    ? iRows.reduce((s,r) => s + (+r.iqa_score||0), 0) / iRows.length
-    : null;
-
-  return { tph, ahtSecs, csat, iqa, totalTickets };
+  return {
+    tph:        totalTimeSecs > 0 ? totalTickets / (totalTimeSecs / 3600) : null,
+    ahtSecs:    totalTickets  > 0 ? totalHandSecs / totalTickets          : null,
+    csat:       goodCount + badCount > 0 ? (goodCount / (goodCount + badCount)) * 100 : null,
+    iqa:        iqaN > 0 ? iqaSum / iqaN : null,
+    totalTickets
+  };
 }
 
 // ─── COLOR CODING ─────────────────────────────────────────
@@ -1219,7 +1288,9 @@ function renderAgentView() {
   html += `</tr></thead><tbody>`;
 
   agents.forEach(agent => {
-    html += `<tr><td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>`;
+    const lastK   = allKPIs[agent.email][periods.length - 1];
+    const warnRow = thresholdRowStyle(lastK);
+    html += `<tr${warnRow}><td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>`;
     periods.forEach((_,pi) => {
       html += kpiCells(allKPIs[agent.email][pi], allTPH[pi], allAHT[pi], allCSAT[pi], allIQA[pi]);
     });
@@ -1833,6 +1904,10 @@ function navTo(page) {
     b.classList.toggle('active', b.dataset.page === page);
   });
 
+  // Hide filter bar on non-data tabs (upload/admin don't need it)
+  const filterBar = document.querySelector('.filter-bar');
+  if (filterBar) filterBar.style.display = (page === 'upload' || page === 'admin') ? 'none' : '';
+
   // Show/hide upload note
   const uploadNote = document.getElementById('upload-admin-note');
   const uploadGrid = document.getElementById('upload-grid');
@@ -1905,8 +1980,22 @@ function onDateInput() {
 }
 
 function updatePeriodBadge() {
-  const labels = { '3w':'Last 3 Weeks', '1w':'This Week', '1m':'This Month', 'custom':'Custom Range' };
+  const labels = { '3w':'Last 3 Weeks','1w':'This Week','1m':'This Month','lm':'Last Month','q':'This Quarter','custom':'Custom Range' };
   document.getElementById('period-badge').textContent = labels[activePeriod] || activePeriod;
+}
+
+function updateSyncLabel() {
+  if (!lastSyncTime) return;
+  const mins = Math.round((Date.now() - lastSyncTime) / 60000);
+  const label = document.getElementById('sync-label');
+  if (label) label.textContent = mins < 1 ? 'Synced just now' : `Synced ${mins}m ago`;
+}
+
+async function manualRefresh() {
+  kpiCache = {};
+  await apiFetch();
+  navTo(currentPage);
+  showToast('✅ Data refreshed');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1933,9 +2022,12 @@ async function apiFetch() {
     cachedRole   = data.role || 'viewer';
     cachedData   = rawTPH; // keep required var non-empty
 
-    // Rebuild email ↔ name maps so all KPI joins use email as primary key
+    // Rebuild email ↔ name maps and performance indexes
     buildAgentMaps();
+    buildIndexes(); // pre-group rows by email for O(1) KPI lookups
 
+    lastSyncTime = new Date();
+    updateSyncLabel();
     updateRoleUI();
     populateFilters();
     setSyncStatus('ok');
@@ -2232,8 +2324,12 @@ function downloadTemplate(type) {
 // ─── EXPORT TABLE ─────────────────────────────────────────
 
 function exportTable(tableId) {
-  const table = document.getElementById(tableId);
-  if (!table) return;
+  exportTableBySelector('#' + tableId);
+}
+
+function exportTableBySelector(selector) {
+  const table = document.querySelector(selector);
+  if (!table) { showToast('No table to export', '#EF4444'); return; }
   let csv = '';
   table.querySelectorAll('tr').forEach(row => {
     const cells = [...row.querySelectorAll('th,td')].map(c => `"${c.textContent.trim().replace(/"/g,'""')}"`);
@@ -2244,6 +2340,21 @@ function exportTable(tableId) {
   a.href     = URL.createObjectURL(blob);
   a.download = `CX_Performance_Export_${todayStr()}.csv`;
   a.click();
+}
+
+// ─── THRESHOLD ALERT HELPERS ─────────────────────────────────
+// Returns true if this agent is below threshold on at least one KPI
+// Used to add a left-border warning on agent rows.
+function isBelowThreshold(k) {
+  if (thresholds.csat !== null && k.csat !== null && k.csat < thresholds.csat) return true;
+  if (thresholds.iqa  !== null && k.iqa  !== null && k.iqa  < thresholds.iqa)  return true;
+  if (thresholds.tph  !== null && k.tph  !== null && k.tph  < thresholds.tph)  return true;
+  if (thresholds.ahtSecs !== null && k.ahtSecs !== null && k.ahtSecs > thresholds.ahtSecs) return true;
+  return false;
+}
+// Returns "warn" row style when last period is below threshold
+function thresholdRowStyle(kLastPeriod) {
+  return isBelowThreshold(kLastPeriod) ? ' style="border-left:3px solid #EF4444;"' : '';
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2533,11 +2644,15 @@ async function initApp() {
     populateFilters();
     navTo('agent');
   }
-  // Auto-refresh every 3 minutes
+  // Update "Synced X min ago" label every 30 seconds
+  setInterval(updateSyncLabel, 30000);
+
+  // Auto-refresh every 5 minutes
   setInterval(async () => {
+    kpiCache = {}; // clear memo on auto-refresh
     await apiFetch();
     navTo(currentPage);
-  }, 180000);
+  }, 300000);
 }
 
 (function boot() {
