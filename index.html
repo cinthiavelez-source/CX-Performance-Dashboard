@@ -400,10 +400,10 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 
 <!-- ─── TAB NAV ──────────────────────────────────────────── -->
 <div class="tabnav">
-  <button class="active" data-page="agent" onclick="navTo('agent')">👤 Agent View</button>
+  <button class="active" data-page="general" onclick="navTo('general')" id="btn-general-tab">📊 General Performance</button>
+  <button data-page="agent" onclick="navTo('agent')">👤 Agent View</button>
   <button data-page="supervisor" onclick="navTo('supervisor')">🧑‍💼 Supervisor View</button>
   <button data-page="am" onclick="navTo('am')">🏢 A.Manager View</button>
-  <button data-page="general" onclick="navTo('general')" id="btn-general-tab">📊 General Performance</button>
   <button data-page="upload" onclick="navTo('upload')" id="btn-upload-tab">⬆️ Upload Data</button>
   <button data-page="admin" onclick="navTo('admin')" id="btn-admin-tab" style="display:none">⚙️ Admin</button>
 </div>
@@ -443,7 +443,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 <div class="main">
 
   <!-- AGENT VIEW -->
-  <div class="page active" id="page-agent">
+  <div class="page" id="page-agent">
     <div class="kpi-cards" id="agent-kpi-cards"></div>
     <div class="table-card">
       <div class="table-card-header">
@@ -497,7 +497,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   </div>
 
   <!-- GENERAL PERFORMANCE TAB -->
-  <div class="page" id="page-general">
+  <div class="page active" id="page-general">
     <div class="kpi-cards" id="general-kpi-cards"></div>
     <div id="general-table-wrap"></div>
   </div>
@@ -1112,12 +1112,33 @@ function getAllAgents() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Build name→email for supervisors and AMs by cross-referencing with TPH/IQA data.
+// Supervisors/AMs aren't stored with emails in hierarchy, but many are also agents
+// whose email exists in the nameToEmail map built from TPH/IQA rows.
 function getAllSupervisors() {
-  return [...new Set(rawHierarchy.map(h => h.supervisor_name).filter(Boolean))].sort();
+  const seen = {};
+  rawHierarchy.forEach(h => {
+    if (!h.supervisor_name) return;
+    if (!seen[h.supervisor_name]) {
+      seen[h.supervisor_name] = nameToEmail[normName(h.supervisor_name)] || '';
+    }
+  });
+  return Object.entries(seen)
+    .map(([name, email]) => ({ name, email }))
+    .sort((a, b) => (a.email || a.name).localeCompare(b.email || b.name));
 }
 
 function getAllAMs() {
-  return [...new Set(rawHierarchy.map(h => h.am_name).filter(Boolean))].sort();
+  const seen = {};
+  rawHierarchy.forEach(h => {
+    if (!h.am_name) return;
+    if (!seen[h.am_name]) {
+      seen[h.am_name] = nameToEmail[normName(h.am_name)] || '';
+    }
+  });
+  return Object.entries(seen)
+    .map(([name, email]) => ({ name, email }))
+    .sort((a, b) => (a.email || a.name).localeCompare(b.email || b.name));
 }
 
 // Hierarchy lookup by email for today (used by filter dropdowns and grouping)
@@ -1125,16 +1146,27 @@ function currentHier(agentEmail) {
   return getHierarchyForAgent(agentEmail, todayStr());
 }
 
-// Filter agent objects { email, name } against active dropdown values
+// Filter agent objects { email, name } against active dropdown values.
+// Supervisor/AM filter values can now be emails (from fillPersonSel) or names.
+// We match by: email → look up who has that email as supervisor/AM; name → match by name.
 function filteredAgents(agents) {
   return agents.filter(agent => {
-    // Agent filter: value is email
     if (activeFilters.agent && agent.email !== activeFilters.agent) return false;
-    // Supervisor / AM filters
     if (activeFilters.supervisor || activeFilters.am) {
       const hier = currentHier(agent.email);
-      if (activeFilters.supervisor && normName(hier.supervisor) !== normName(activeFilters.supervisor)) return false;
-      if (activeFilters.am         && normName(hier.am)         !== normName(activeFilters.am))         return false;
+      if (activeFilters.supervisor) {
+        const fSup = activeFilters.supervisor;
+        // fSup may be an email or a name — match both ways
+        const matchByName  = normName(hier.supervisor) === normName(fSup);
+        const matchByEmail = fSup.includes('@') && nameToEmail[normName(hier.supervisor)] === fSup.toLowerCase().trim();
+        if (!matchByName && !matchByEmail) return false;
+      }
+      if (activeFilters.am) {
+        const fAM = activeFilters.am;
+        const matchByName  = normName(hier.am) === normName(fAM);
+        const matchByEmail = fAM.includes('@') && nameToEmail[normName(hier.am)] === fAM.toLowerCase().trim();
+        if (!matchByName && !matchByEmail) return false;
+      }
     }
     return true;
   });
@@ -1151,23 +1183,38 @@ function populateFilters() {
   const sups   = getAllSupervisors();
   const ams    = getAllAMs();
 
-  // Agent select: value=email so filtering is email-based
-  fillAgentSel('f-agent', agents, activeFilters.agent);
-  fillSel('f-supervisor', sups, 'All Supervisors', activeFilters.supervisor);
-  fillSel('f-am',         ams,  'All A.Managers',  activeFilters.am);
+  // All dropdowns use email as value when available; display is email (or name fallback)
+  fillAgentSel('f-agent',      agents, activeFilters.agent);
+  fillPersonSel('f-supervisor', sups,  'All Supervisors', activeFilters.supervisor);
+  fillPersonSel('f-am',         ams,   'All A.Managers',  activeFilters.am);
 }
 
-// Agent dropdown — value is email, display text is name
+// Agent dropdown — value=email, display=email (name on hover via title)
 function fillAgentSel(id, agents, currentEmail) {
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = `<option value="">All Agents</option>` +
     agents.map(a =>
-      `<option value="${escHtml(a.email)}"${a.email === currentEmail ? ' selected' : ''}>${escHtml(a.name)}</option>`
+      `<option value="${escHtml(a.email)}"${a.email === currentEmail ? ' selected' : ''} title="${escHtml(a.name)}">${escHtml(a.email)}</option>`
     ).join('');
 }
 
-// Generic select — value and display are the same string
+// Supervisor/AM dropdown — value=email (or name if no email), display=email (or name)
+// Accepts array of {name, email} objects returned by getAllSupervisors/getAllAMs.
+function fillPersonSel(id, people, placeholder, current) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<option value="">${escHtml(placeholder)}</option>` +
+    people.map(p => {
+      const val     = p.email || p.name; // prefer email as the filter value
+      const display = p.email || p.name;
+      const title   = p.email ? p.name : '';
+      const sel     = val === current || normName(p.name) === normName(current) ? ' selected' : '';
+      return `<option value="${escHtml(val)}"${sel} title="${escHtml(title)}">${escHtml(display)}</option>`;
+    }).join('');
+}
+
+// Generic select — value and display are the same string (kept for any remaining uses)
 function fillSel(id, values, placeholder, current) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -1353,7 +1400,11 @@ function renderSupervisorView() {
     const gKey   = `sup-${si}`;
 
     // Supervisor summary row
-    html += `<tr><td class="sticky-col col-agent">${escHtml(sup)}</td>
+    const supEmail = nameToEmail[normName(sup)] || '';
+    html += `<tr><td class="sticky-col col-agent">
+        <span style="font-weight:700">${escHtml(supEmail || sup)}</span>
+        ${supEmail ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup)}</span>` : ''}
+      </td>
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agents.length}</td>`;
     periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end)); });
     html += `<td style="text-align:center">
@@ -1425,7 +1476,11 @@ function renderAMView() {
     const gKey     = `am-${ai}`;
 
     // AM summary row
-    html += `<tr><td class="sticky-col col-agent">${escHtml(am)}</td>
+    const amEmail = nameToEmail[normName(am)] || '';
+    html += `<tr><td class="sticky-col col-agent">
+        <span style="font-weight:700">${escHtml(amEmail || am)}</span>
+        ${amEmail ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(am)}</span>` : ''}
+      </td>
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${allAMAgents.length}</td>`;
     periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAMAgents.map(a=>a.email), p.start, p.end)); });
     html += `<td style="text-align:center">
@@ -1515,57 +1570,97 @@ function renderGeneralView() {
     });
   }
 
-  // Delta cell: % change vs previous period. Green = improvement.
-  function deltaCell(curr, prev, lowerIsBetter) {
-    if (curr === null || prev === null || prev === 0) return `<td class="cell-kpi none">—</td>`;
-    const pct   = ((curr - prev) / Math.abs(prev)) * 100;
-    const good  = lowerIsBetter ? pct < 0 : pct > 0;
-    const color = good ? '#218848' : '#DC2626';
-    const sign  = pct >= 0 ? '+' : '';
-    return `<td class="cell-kpi" style="color:${color};font-size:11px;font-weight:700">${sign}${pct.toFixed(1)}%</td>`;
+  // Pre-extract all values for quartile coloring across the full trend series
+  function buildAllVals(rows) {
+    return {
+      tph:  rows.map(r => r.kpis.tph).filter(v => v !== null),
+      aht:  rows.map(r => r.kpis.ahtSecs).filter(v => v !== null),
+      csat: rows.map(r => r.kpis.csat).filter(v => v !== null),
+      iqa:  rows.map(r => r.kpis.iqa).filter(v => v !== null)
+    };
   }
 
-  function trendTable(rows, labelKey, startKey, isWeek) {
-    let t = `<table class="perf-table"><thead><tr>
-      <th class="sticky-col col-agent week-hdr" style="background:#1E293B">${isWeek ? 'Week (Sun)' : 'Month'}</th>
-      <th class="week-hdr w1">TPH</th><th class="week-hdr w1" style="font-size:10px">Δ</th>
-      <th class="week-hdr w2">AHT</th><th class="week-hdr w2" style="font-size:10px">Δ</th>
-      <th class="week-hdr wc">CSAT</th><th class="week-hdr wc" style="font-size:10px">Δ</th>
-      <th class="week-hdr w3">IQA</th><th class="week-hdr w3" style="font-size:10px">Δ</th>
-    </tr></thead><tbody>`;
+  // Delta cell: % change vs previous period. Green = improvement, red = regression.
+  function deltaCell(curr, prev, lowerIsBetter) {
+    if (curr === null || prev === null || prev === 0) return `<td class="cell-kpi none" style="width:52px">—</td>`;
+    const pct  = ((curr - prev) / Math.abs(prev)) * 100;
+    const good = lowerIsBetter ? pct < 0 : pct > 0;
+    const bg   = good ? '#EDFAF1' : '#FEF2F2';
+    const col  = good ? '#218848' : '#DC2626';
+    const sign = pct >= 0 ? '+' : '';
+    return `<td class="cell-kpi" style="background:${bg};color:${col};font-size:11px;font-weight:700;width:52px">${sign}${pct.toFixed(1)}%</td>`;
+  }
+
+  function trendTable(rows, labelKey, isWeek) {
+    const av = buildAllVals(rows);
+    // Column group headers
+    let t = `<table class="perf-table" style="min-width:700px"><thead>
+      <tr>
+        <th class="sticky-col col-agent week-hdr" style="background:#1E293B;min-width:130px" rowspan="2">${isWeek ? 'Week (Sun–Sat)' : 'Month'}</th>
+        <th colspan="2" class="week-hdr w1" style="text-align:center">⚡ TPH</th>
+        <th colspan="2" class="week-hdr w2" style="text-align:center">⏱ AHT</th>
+        <th colspan="2" class="week-hdr wc" style="text-align:center">😊 CSAT</th>
+        <th colspan="2" class="week-hdr w3" style="text-align:center">🎯 IQA</th>
+      </tr>
+      <tr>
+        <th class="week-hdr w1" style="font-size:10px;padding:4px 6px">Value</th>
+        <th class="week-hdr w1" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr w2" style="font-size:10px;padding:4px 6px">Value</th>
+        <th class="week-hdr w2" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr wc" style="font-size:10px;padding:4px 6px">Value</th>
+        <th class="week-hdr wc" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr w3" style="font-size:10px;padding:4px 6px">Value</th>
+        <th class="week-hdr w3" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+      </tr>
+    </thead><tbody>`;
+
     rows.forEach((row, i) => {
       const k    = row.kpis;
       const prev = i > 0 ? rows[i-1].kpis : null;
+      // Quartile-based coloring on value cells (same as agent table)
+      const tphCls  = getKPIClass(k.tph,     av.tph,  false);
+      const ahtCls  = getKPIClass(k.ahtSecs, av.aht,  true);
+      const csatCls = getKPIClass(k.csat,    av.csat, false);
+      const iqaCls  = getKPIClass(k.iqa,     av.iqa,  false);
       t += `<tr>
-        <td class="sticky-col col-agent" style="font-size:12px">${escHtml(row[labelKey])}</td>
-        <td class="cell-kpi">${k.tph     !== null ? fmtTPH(k.tph)      : '—'}</td>
-        ${prev ? deltaCell(k.tph,     prev.tph,     false) : '<td class="cell-kpi none">—</td>'}
-        <td class="cell-kpi">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs) : '—'}</td>
-        ${prev ? deltaCell(k.ahtSecs, prev.ahtSecs, true)  : '<td class="cell-kpi none">—</td>'}
-        <td class="cell-kpi">${k.csat    !== null ? fmtPct(k.csat)     : '—'}</td>
-        ${prev ? deltaCell(k.csat,    prev.csat,    false) : '<td class="cell-kpi none">—</td>'}
-        <td class="cell-kpi">${k.iqa     !== null ? fmtPct(k.iqa)      : '—'}</td>
-        ${prev ? deltaCell(k.iqa,     prev.iqa,     false) : '<td class="cell-kpi none">—</td>'}
+        <td class="sticky-col col-agent" style="font-size:13px;font-weight:600">${escHtml(row[labelKey])}</td>
+        <td class="cell-kpi ${tphCls}">${k.tph     !== null ? fmtTPH(k.tph)      : '<span style="color:#CBD5E1">—</span>'}</td>
+        ${prev ? deltaCell(k.tph,     prev.tph,     false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
+        <td class="cell-kpi ${ahtCls}">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs) : '<span style="color:#CBD5E1">—</span>'}</td>
+        ${prev ? deltaCell(k.ahtSecs, prev.ahtSecs, true)  : '<td class="cell-kpi none" style="width:52px">—</td>'}
+        <td class="cell-kpi ${csatCls}">${k.csat   !== null ? fmtPct(k.csat)     : '<span style="color:#CBD5E1">—</span>'}</td>
+        ${prev ? deltaCell(k.csat,    prev.csat,    false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
+        <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)      : '<span style="color:#CBD5E1">—</span>'}</td>
+        ${prev ? deltaCell(k.iqa,     prev.iqa,     false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
       </tr>`;
     });
     t += `</tbody></table>`;
     return t;
   }
 
+  const agentLabel = `${agents.length} agent${agents.length!==1?'s':''}`;
   wrap.innerHTML = `
     <div class="table-card" style="margin-bottom:1.5rem">
       <div class="table-card-header">
         <div><h3>📅 Week-over-Week KPI Trend</h3>
-          <p>Last 8 weeks · Sun–Sat · ${agents.length} agent${agents.length!==1?'s':''} · Δ = % change vs prior week</p></div>
+          <p>Last 8 weeks · Sun–Sat · ${agentLabel} · color = quartile vs 8-week range · Δ = % change vs prior week</p></div>
+        <button onclick="exportTableBySelector('#wow-trend-table table')"
+          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+          ⬇ Export CSV
+        </button>
       </div>
-      <div class="table-wrap">${trendTable(wowWeeks,'label','start',true)}</div>
+      <div class="table-wrap" id="wow-trend-table">${trendTable(wowWeeks,'label',true)}</div>
     </div>
     <div class="table-card">
       <div class="table-card-header">
         <div><h3>📆 Month-over-Month KPI Trend</h3>
-          <p>Last 6 months · Δ = % change vs prior month</p></div>
+          <p>Last 6 months · ${agentLabel} · color = quartile vs 6-month range · Δ = % change vs prior month</p></div>
+        <button onclick="exportTableBySelector('#mom-trend-table table')"
+          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+          ⬇ Export CSV
+        </button>
       </div>
-      <div class="table-wrap">${trendTable(momMonths,'label','from',false)}</div>
+      <div class="table-wrap" id="mom-trend-table">${trendTable(momMonths,'label',false)}</div>
     </div>`;
 }
 
@@ -2642,7 +2737,7 @@ async function initApp() {
   if (data) {
     updateRoleUI();
     populateFilters();
-    navTo('agent');
+    navTo('general');
   }
   // Update "Synced X min ago" label every 30 seconds
   setInterval(updateSyncLabel, 30000);
