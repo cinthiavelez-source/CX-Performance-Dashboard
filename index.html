@@ -268,6 +268,13 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 .no-data-note { background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px;
   padding: 10px 14px; font-size: 12px; color: #9A3412; margin-bottom: 1rem; }
 @media (max-width: 768px) { .main { padding: 1rem; } .filter-bar { padding: 10px 1rem; } }
+
+/* ─── DRILL-DOWN ROWS & EXPAND BUTTON ────────────────────── */
+.btn-expand { background: #475CC7; color: #fff; border-radius: 5px;
+  padding: 3px 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.btn-expand:hover { background: #3A4FA8; }
+.drill-row td { background: #F8FAFC; border-left: 3px solid #475CC7; }
+.drill-row:hover td { background: #EEF4FF !important; }
 </style>
 </head>
 <body>
@@ -386,6 +393,7 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   <button class="active" data-page="agent" onclick="navTo('agent')">👤 Agent View</button>
   <button data-page="supervisor" onclick="navTo('supervisor')">🧑‍💼 Supervisor View</button>
   <button data-page="am" onclick="navTo('am')">🏢 A.Manager View</button>
+  <button data-page="general" onclick="navTo('general')" id="btn-general-tab">📊 General Performance</button>
   <button data-page="upload" onclick="navTo('upload')" id="btn-upload-tab">⬆️ Upload Data</button>
   <button data-page="admin" onclick="navTo('admin')" id="btn-admin-tab" style="display:none">⚙️ Admin</button>
 </div>
@@ -466,6 +474,12 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
       </div>
       <div class="table-wrap"><div id="am-table-wrap"></div></div>
     </div>
+  </div>
+
+  <!-- GENERAL PERFORMANCE TAB -->
+  <div class="page" id="page-general">
+    <div class="kpi-cards" id="general-kpi-cards"></div>
+    <div id="general-table-wrap"></div>
   </div>
 
   <!-- UPLOAD TAB -->
@@ -767,19 +781,20 @@ function buildAgentMaps() {
   rawCSAT.forEach(r => { if (r.agent_email) add(r.agent_name, r.agent_email); });
 }
 
-// ─── WEEK HELPERS ─────────────────────────────────────────
+// ─── WEEK HELPERS (Sun → Sat) ─────────────────────────────
+// CookUnity weeks run Sunday through Saturday.
 
-function getMondayOf(dateStr) {
+function getWeekStartOf(dateStr) {
+  // Returns the Sunday that starts the week containing dateStr
   const d = new Date(dateStr + 'T12:00:00');
-  const day = d.getDay(); // 0=Sun
-  const diff = (day === 0) ? -6 : 1 - day;
-  const m = new Date(d);
-  m.setDate(d.getDate() + diff);
-  return m.toISOString().split('T')[0];
+  const s = new Date(d);
+  s.setDate(d.getDate() - d.getDay()); // getDay() 0=Sun → subtract 0, 1=Mon → subtract 1 …
+  return s.toISOString().split('T')[0];
 }
 
-function getSundayOf(mondayStr) {
-  const d = new Date(mondayStr + 'T12:00:00');
+function getWeekEndOf(sundayStr) {
+  // Returns the Saturday (6 days after Sunday)
+  const d = new Date(sundayStr + 'T12:00:00');
   d.setDate(d.getDate() + 6);
   return d.toISOString().split('T')[0];
 }
@@ -794,12 +809,12 @@ function addDays(dateStr, n) {
   return d.toISOString().split('T')[0];
 }
 
-function fmtWeekLabel(mondayStr) {
-  const d = new Date(mondayStr + 'T12:00:00');
+function fmtWeekLabel(sundayStr) {
+  const d = new Date(sundayStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
 }
 
-// Returns array of up to 3 week periods based on active period/filters
+// Returns array of up to 3 week periods (Sun–Sat) based on active period/filters
 function getActivePeriods() {
   const today = todayStr();
 
@@ -807,13 +822,13 @@ function getActivePeriods() {
     const periods = [];
     for (let i = 2; i >= 0; i--) {
       const refDay = addDays(today, -i * 7);
-      const mon = getMondayOf(refDay);
-      const sun = getSundayOf(mon);
+      const sun    = getWeekStartOf(refDay);   // Sunday
+      const sat    = getWeekEndOf(sun);         // Saturday
       const isCurrentWk = (i === 0);
       periods.push({
-        label: isCurrentWk ? `WTD ${fmtWeekLabel(mon)}` : `Wk ${fmtWeekLabel(mon)}`,
-        start: mon,
-        end:   isCurrentWk ? today : sun,
+        label: isCurrentWk ? `WTD ${fmtWeekLabel(sun)}` : `Wk ${fmtWeekLabel(sun)}`,
+        start: sun,
+        end:   isCurrentWk ? today : sat,
         wk:    i === 2 ? 'w1' : i === 1 ? 'w2' : 'w3'
       });
     }
@@ -821,12 +836,12 @@ function getActivePeriods() {
   }
 
   if (activePeriod === '1w') {
-    const mon = getMondayOf(today);
-    return [{ label:`WTD ${fmtWeekLabel(mon)}`, start:mon, end:today, wk:'wc' }];
+    const sun = getWeekStartOf(today);
+    return [{ label:`WTD ${fmtWeekLabel(sun)}`, start:sun, end:today, wk:'wc' }];
   }
 
   if (activePeriod === '1m') {
-    const d = new Date(today + 'T12:00:00');
+    const d    = new Date(today + 'T12:00:00');
     const from = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
     return [{ label:'This Month', start:from, end:today, wk:'wc' }];
   }
@@ -1133,153 +1148,354 @@ function renderKPICards(containerId, agents) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// RENDER PERFORMANCE TABLE
+// SHARED: kpi cell HTML (colored by quartile)
 // ═══════════════════════════════════════════════════════════
 
-function renderPerfTable(wrapId, agents, groupByField) {
-  const wrap    = document.getElementById(wrapId);
-  const periods = getActivePeriods();
+function kpiCells(k, allTPH, allAHT, allCSAT, allIQA) {
+  const tphCls  = getKPIClass(k.tph,     allTPH,  false);
+  const ahtCls  = getKPIClass(k.ahtSecs, allAHT,  true);
+  const csatCls = getKPIClass(k.csat,    allCSAT, false);
+  const iqaCls  = getKPIClass(k.iqa,     allIQA,  false);
+  return `
+    <td class="cell-kpi ${tphCls}">${k.tph     !== null ? fmtTPH(k.tph)      : '<span style="color:#CBD5E1">—</span>'}</td>
+    <td class="cell-kpi ${ahtCls}">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs) : '<span style="color:#CBD5E1">—</span>'}</td>
+    <td class="cell-kpi ${csatCls}">${k.csat   !== null ? fmtPct(k.csat)     : '<span style="color:#CBD5E1">—</span>'}</td>
+    <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)      : '<span style="color:#CBD5E1">—</span>'}</td>`;
+}
 
+function groupKpiCells(g) {
+  return `
+    <td class="cell-kpi">${g.tph     !== null ? fmtTPH(g.tph)      : '—'}</td>
+    <td class="cell-kpi">${g.ahtSecs !== null ? fmtMMSS(g.ahtSecs) : '—'}</td>
+    <td class="cell-kpi">${g.csat    !== null ? fmtPct(g.csat)     : '—'}</td>
+    <td class="cell-kpi">${g.iqa     !== null ? fmtPct(g.iqa)      : '—'}</td>`;
+}
+
+function periodHeaders(periods, extraColBefore, extraColAfter) {
+  let h = '<tr>';
+  if (extraColBefore) h += extraColBefore;
+  periods.forEach(p => { h += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
+  if (extraColAfter) h += extraColAfter;
+  h += '</tr><tr>';
+  if (extraColBefore) h += ''; // already has rowspan="2"
+  periods.forEach(() => { h += '<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>'; });
+  if (extraColAfter) h += '';
+  h += '</tr>';
+  return h;
+}
+
+// ═══════════════════════════════════════════════════════════
+// AGENT VIEW — emails, no supervisor/AM columns
+// ═══════════════════════════════════════════════════════════
+
+function renderAgentView() {
+  const agents  = filteredAgents(getAllAgents());
+  const periods = getActivePeriods();
+  renderKPICards('agent-kpi-cards', agents);
+
+  const wrap = document.getElementById('agent-table-wrap');
   if (!agents.length) {
-    wrap.innerHTML = `<div class="empty-state">
-      <div class="emoji">📭</div>
-      <p>No agents match the current filters or no data has been uploaded yet.</p>
-    </div>`;
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No agents match the current filters or no data uploaded yet.</p></div>`;
+    document.getElementById('agent-table-subtitle').textContent = 'No data';
     return;
   }
 
-  // Pre-compute all KPIs indexed by email for coloring
-  // agents = [{email, name}]
-  const allKPIs = {}; // { email: { periodIdx: kpis } }
+  // Pre-compute KPIs per agent per period
+  const allKPIs = {};
   agents.forEach(a => {
     allKPIs[a.email] = {};
     periods.forEach((p,i) => { allKPIs[a.email][i] = computeKPIs(a.email, p.start, p.end); });
   });
-
-  // Collect all values per KPI per period for relative quartile coloring
   const allTPH  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].tph).filter(v=>v!==null));
   const allAHT  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].ahtSecs).filter(v=>v!==null));
   const allCSAT = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].csat).filter(v=>v!==null));
   const allIQA  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].iqa).filter(v=>v!==null));
 
-  // Build table header
-  let html = `<table class="perf-table" id="agent-perf-table"><thead>`;
-  html += `<tr>
-    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent</th>
-    <th class="week-hdr" style="background:#334155" rowspan="2">Supervisor</th>
-    <th class="week-hdr" style="background:#475569" rowspan="2">A.Manager</th>`;
-  periods.forEach(p => {
-    html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`;
-  });
+  let html = `<table class="perf-table" id="agent-perf-table"><thead><tr>
+    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent Email</th>`;
+  periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `</tr><tr>`;
   periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
   html += `</tr></thead><tbody>`;
 
-  // Group agents by supervisor or AM if requested
-  const groupedAgents = {};
-  if (groupByField) {
-    agents.forEach(a => {
-      const hier = currentHier(a.email);
-      const key  = groupByField === 'supervisor' ? hier.supervisor : hier.am;
-      if (!groupedAgents[key]) groupedAgents[key] = [];
-      groupedAgents[key].push(a);
+  agents.forEach(agent => {
+    html += `<tr><td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>`;
+    periods.forEach((_,pi) => {
+      html += kpiCells(allKPIs[agent.email][pi], allTPH[pi], allAHT[pi], allCSAT[pi], allIQA[pi]);
     });
-  } else {
-    groupedAgents['_all'] = agents;
-  }
-
-  Object.entries(groupedAgents).forEach(([group, groupAgents]) => {
-    // Group header row
-    if (groupByField) {
-      const label   = groupByField === 'supervisor' ? `👤 Supervisor: ${group}` : `🏢 A.Manager: ${group}`;
-      const colspan = 3 + periods.length * 4;
-      html += `<tr class="group-hdr">
-        <td class="sticky-col col-agent" colspan="${colspan}">${escHtml(label)}</td>
-      </tr>`;
-    }
-
-    // One row per agent — identified by email, displayed by name
-    groupAgents.forEach(agent => {
-      const hier = currentHier(agent.email);
-      html += `<tr>
-        <td class="sticky-col col-agent" title="${escHtml(agent.email)}">${escHtml(agent.name)}</td>
-        <td class="cell-meta">${escHtml(hier.supervisor)}</td>
-        <td class="cell-meta">${escHtml(hier.am)}</td>`;
-
-      periods.forEach((p, pi) => {
-        const k       = allKPIs[agent.email][pi];
-        const tphCls  = getKPIClass(k.tph,     allTPH[pi],  false);
-        const ahtCls  = getKPIClass(k.ahtSecs, allAHT[pi],  true);
-        const csatCls = getKPIClass(k.csat,    allCSAT[pi], false);
-        const iqaCls  = getKPIClass(k.iqa,     allIQA[pi],  false);
-        html += `
-          <td class="cell-kpi ${tphCls}">${k.tph     !== null ? fmtTPH(k.tph)         : '<span style="color:#CBD5E1">—</span>'}</td>
-          <td class="cell-kpi ${ahtCls}">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs)    : '<span style="color:#CBD5E1">—</span>'}</td>
-          <td class="cell-kpi ${csatCls}">${k.csat   !== null ? fmtPct(k.csat)        : '<span style="color:#CBD5E1">—</span>'}</td>
-          <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)         : '<span style="color:#CBD5E1">—</span>'}</td>`;
-      });
-      html += `</tr>`;
-    });
-
-    // Subtotal row for the group (when more than one agent)
-    if (groupByField && groupAgents.length > 1) {
-      html += `<tr class="subtotal-row">
-        <td class="sticky-col col-agent">Subtotal (${groupAgents.length} agents)</td>
-        <td colspan="2"></td>`;
-      periods.forEach(p => {
-        const sg = computeGroupKPIs(groupAgents.map(a => a.email), p.start, p.end);
-        html += `
-          <td class="cell-kpi">${sg.tph     !== null ? fmtTPH(sg.tph)      : '—'}</td>
-          <td class="cell-kpi">${sg.ahtSecs !== null ? fmtMMSS(sg.ahtSecs) : '—'}</td>
-          <td class="cell-kpi">${sg.csat    !== null ? fmtPct(sg.csat)     : '—'}</td>
-          <td class="cell-kpi">${sg.iqa     !== null ? fmtPct(sg.iqa)      : '—'}</td>`;
-      });
-      html += `</tr>`;
-    }
+    html += `</tr>`;
   });
 
-  // Footer: full team aggregate
-  html += `</tbody><tfoot><tr>
-    <td class="sticky-col col-agent">TEAM TOTAL / AVG</td>
-    <td colspan="2"></td>`;
-  periods.forEach(p => {
-    const g = computeGroupKPIs(agents.map(a => a.email), p.start, p.end);
-    html += `
-      <td class="cell-kpi">${g.tph     !== null ? fmtTPH(g.tph)      : '—'}</td>
-      <td class="cell-kpi">${g.ahtSecs !== null ? fmtMMSS(g.ahtSecs) : '—'}</td>
-      <td class="cell-kpi">${g.csat    !== null ? fmtPct(g.csat)     : '—'}</td>
-      <td class="cell-kpi">${g.iqa     !== null ? fmtPct(g.iqa)      : '—'}</td>`;
-  });
+  // Footer
+  html += `</tbody><tfoot><tr><td class="sticky-col col-agent">TEAM TOTAL / AVG</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(agents.map(a=>a.email), p.start, p.end)); });
   html += `</tr></tfoot></table>`;
   wrap.innerHTML = html;
+
+  document.getElementById('agent-table-subtitle').textContent =
+    `${periods.map(p=>p.label).join(' | ')} · ${agents.length} agent${agents.length!==1?'s':''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
-// PAGE RENDERS
+// SUPERVISOR VIEW — one row per supervisor, ▼ expand to agents
 // ═══════════════════════════════════════════════════════════
 
-function renderAgentView() {
-  const agents = filteredAgents(getAllAgents());
-  renderKPICards('agent-kpi-cards', agents);
-  renderPerfTable('agent-table-wrap', agents, null);
-  document.getElementById('agent-table-subtitle').textContent =
-    `${getActivePeriods().map(p=>p.label).join(' | ')} · ${agents.length} agent${agents.length!==1?'s':''}`;
+function toggleDrillDown(groupKey, btn, labelCollapse, labelExpand) {
+  const rows   = document.querySelectorAll(`[data-group="${groupKey}"]`);
+  const shown  = rows.length && rows[0].style.display !== 'none';
+  rows.forEach(r => { r.style.display = shown ? 'none' : ''; });
+  btn.textContent = shown ? (labelExpand || '▼ Details') : (labelCollapse || '▲ Hide');
 }
 
 function renderSupervisorView() {
-  const agents = filteredAgents(getAllAgents());
-  renderKPICards('sup-kpi-cards', agents);
-  renderPerfTable('sup-table-wrap', agents, 'supervisor');
+  const allAgents = filteredAgents(getAllAgents());
+  const periods   = getActivePeriods();
+  renderKPICards('sup-kpi-cards', allAgents);
+
+  const wrap = document.getElementById('sup-table-wrap');
+  // Group by supervisor
+  const bySup = {};
+  allAgents.forEach(a => {
+    const sup = currentHier(a.email).supervisor || '(No Supervisor)';
+    if (!bySup[sup]) bySup[sup] = [];
+    bySup[sup].push(a);
+  });
+  const supNames = Object.keys(bySup).sort();
+
+  if (!supNames.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No hierarchy data. Add hierarchy records first.</p></div>`;
+    return;
+  }
+
+  let html = `<table class="perf-table"><thead><tr>
+    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Supervisor</th>
+    <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
+  periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
+  html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th>
+  </tr><tr>`;
+  periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
+  html += `</tr></thead><tbody>`;
+
+  supNames.forEach((sup, si) => {
+    const agents = bySup[sup];
+    const emails = agents.map(a => a.email);
+    const gKey   = `sup-${si}`;
+
+    // Supervisor summary row
+    html += `<tr><td class="sticky-col col-agent">${escHtml(sup)}</td>
+      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agents.length}</td>`;
+    periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end)); });
+    html += `<td style="text-align:center">
+      <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Agents')">▼ Agents</button>
+    </td></tr>`;
+
+    // Hidden agent drill-down rows (emails)
+    agents.slice().sort((a,b)=>a.email.localeCompare(b.email)).forEach(agent => {
+      html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
+        <td class="sticky-col col-agent" style="padding-left:26px;font-weight:400;font-size:12px;color:#475CC7">${escHtml(agent.email)}</td>
+        <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
+      periods.forEach(p => { html += groupKpiCells(computeKPIs(agent.email, p.start, p.end)); });
+      html += `<td></td></tr>`;
+    });
+  });
+
+  // Footer
+  html += `</tbody><tfoot><tr>
+    <td class="sticky-col col-agent">TEAM TOTAL</td>
+    <td style="text-align:center;font-weight:700;color:#AA0061">${allAgents.length}</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAgents.map(a=>a.email), p.start, p.end)); });
+  html += `<td></td></tr></tfoot></table>`;
+  wrap.innerHTML = html;
+
   document.getElementById('sup-table-subtitle').textContent =
-    `${getActivePeriods().map(p=>p.label).join(' | ')} · agents grouped by supervisor`;
+    `${periods.map(p=>p.label).join(' | ')} · ${supNames.length} supervisor${supNames.length!==1?'s':''}`;
 }
 
+// ═══════════════════════════════════════════════════════════
+// AM VIEW — one row per AM, ▼ expand to supervisors (with emails on further expand)
+// ═══════════════════════════════════════════════════════════
+
 function renderAMView() {
-  const agents = filteredAgents(getAllAgents());
-  renderKPICards('am-kpi-cards', agents);
-  renderPerfTable('am-table-wrap', agents, 'am');
+  const allAgents = filteredAgents(getAllAgents());
+  const periods   = getActivePeriods();
+  renderKPICards('am-kpi-cards', allAgents);
+
+  const wrap = document.getElementById('am-table-wrap');
+  // Group AM → supervisor → agents
+  const byAM = {};
+  allAgents.forEach(a => {
+    const hier = currentHier(a.email);
+    const am   = hier.am  || '(No AM)';
+    const sup  = hier.supervisor || '(No Supervisor)';
+    if (!byAM[am])      byAM[am]      = {};
+    if (!byAM[am][sup]) byAM[am][sup] = [];
+    byAM[am][sup].push(a);
+  });
+  const amNames = Object.keys(byAM).sort();
+
+  if (!amNames.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No hierarchy data. Add hierarchy records first.</p></div>`;
+    return;
+  }
+
+  let html = `<table class="perf-table"><thead><tr>
+    <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">A.Manager</th>
+    <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
+  periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
+  html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th>
+  </tr><tr>`;
+  periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
+  html += `</tr></thead><tbody>`;
+
+  amNames.forEach((am, ai) => {
+    const supMap   = byAM[am];
+    const allAMAgents = Object.values(supMap).flat();
+    const supNames = Object.keys(supMap).sort();
+    const gKey     = `am-${ai}`;
+
+    // AM summary row
+    html += `<tr><td class="sticky-col col-agent">${escHtml(am)}</td>
+      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${allAMAgents.length}</td>`;
+    periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAMAgents.map(a=>a.email), p.start, p.end)); });
+    html += `<td style="text-align:center">
+      <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Supervisors')">▼ Supervisors</button>
+    </td></tr>`;
+
+    // Hidden supervisor drill-down rows
+    supNames.forEach((sup, si) => {
+      const supAgents = supMap[sup];
+      const supEmails = supAgents.map(a => a.email);
+      const supGKey   = `am-${ai}-sup-${si}`;
+
+      html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
+        <td class="sticky-col col-agent" style="padding-left:26px;font-size:13px;color:#475CC7;font-weight:600">${escHtml(sup)}</td>
+        <td style="text-align:center;color:#64748B;font-size:12px">${supAgents.length}</td>`;
+      periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(supEmails, p.start, p.end)); });
+      html += `<td style="text-align:center">
+        <button class="btn-expand" onclick="toggleDrillDown('${supGKey}',this,'▲ Hide','▼ Agents')" style="font-size:10px;padding:2px 8px">▼ Agents</button>
+      </td></tr>`;
+
+      // Hidden agent rows under this supervisor
+      supAgents.slice().sort((a,b)=>a.email.localeCompare(b.email)).forEach(agent => {
+        html += `<tr class="drill-row" data-group="${supGKey}" style="display:none">
+          <td class="sticky-col col-agent" style="padding-left:48px;font-weight:400;font-size:11px;color:#94A3B8">${escHtml(agent.email)}</td>
+          <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
+        periods.forEach(p => { html += groupKpiCells(computeKPIs(agent.email, p.start, p.end)); });
+        html += `<td></td></tr>`;
+      });
+    });
+  });
+
+  // Footer
+  html += `</tbody><tfoot><tr>
+    <td class="sticky-col col-agent">TOTAL</td>
+    <td style="text-align:center;font-weight:700;color:#AA0061">${allAgents.length}</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAgents.map(a=>a.email), p.start, p.end)); });
+  html += `<td></td></tr></tfoot></table>`;
+  wrap.innerHTML = html;
+
   document.getElementById('am-table-subtitle').textContent =
-    `${getActivePeriods().map(p=>p.label).join(' | ')} · agents grouped by A.Manager`;
+    `${periods.map(p=>p.label).join(' | ')} · ${amNames.length} A.Manager${amNames.length!==1?'s':''}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// GENERAL PERFORMANCE — WoW (8 weeks) + MoM (6 months)
+// ═══════════════════════════════════════════════════════════
+
+function renderGeneralView() {
+  const agents = filteredAgents(getAllAgents());
+  const emails = agents.map(a => a.email);
+  const today  = todayStr();
+  renderKPICards('general-kpi-cards', agents);
+
+  const wrap = document.getElementById('general-table-wrap');
+  if (!emails.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📊</div><p>No data yet — upload data first.</p></div>`;
+    return;
+  }
+
+  // ── WoW: last 8 Sun–Sat weeks ──────────────────────────────────────────────
+  const wowWeeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const ref   = addDays(today, -i * 7);
+    const sun   = getWeekStartOf(ref);
+    const sat   = getWeekEndOf(sun);
+    const end   = (i === 0) ? today : sat;
+    wowWeeks.push({
+      label: i === 0 ? `WTD ${fmtWeekLabel(sun)}` : fmtWeekLabel(sun),
+      start: sun, end,
+      kpis: computeGroupKPIs(emails, sun, end)
+    });
+  }
+
+  // ── MoM: last 6 calendar months ────────────────────────────────────────────
+  const momMonths = [];
+  const now = new Date(today + 'T12:00:00');
+  for (let i = 5; i >= 0; i--) {
+    const d    = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y    = d.getFullYear(), m = d.getMonth();
+    const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
+    const last = new Date(y, m+1, 0);
+    const to   = (i === 0) ? today : `${y}-${String(m+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+    momMonths.push({
+      label: d.toLocaleDateString('en-US', { month:'short', year:'numeric' }),
+      from, to,
+      kpis: computeGroupKPIs(emails, from, to)
+    });
+  }
+
+  // Delta cell: % change vs previous period. Green = improvement.
+  function deltaCell(curr, prev, lowerIsBetter) {
+    if (curr === null || prev === null || prev === 0) return `<td class="cell-kpi none">—</td>`;
+    const pct   = ((curr - prev) / Math.abs(prev)) * 100;
+    const good  = lowerIsBetter ? pct < 0 : pct > 0;
+    const color = good ? '#218848' : '#DC2626';
+    const sign  = pct >= 0 ? '+' : '';
+    return `<td class="cell-kpi" style="color:${color};font-size:11px;font-weight:700">${sign}${pct.toFixed(1)}%</td>`;
+  }
+
+  function trendTable(rows, labelKey, startKey, isWeek) {
+    let t = `<table class="perf-table"><thead><tr>
+      <th class="sticky-col col-agent week-hdr" style="background:#1E293B">${isWeek ? 'Week (Sun)' : 'Month'}</th>
+      <th class="week-hdr w1">TPH</th><th class="week-hdr w1" style="font-size:10px">Δ</th>
+      <th class="week-hdr w2">AHT</th><th class="week-hdr w2" style="font-size:10px">Δ</th>
+      <th class="week-hdr wc">CSAT</th><th class="week-hdr wc" style="font-size:10px">Δ</th>
+      <th class="week-hdr w3">IQA</th><th class="week-hdr w3" style="font-size:10px">Δ</th>
+    </tr></thead><tbody>`;
+    rows.forEach((row, i) => {
+      const k    = row.kpis;
+      const prev = i > 0 ? rows[i-1].kpis : null;
+      t += `<tr>
+        <td class="sticky-col col-agent" style="font-size:12px">${escHtml(row[labelKey])}</td>
+        <td class="cell-kpi">${k.tph     !== null ? fmtTPH(k.tph)      : '—'}</td>
+        ${prev ? deltaCell(k.tph,     prev.tph,     false) : '<td class="cell-kpi none">—</td>'}
+        <td class="cell-kpi">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs) : '—'}</td>
+        ${prev ? deltaCell(k.ahtSecs, prev.ahtSecs, true)  : '<td class="cell-kpi none">—</td>'}
+        <td class="cell-kpi">${k.csat    !== null ? fmtPct(k.csat)     : '—'}</td>
+        ${prev ? deltaCell(k.csat,    prev.csat,    false) : '<td class="cell-kpi none">—</td>'}
+        <td class="cell-kpi">${k.iqa     !== null ? fmtPct(k.iqa)      : '—'}</td>
+        ${prev ? deltaCell(k.iqa,     prev.iqa,     false) : '<td class="cell-kpi none">—</td>'}
+      </tr>`;
+    });
+    t += `</tbody></table>`;
+    return t;
+  }
+
+  wrap.innerHTML = `
+    <div class="table-card" style="margin-bottom:1.5rem">
+      <div class="table-card-header">
+        <div><h3>📅 Week-over-Week KPI Trend</h3>
+          <p>Last 8 weeks · Sun–Sat · ${agents.length} agent${agents.length!==1?'s':''} · Δ = % change vs prior week</p></div>
+      </div>
+      <div class="table-wrap">${trendTable(wowWeeks,'label','start',true)}</div>
+    </div>
+    <div class="table-card">
+      <div class="table-card-header">
+        <div><h3>📆 Month-over-Month KPI Trend</h3>
+          <p>Last 6 months · Δ = % change vs prior month</p></div>
+      </div>
+      <div class="table-wrap">${trendTable(momMonths,'label','from',false)}</div>
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1609,7 +1825,7 @@ function renderRolesTable(roles) {
 
 function navTo(page) {
   currentPage = page;
-  ['agent','supervisor','am','upload','admin'].forEach(p => {
+  ['agent','supervisor','am','general','upload','admin'].forEach(p => {
     const el = document.getElementById('page-'+p);
     if (el) el.classList.toggle('active', p === page);
   });
@@ -1630,6 +1846,7 @@ function navTo(page) {
   if (page === 'agent')      renderAgentView();
   if (page === 'supervisor') renderSupervisorView();
   if (page === 'am')         renderAMView();
+  if (page === 'general')    renderGeneralView();
   if (page === 'admin')      { renderHierarchyTable(); fetchRoles(); }
 }
 
