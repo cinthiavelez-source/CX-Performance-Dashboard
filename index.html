@@ -418,9 +418,9 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
       <option value="custom">Custom Range</option>
     </select>
   </label>
-  <div id="f-custom-range" style="display:none;display:flex;gap:8px;align-items:center;">
-    <label>From <input type="date" id="f-date-from"></label>
-    <label>To <input type="date" id="f-date-to"></label>
+  <div id="f-custom-range" style="display:none;gap:8px;align-items:center;">
+    <label>From <input type="date" id="f-date-from" onchange="onDateInput()"></label>
+    <label>To <input type="date" id="f-date-to" onchange="onDateInput()"></label>
   </div>
   <button class="btn-apply" onclick="applyFilters()">Apply</button>
   <button class="btn-reset" onclick="resetFilters()">Reset</button>
@@ -1856,11 +1856,22 @@ function applyFilters() {
   activeFilters.agent      = document.getElementById('f-agent').value;
   activeFilters.supervisor = document.getElementById('f-supervisor').value;
   activeFilters.am         = document.getElementById('f-am').value;
-  activePeriod             = document.getElementById('f-period').value;
-  if (activePeriod === 'custom') {
-    activeFilters.dateFrom = document.getElementById('f-date-from').value;
-    activeFilters.dateTo   = document.getElementById('f-date-to').value;
+
+  const fromVal = document.getElementById('f-date-from').value;
+  const toVal   = document.getElementById('f-date-to').value;
+
+  // If dates are filled, force custom mode regardless of dropdown state
+  if (fromVal || toVal) {
+    activePeriod = 'custom';
+    document.getElementById('f-period').value = 'custom';
+    document.getElementById('f-custom-range').style.display = 'flex';
+  } else {
+    activePeriod = document.getElementById('f-period').value;
   }
+
+  activeFilters.dateFrom = fromVal;
+  activeFilters.dateTo   = toVal;
+
   updatePeriodBadge();
   navTo(currentPage);
 }
@@ -1872,6 +1883,8 @@ function resetFilters() {
   document.getElementById('f-supervisor').value = '';
   document.getElementById('f-am').value         = '';
   document.getElementById('f-period').value     = '3w';
+  document.getElementById('f-date-from').value  = '';
+  document.getElementById('f-date-to').value    = '';
   document.getElementById('f-custom-range').style.display = 'none';
   updatePeriodBadge();
   navTo(currentPage);
@@ -1880,6 +1893,15 @@ function resetFilters() {
 function onPeriodChange() {
   const v = document.getElementById('f-period').value;
   document.getElementById('f-custom-range').style.display = v === 'custom' ? 'flex' : 'none';
+}
+
+// Auto-switch to "Custom Range" as soon as the user edits either date field
+function onDateInput() {
+  const sel = document.getElementById('f-period');
+  if (sel.value !== 'custom') {
+    sel.value = 'custom';
+    document.getElementById('f-custom-range').style.display = 'flex';
+  }
 }
 
 function updatePeriodBadge() {
