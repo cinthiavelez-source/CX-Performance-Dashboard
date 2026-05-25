@@ -404,6 +404,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   <button data-page="agent" onclick="navTo('agent')">👤 Agent View</button>
   <button data-page="supervisor" onclick="navTo('supervisor')">🧑‍💼 Supervisor View</button>
   <button data-page="am" onclick="navTo('am')">🏢 A.Manager View</button>
+  <button data-page="contact-reason" onclick="navTo('contact-reason')">📋 Contact Reasons</button>
   <button data-page="upload" onclick="navTo('upload')" id="btn-upload-tab">⬆️ Upload Data</button>
   <button data-page="admin" onclick="navTo('admin')" id="btn-admin-tab" style="display:none">⚙️ Admin</button>
 </div>
@@ -500,6 +501,31 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   <div class="page active" id="page-general">
     <div class="kpi-cards" id="general-kpi-cards"></div>
     <div id="general-table-wrap"></div>
+  </div>
+
+  <!-- CONTACT REASON TAB -->
+  <div class="page" id="page-contact-reason">
+    <div class="kpi-cards" id="cr-kpi-cards"></div>
+    <div class="table-card">
+      <div class="table-card-header">
+        <div>
+          <h3>📋 CSAT by Contact Reason</h3>
+          <p id="cr-subtitle">Ranked by volume · color = relative CSAT quartile</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:#64748B;font-weight:600">Sort by:</span>
+          <button id="cr-sort-vol"  onclick="setCRSort('vol')"
+            style="background:#AA0061;color:#fff;border-radius:5px;padding:4px 12px;font-size:12px;font-weight:600">Volume ▼</button>
+          <button id="cr-sort-csat" onclick="setCRSort('csat')"
+            style="background:#F1F5F9;color:#64748B;border-radius:5px;padding:4px 12px;font-size:12px;font-weight:600;border:1px solid #E2E8F0">CSAT%</button>
+          <button onclick="exportTableBySelector('#cr-table-wrap table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap" id="cr-table-wrap"></div>
+    </div>
   </div>
 
   <!-- UPLOAD TAB -->
@@ -1665,6 +1691,152 @@ function renderGeneralView() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// CONTACT REASON VIEW
+// Groups CSAT rows by contact_reason for the active period/filters.
+// Shows: volume, good, bad, CSAT%, share of total — sortable.
+// ═══════════════════════════════════════════════════════════
+
+let crSortBy = 'vol'; // 'vol' | 'csat'
+
+function setCRSort(by) {
+  crSortBy = by;
+  document.getElementById('cr-sort-vol').style.background  = by === 'vol'  ? '#AA0061' : '#F1F5F9';
+  document.getElementById('cr-sort-vol').style.color       = by === 'vol'  ? '#fff'    : '#64748B';
+  document.getElementById('cr-sort-csat').style.background = by === 'csat' ? '#AA0061' : '#F1F5F9';
+  document.getElementById('cr-sort-csat').style.color      = by === 'csat' ? '#fff'    : '#64748B';
+  renderContactReasonView();
+}
+
+function renderContactReasonView() {
+  const agents  = filteredAgents(getAllAgents());
+  const emails  = new Set(agents.map(a => a.email.toLowerCase()));
+  const nameKeys= new Set(agents.map(a => normName(a.name)));
+  const periods = getActivePeriods();
+  const p       = periods[periods.length - 1]; // use the latest/only period
+  const wrap    = document.getElementById('cr-table-wrap');
+
+  if (!wrap) return;
+
+  // Collect all CSAT rows in period matching current agent filter
+  const rows = rawCSAT.filter(r => {
+    const d = r.date;
+    if (d < p.start || d > p.end) return false;
+    const re = (r.agent_email || '').toLowerCase().trim();
+    if (re) return emails.has(re);
+    return nameKeys.has(normName(r.agent_name));
+  });
+
+  if (!rows.length) {
+    document.getElementById('cr-kpi-cards').innerHTML = '';
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><p>No CSAT data for the selected period. Upload CSAT data with a Contact Reason column first.</p></div>`;
+    document.getElementById('cr-subtitle').textContent = 'No data';
+    return;
+  }
+
+  // Group by contact_reason
+  const byReason = {};
+  rows.forEach(r => {
+    const reason = (r.contact_reason || '').trim() || '(No reason)';
+    if (!byReason[reason]) byReason[reason] = { good:0, bad:0, offered:0, total:0 };
+    const s = String(r.satisfaction).toLowerCase();
+    if (s === 'good')    byReason[reason].good++;
+    else if (s === 'bad') byReason[reason].bad++;
+    else if (s === 'offered') byReason[reason].offered++;
+    byReason[reason].total++;
+  });
+
+  // Build sorted rows
+  let reasonRows = Object.entries(byReason).map(([reason, d]) => ({
+    reason,
+    good:    d.good,
+    bad:     d.bad,
+    offered: d.offered,
+    total:   d.total,
+    csat:    d.good + d.bad > 0 ? (d.good / (d.good + d.bad)) * 100 : null
+  }));
+
+  if (crSortBy === 'csat') {
+    reasonRows.sort((a, b) => (b.csat ?? -1) - (a.csat ?? -1));
+  } else {
+    reasonRows.sort((a, b) => b.total - a.total);
+  }
+
+  const grandTotal = rows.length;
+  const allCSATs   = reasonRows.map(r => r.csat).filter(v => v !== null);
+
+  // KPI cards
+  const overallGood  = rows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
+  const overallBad   = rows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
+  const overallCSAT  = overallGood + overallBad > 0 ? (overallGood / (overallGood + overallBad)) * 100 : null;
+  const topReason    = reasonRows[0];
+  const worstReason  = [...reasonRows].filter(r => r.csat !== null && r.total >= 5).sort((a,b) => a.csat - b.csat)[0];
+
+  const crCards = document.getElementById('cr-kpi-cards');
+  if (crCards) crCards.innerHTML = `
+    <div class="kpi-card blue">
+      <div class="kpi-label">📋 Total Tickets</div>
+      <div class="kpi-value">${grandTotal.toLocaleString()}</div>
+      <div class="kpi-sub">${reasonRows.length} distinct contact reasons</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">😊 Overall CSAT</div>
+      <div class="kpi-value">${fmtPct(overallCSAT)}</div>
+      <div class="kpi-sub">${overallGood} good · ${overallBad} bad</div>
+    </div>
+    <div class="kpi-card yellow">
+      <div class="kpi-label">🏆 Highest Volume</div>
+      <div class="kpi-value" style="font-size:16px;line-height:1.2">${escHtml(topReason?.reason || '—')}</div>
+      <div class="kpi-sub">${topReason?.total ?? 0} tickets · ${fmtPct(topReason?.csat ?? null)}</div>
+    </div>
+    <div class="kpi-card" style="border-left-color:#EF4444">
+      <div class="kpi-label">⚠️ Needs Attention</div>
+      <div class="kpi-value" style="font-size:16px;line-height:1.2">${escHtml(worstReason?.reason || '—')}</div>
+      <div class="kpi-sub">${worstReason ? fmtPct(worstReason.csat) + ' · ' + worstReason.total + ' tickets' : 'n/a (min 5 tickets)'}</div>
+    </div>`;
+
+  // Build table
+  let html = `<table class="perf-table">
+    <thead><tr>
+      <th class="sticky-col col-agent week-hdr" style="background:#1E293B"># Reason</th>
+      <th class="week-hdr w3" style="text-align:right">Tickets</th>
+      <th class="week-hdr w1" style="text-align:right">Good</th>
+      <th class="week-hdr w1" style="text-align:right">Bad</th>
+      <th class="week-hdr w2" style="text-align:right">Offered</th>
+      <th class="week-hdr wc" style="text-align:right">CSAT %</th>
+      <th class="week-hdr" style="background:#475CC7;text-align:right">% of Total</th>
+    </tr></thead><tbody>`;
+
+  reasonRows.forEach((r, i) => {
+    const csatCls  = getKPIClass(r.csat, allCSATs, false);
+    const sharePct = grandTotal > 0 ? (r.total / grandTotal * 100).toFixed(1) : '—';
+    html += `<tr>
+      <td class="sticky-col col-agent"><span style="color:#94A3B8;font-size:11px;margin-right:6px">${i+1}</span>${escHtml(r.reason)}</td>
+      <td class="cell-kpi" style="text-align:right;font-weight:700">${r.total.toLocaleString()}</td>
+      <td class="cell-kpi" style="text-align:right;color:#218848">${r.good.toLocaleString()}</td>
+      <td class="cell-kpi" style="text-align:right;color:#DC2626">${r.bad.toLocaleString()}</td>
+      <td class="cell-kpi" style="text-align:right;color:#94A3B8">${r.offered.toLocaleString()}</td>
+      <td class="cell-kpi ${csatCls}" style="text-align:right;font-weight:700">${r.csat !== null ? fmtPct(r.csat) : '—'}</td>
+      <td class="cell-kpi" style="text-align:right;color:#475CC7;font-weight:600">${sharePct}%</td>
+    </tr>`;
+  });
+
+  // Footer totals
+  html += `</tbody><tfoot><tr>
+    <td class="sticky-col col-agent">TOTAL</td>
+    <td class="cell-kpi" style="text-align:right;font-weight:700">${grandTotal.toLocaleString()}</td>
+    <td class="cell-kpi" style="text-align:right;color:#218848;font-weight:700">${overallGood.toLocaleString()}</td>
+    <td class="cell-kpi" style="text-align:right;color:#DC2626;font-weight:700">${overallBad.toLocaleString()}</td>
+    <td class="cell-kpi" style="text-align:right;color:#94A3B8;font-weight:700">${rows.filter(r=>String(r.satisfaction).toLowerCase()==='offered').length.toLocaleString()}</td>
+    <td class="cell-kpi" style="text-align:right;font-weight:700;color:#AA0061">${fmtPct(overallCSAT)}</td>
+    <td class="cell-kpi" style="text-align:right;color:#475CC7;font-weight:700">100%</td>
+  </tr></tfoot></table>`;
+
+  wrap.innerHTML = html;
+  document.getElementById('cr-subtitle').textContent =
+    `${p.label} · ${agents.length} agent${agents.length!==1?'s':''} · ${reasonRows.length} reasons · sorted by ${crSortBy === 'vol' ? 'volume' : 'CSAT%'}`;
+}
+
+// ═══════════════════════════════════════════════════════════
 // HIERARCHY BULK CSV UPLOAD
 // ═══════════════════════════════════════════════════════════
 
@@ -1991,7 +2163,7 @@ function renderRolesTable(roles) {
 
 function navTo(page) {
   currentPage = page;
-  ['agent','supervisor','am','general','upload','admin'].forEach(p => {
+  ['agent','supervisor','am','general','contact-reason','upload','admin'].forEach(p => {
     const el = document.getElementById('page-'+p);
     if (el) el.classList.toggle('active', p === page);
   });
@@ -2016,8 +2188,9 @@ function navTo(page) {
   if (page === 'agent')      renderAgentView();
   if (page === 'supervisor') renderSupervisorView();
   if (page === 'am')         renderAMView();
-  if (page === 'general')    renderGeneralView();
-  if (page === 'admin')      { renderHierarchyTable(); fetchRoles(); }
+  if (page === 'general')        renderGeneralView();
+  if (page === 'contact-reason') renderContactReasonView();
+  if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); }
 }
 
 // ─── FILTER ACTIONS ───────────────────────────────────────
@@ -2176,12 +2349,13 @@ const FIELD_DEFS = {
     { key:'total_time_hms',   label:'Total Time (hh:mm:ss)',    required:true,  hints:['Total Time'] },
   ],
   csat: [
-    { key:'date',         label:'Date column',                          required:true,  hints:['Update - Date','date','Date'] },
-    { key:'agent_name',   label:'Agent Name column',                    required:true,  hints:['Update ticket assignee','agent'] },
-    { key:'agent_email',  label:'Agent Email column (optional — if available)', required:false, hints:['agent email','assignee email','agent_email'] },
-    { key:'satisfaction', label:'Rating column (good/bad/offered)',     required:true,  hints:['Changes - New value','satisfaction','rating'] },
-    { key:'ticket_id',    label:'Ticket ID column',                     required:false, hints:['Ticket ID','ticket'] },
-    { key:'field_filter', label:'Filter column (satisfaction_score rows)', required:false, hints:['Changes - Field name','field'] },
+    { key:'date',           label:'Date column',                             required:true,  hints:['Update - Date','date','Date'] },
+    { key:'agent_name',     label:'Agent Name column',                       required:true,  hints:['Update ticket assignee','agent'] },
+    { key:'agent_email',    label:'Agent Email column (optional)',            required:false, hints:['agent email','assignee email','agent_email'] },
+    { key:'satisfaction',   label:'Rating column (good/bad/offered)',         required:true,  hints:['Changes - New value','satisfaction','rating'] },
+    { key:'ticket_id',      label:'Ticket ID column',                         required:false, hints:['Ticket ID','ticket'] },
+    { key:'contact_reason', label:'Contact Reason column',                   required:false, hints:['contact reason','contact_reason','reason','topic','category'] },
+    { key:'field_filter',   label:'Filter column (satisfaction_score rows)',  required:false, hints:['Changes - Field name','field'] },
   ],
   iqa: [
     { key:'date',        label:'Date column',              required:true,  hints:['Review created','date'] },
@@ -2305,9 +2479,10 @@ function mapRows(type, rawRows, map) {
         agent_name:  r[map.agent_name]                              || '',
         // agent_email is optional — stored when available so CSAT can be
         // matched by email directly instead of relying on name-to-email lookup
-        agent_email: (r[map.agent_email]                           || '').toLowerCase().trim(),
-        satisfaction:(r[map.satisfaction]                           || '').toLowerCase().trim(),
-        ticket_id:   r[map.ticket_id]                              || '',
+        agent_email:    (r[map.agent_email]     || '').toLowerCase().trim(),
+        satisfaction:   (r[map.satisfaction]    || '').toLowerCase().trim(),
+        ticket_id:       r[map.ticket_id]       || '',
+        contact_reason: (r[map.contact_reason]  || '').trim(),
       }))
       .filter(r => r.date && r.agent_name && ['good','bad','offered'].includes(r.satisfaction));
   }
