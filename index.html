@@ -1836,13 +1836,38 @@ function renderAgentView() {
     ? agents.filter(a => a.email.toLowerCase().includes(sq) || (a.name||'').toLowerCase().includes(sq))
     : agents;
 
-  // ── Rank by CSAT in latest period (computed before sorting) ──
-  const latestPi  = periods.length - 1;
-  const csatForRank = displayAgents
-    .map(a => ({ email: a.email, csat: allKPIs[a.email][latestPi].csat }))
-    .sort((a, b) => (b.csat ?? -1) - (a.csat ?? -1));
+  // ── Composite rank (latest period): TPH 40% + CSAT 40% + IQA 20% ──
+  // Metrics are on different scales so each is min-max normalised to [0,1]
+  // before weighting. Agents with null in a metric score 0 for that component.
+  const latestPi = periods.length - 1;
+
+  const rawForRank = displayAgents.map(a => {
+    const k = allKPIs[a.email][latestPi];
+    return { email: a.email, tph: k.tph, csat: k.csat, iqa: k.iqa };
+  });
+
+  // Min-max normalise an array of nullable numbers → [0,1], nulls → 0
+  function _minMaxNorm(vals) {
+    const valid = vals.filter(v => v !== null && v !== undefined);
+    if (!valid.length) return vals.map(() => 0);
+    const mn = Math.min(...valid), mx = Math.max(...valid);
+    if (mx === mn) return vals.map(v => (v !== null && v !== undefined) ? 1 : 0);
+    return vals.map(v => (v !== null && v !== undefined) ? (v - mn) / (mx - mn) : 0);
+  }
+
+  const tphNorm  = _minMaxNorm(rawForRank.map(r => r.tph));
+  const csatNorm = _minMaxNorm(rawForRank.map(r => r.csat));
+  const iqaNorm  = _minMaxNorm(rawForRank.map(r => r.iqa));
+
+  const compositeRanked = rawForRank
+    .map((r, i) => ({
+      email: r.email,
+      score: 0.4 * tphNorm[i] + 0.4 * csatNorm[i] + 0.2 * iqaNorm[i]
+    }))
+    .sort((a, b) => b.score - a.score);
+
   const rankMap = {};
-  csatForRank.forEach((r, i) => { rankMap[r.email] = i + 1; });
+  compositeRanked.forEach((r, i) => { rankMap[r.email] = i + 1; });
 
   // ── Sort ────────────────────────────────────────────────────
   displayAgents = sortKpiRows(displayAgents, 'agent', (a, col) => {
