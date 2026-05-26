@@ -1250,6 +1250,32 @@ function getHierarchyForAgent(agentEmail, dateStr) {
 //              lookup built from TPH + IQA + Hierarchy data
 // ═══════════════════════════════════════════════════════════
 
+// ─── COMPOSITE RANKING HELPERS (shared by Agent + Supervisor views) ──────────
+// Min-max normalise an array of nullable numbers to [0,1]. Nulls → 0.
+function minMaxNorm(vals) {
+  const valid = vals.filter(v => v !== null && v !== undefined);
+  if (!valid.length) return vals.map(() => 0);
+  const mn = Math.min(...valid), mx = Math.max(...valid);
+  if (mx === mn) return vals.map(v => (v !== null && v !== undefined) ? 1 : 0);
+  return vals.map(v => (v !== null && v !== undefined) ? (v - mn) / (mx - mn) : 0);
+}
+
+// Compute composite scores and return a rankMap { key → rank (1-based) }
+// `rows` is an array of { key, tph, csat, iqa }
+function compositeRankMap(rows) {
+  if (!rows.length) return {};
+  const tphN  = minMaxNorm(rows.map(r => r.tph));
+  const csatN = minMaxNorm(rows.map(r => r.csat));
+  const iqaN  = minMaxNorm(rows.map(r => r.iqa));
+  const scored = rows
+    .map((r, i) => ({ key: r.key, score: 0.4 * tphN[i] + 0.4 * csatN[i] + 0.2 * iqaN[i] }))
+    .sort((a, b) => b.score - a.score);
+  const map = {};
+  scored.forEach((r, i) => { map[r.key] = i + 1; });
+  return map;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function computeKPIs(agentEmail, weekStart, weekEnd) {
   const email = (agentEmail || '').toLowerCase().trim();
   const cacheKey = `${email}|${weekStart}|${weekEnd}`;
@@ -1841,43 +1867,28 @@ function renderAgentView() {
   // before weighting. Agents with null in a metric score 0 for that component.
   const latestPi = periods.length - 1;
 
-  const rawForRank = displayAgents.map(a => {
-    const k = allKPIs[a.email][latestPi];
-    return { email: a.email, tph: k.tph, csat: k.csat, iqa: k.iqa };
-  });
+  const rankMap = compositeRankMap(
+    displayAgents.map(a => {
+      const k = allKPIs[a.email][latestPi];
+      return { key: a.email, tph: k.tph, csat: k.csat, iqa: k.iqa };
+    })
+  );
 
-  // Min-max normalise an array of nullable numbers → [0,1], nulls → 0
-  function _minMaxNorm(vals) {
-    const valid = vals.filter(v => v !== null && v !== undefined);
-    if (!valid.length) return vals.map(() => 0);
-    const mn = Math.min(...valid), mx = Math.max(...valid);
-    if (mx === mn) return vals.map(v => (v !== null && v !== undefined) ? 1 : 0);
-    return vals.map(v => (v !== null && v !== undefined) ? (v - mn) / (mx - mn) : 0);
+  // ── Sort — default: composite rank ascending; override via column header ──
+  if (tabSort.agent.col) {
+    displayAgents = sortKpiRows(displayAgents, 'agent', (a, col) => {
+      const k = allKPIs[a.email][latestPi];
+      if (col === 'tph')  return k.tph;
+      if (col === 'aht')  return k.ahtSecs;
+      if (col === 'csat') return k.csat;
+      if (col === 'iqa')  return k.iqa;
+      return null;
+    });
+  } else {
+    displayAgents = [...displayAgents].sort((a, b) =>
+      (rankMap[a.email] || 9999) - (rankMap[b.email] || 9999)
+    );
   }
-
-  const tphNorm  = _minMaxNorm(rawForRank.map(r => r.tph));
-  const csatNorm = _minMaxNorm(rawForRank.map(r => r.csat));
-  const iqaNorm  = _minMaxNorm(rawForRank.map(r => r.iqa));
-
-  const compositeRanked = rawForRank
-    .map((r, i) => ({
-      email: r.email,
-      score: 0.4 * tphNorm[i] + 0.4 * csatNorm[i] + 0.2 * iqaNorm[i]
-    }))
-    .sort((a, b) => b.score - a.score);
-
-  const rankMap = {};
-  compositeRanked.forEach((r, i) => { rankMap[r.email] = i + 1; });
-
-  // ── Sort ────────────────────────────────────────────────────
-  displayAgents = sortKpiRows(displayAgents, 'agent', (a, col) => {
-    const k = allKPIs[a.email][latestPi];
-    if (col === 'tph')  return k.tph;
-    if (col === 'aht')  return k.ahtSecs;
-    if (col === 'csat') return k.csat;
-    if (col === 'iqa')  return k.iqa;
-    return null;
-  });
 
   const sortTh = (col, label) =>
     `<th class="sortable" onclick="onSortClick('agent','${col}')" style="cursor:pointer">${label}${sortArrow('agent',col)}</th>`;
@@ -1991,16 +2002,32 @@ function renderSupervisorView() {
     ? supRows.filter(r => r.sup.name.toLowerCase().includes(supSq) || r.sup.email.toLowerCase().includes(supSq))
     : supRows;
 
-  // ── Sort by latest-period aggregated KPI ──────────────────────────────────
+  // ── Composite rank: TPH 40% + CSAT 40% + IQA 20% (latest period group KPIs) ──
   const latestSupPi = periods.length - 1;
-  visSupRows = sortKpiRows(visSupRows, 'supervisor', (r, col) => {
-    const g = computeGroupKPIs(r.agents.map(a => a.email), periods[latestSupPi].start, periods[latestSupPi].end);
-    if (col === 'tph')  return g.tph;
-    if (col === 'aht')  return g.ahtSecs;
-    if (col === 'csat') return g.csat;
-    if (col === 'iqa')  return g.iqa;
-    return null;
-  });
+  const latestSupP  = periods[latestSupPi];
+
+  const supRankMap = compositeRankMap(
+    visSupRows.map(r => {
+      const g = computeGroupKPIs(r.agents.map(a => a.email), latestSupP.start, latestSupP.end);
+      return { key: r.sup.email || r.sup.name, tph: g.tph, csat: g.csat, iqa: g.iqa };
+    })
+  );
+
+  // ── Sort — default: composite rank ascending; override via column header ──
+  if (tabSort.supervisor.col) {
+    visSupRows = sortKpiRows(visSupRows, 'supervisor', (r, col) => {
+      const g = computeGroupKPIs(r.agents.map(a => a.email), latestSupP.start, latestSupP.end);
+      if (col === 'tph')  return g.tph;
+      if (col === 'aht')  return g.ahtSecs;
+      if (col === 'csat') return g.csat;
+      if (col === 'iqa')  return g.iqa;
+      return null;
+    });
+  } else {
+    visSupRows = [...visSupRows].sort((a, b) =>
+      (supRankMap[a.sup.email || a.sup.name] || 9999) - (supRankMap[b.sup.email || b.sup.name] || 9999)
+    );
+  }
 
   const supSortTh = (col, label) =>
     `<th class="sortable" onclick="onSortClick('supervisor','${col}')" style="cursor:pointer">${label}${sortArrow('supervisor',col)}</th>`;
@@ -2008,6 +2035,7 @@ function renderSupervisorView() {
   // ── 4. Build table ────────────────────────────────────────────────────────
   let html = `<table class="perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Supervisor</th>
+    <th class="week-hdr" style="background:#1E293B;text-align:center;white-space:nowrap" rowspan="2">#</th>
     <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
@@ -2020,11 +2048,13 @@ function renderSupervisorView() {
     const emails = agents.map(a => a.email);
     const gKey   = `sup-${si}`;
 
+    const supRankVal = supRankMap[sup.email || sup.name];
     // Supervisor summary row — display email if available, else name
     html += `<tr><td class="sticky-col col-agent">
         <span style="font-weight:700">${escHtml(sup.email || sup.name)}</span>
         ${sup.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup.name)}</span>` : ''}
       </td>
+      <td style="text-align:center;white-space:nowrap">${supRankVal ? rankBadge(supRankVal, visSupRows.length) : '—'}</td>
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agents.length}</td>`;
     periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end)); });
     html += `<td style="text-align:center">
@@ -2035,6 +2065,7 @@ function renderSupervisorView() {
     agents.forEach(agent => {
       html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
         <td class="sticky-col col-agent" style="padding-left:26px;font-weight:400;font-size:12px;color:#475CC7">${escHtml(agent.email)}</td>
+        <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>
         <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
       periods.forEach(p => { html += groupKpiCells(computeKPIs(agent.email, p.start, p.end)); });
       html += `<td></td></tr>`;
@@ -2045,6 +2076,7 @@ function renderSupervisorView() {
   const visSupEmails = [...new Set(visSupRows.flatMap(r => r.agents.map(a => a.email)))];
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TEAM TOTAL</td>
+    <td></td>
     <td style="text-align:center;font-weight:700;color:#AA0061">${visSupEmails.length}</td>`;
   periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(visSupEmails, p.start, p.end)); });
   html += `<td></td></tr></tfoot></table>`;
