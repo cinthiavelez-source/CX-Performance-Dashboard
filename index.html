@@ -413,7 +413,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   </div>
   <div class="navbar-right">
     <span id="sync-label" style="color:rgba(255,255,255,.5);font-size:11px;white-space:nowrap"></span>
-    <button onclick="manualRefresh()" title="Reload data from Google Sheets"
+    <button onclick="manualRefresh()" title="Force refresh — fetch latest data from Google Sheets (bypasses cache)"
       style="background:rgba(255,255,255,.12);color:#fff;border-radius:6px;padding:5px 10px;font-size:13px;border:none;">
       🔄
     </button>
@@ -835,6 +835,17 @@ let csatNameIndex = {}; // normName → [rows]  (CSAT name fallback)
 // ─── KPI MEMOIZATION CACHE ────────────────────────────────────
 // Key: "email|start|end". Cleared whenever new data is loaded.
 let kpiCache = {};
+
+// ─── TAB RENDER CACHE ─────────────────────────────────────────
+// Tracks which tab pages have already been rendered in the current
+// data session. Skips re-render on tab switch unless data or filters
+// changed. Cleared on data load, manualRefresh, and filter apply.
+let renderedTabs = new Set();
+
+// ─── LOCALSTORAGE DATA CACHE ──────────────────────────────────
+// Cache key for daily data persistence. Data is only refreshed once
+// per calendar day (matches the morning update cadence).
+const LS_CACHE_KEY = 'cx_dash_data_v1';
 
 // ─── PERFORMANCE THRESHOLDS (editable via Admin tab) ──────────
 let thresholds = { tph: null, ahtSecs: null, csat: 85, iqa: 90 };
@@ -1758,9 +1769,13 @@ function periodHeaders(periods, extraColBefore, extraColAfter) {
 // ═══════════════════════════════════════════════════════════
 
 function renderAgentView() {
-  // Only show people whose hierarchy role is "Specialist" (case-insensitive)
+  // Only show Specialists whose team name contains "CU - CX"
   const agents  = filteredAgents(getAllAgents())
-    .filter(a => normName(currentHier(a.email).role) === normName('Specialist'));
+    .filter(a => {
+      const h = currentHier(a.email);
+      if (normName(h.role) !== normName('Specialist')) return false;
+      return (h.team || '').toLowerCase().includes('cu - cx');
+    });
   const periods = getTabPeriods('agent');   // always last 3 WoW or MoM per tab toggle
   renderKPICards('agent-kpi-cards', agents);
 
@@ -3072,13 +3087,17 @@ function navTo(page) {
     if (uploadGrid) uploadGrid.style.display  = isAdm ? '' : 'none';
   }
 
-  // Render page
-  if (page === 'agent')      renderAgentView();
-  if (page === 'supervisor') renderSupervisorView();
-  if (page === 'am')         renderAMView();
-  if (page === 'general')        renderGeneralView();
-  if (page === 'contact-reason') renderContactReasonView();
-  if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); }
+  // Render page — skip if already rendered and nothing changed
+  // (renderedTabs is cleared on data load, manualRefresh, and filter apply)
+  if (!renderedTabs.has(page)) {
+    if (page === 'agent')          renderAgentView();
+    if (page === 'supervisor')     renderSupervisorView();
+    if (page === 'am')             renderAMView();
+    if (page === 'general')        renderGeneralView();
+    if (page === 'contact-reason') renderContactReasonView();
+    if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); }
+    renderedTabs.add(page);
+  }
 }
 
 // ─── FILTER ACTIONS ───────────────────────────────────────
@@ -3105,6 +3124,7 @@ function applyFilters() {
   activeFilters.dateTo   = toVal;
 
   updatePeriodBadge();
+  renderedTabs.clear(); // filters changed — all tabs must re-render
   navTo(currentPage);
 }
 
@@ -3120,6 +3140,7 @@ function resetFilters() {
   document.getElementById('f-date-to').value    = '';
   document.getElementById('f-custom-range').style.display = 'none';
   updatePeriodBadge();
+  renderedTabs.clear(); // filters reset — all tabs must re-render
   navTo(currentPage);
 }
 
@@ -3146,15 +3167,22 @@ function updatePeriodBadge() {
 }
 
 function updateSyncLabel() {
-  if (!lastSyncTime) return;
-  const mins = Math.round((Date.now() - lastSyncTime) / 60000);
   const label = document.getElementById('sync-label');
-  if (label) label.textContent = mins < 1 ? 'Synced just now' : `Synced ${mins}m ago`;
+  if (!label) return;
+  if (lastSyncTime === null) {
+    // Data came from localStorage cache — show "Cached · today"
+    label.textContent = 'Cached · today';
+  } else {
+    const mins = Math.round((Date.now() - lastSyncTime) / 60000);
+    label.textContent = mins < 1 ? 'Synced just now' : `Synced ${mins}m ago`;
+  }
 }
 
 async function manualRefresh() {
+  _lsClear();           // force a real network call
   kpiCache = {};
-  await apiFetch();
+  renderedTabs.clear(); // all tabs must re-render with fresh data
+  await apiFetch(true); // forceNetwork = true
   navTo(currentPage);
   showToast('✅ Data refreshed');
 }
@@ -3163,7 +3191,60 @@ async function manualRefresh() {
 // DATA FETCHING
 // ═══════════════════════════════════════════════════════════
 
-async function apiFetch() {
+// ─── LOCALSTORAGE HELPERS ────────────────────────────────────
+function _lsSave(tph, csat, iqa, hierarchy, role) {
+  try {
+    const today = todayStr(); // 'YYYY-MM-DD'
+    const payload = JSON.stringify({ date: today, tph, csat, iqa, hierarchy, role });
+    localStorage.setItem(LS_CACHE_KEY, payload);
+  } catch(e) { /* storage quota — ignore */ }
+}
+
+function _lsLoad() {
+  try {
+    const raw = localStorage.getItem(LS_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (cached.date !== todayStr()) return null; // stale — different calendar day
+    return cached;
+  } catch(e) { return null; }
+}
+
+function _lsClear() {
+  try { localStorage.removeItem(LS_CACHE_KEY); } catch(e) {}
+}
+// ─────────────────────────────────────────────────────────────
+
+function _applyRawData(tph, csat, iqa, hierarchy, role) {
+  rawTPH       = tph.map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+  rawCSAT      = csat.map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+  rawIQA       = iqa.map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+  rawHierarchy = hierarchy;
+  cachedRole   = role || 'viewer';
+  cachedData   = rawTPH;
+  kpiCache     = {};
+  renderedTabs.clear();
+  buildAgentMaps();
+  buildIndexes();
+}
+
+async function apiFetch(forceNetwork = false) {
+  // ── 1. Try localStorage cache first (skip network entirely) ──
+  if (!forceNetwork) {
+    const cached = _lsLoad();
+    if (cached) {
+      _applyRawData(cached.tph, cached.csat, cached.iqa, cached.hierarchy, cached.role);
+      lastSyncTime = null; // will show "Cached data"
+      updateSyncLabel();
+      updateRoleUI();
+      populateFilters();
+      setSyncStatus('ok');
+      showLoading(false);
+      return cached;
+    }
+  }
+
+  // ── 2. No valid cache — fetch from Apps Script ────────────────
   setSyncStatus('syncing');
   showLoading(true, 'Loading performance data…');
   try {
@@ -3176,18 +3257,18 @@ async function apiFetch() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    rawTPH       = (data.tph       || []).map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
-    rawCSAT      = (data.csat      || []).map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
-    rawIQA       = (data.iqa       || []).map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
-    rawHierarchy = (data.hierarchy || []);
-    cachedRole   = data.role || 'viewer';
-    cachedData   = rawTPH; // keep required var non-empty
+    _applyRawData(
+      data.tph       || [],
+      data.csat      || [],
+      data.iqa       || [],
+      data.hierarchy || [],
+      data.role
+    );
 
-    // Rebuild email ↔ name maps and performance indexes
-    buildAgentMaps();
-    buildIndexes(); // pre-group rows by email for O(1) KPI lookups
+    // Save fresh data to localStorage for the rest of the day
+    _lsSave(data.tph || [], data.csat || [], data.iqa || [], data.hierarchy || [], data.role || 'viewer');
 
-    lastSyncTime = new Date();
+    lastSyncTime = Date.now();
     updateSyncLabel();
     updateRoleUI();
     populateFilters();
@@ -3814,12 +3895,8 @@ async function initApp() {
   // Update "Synced X min ago" label every 30 seconds
   setInterval(updateSyncLabel, 30000);
 
-  // Auto-refresh every 5 minutes
-  setInterval(async () => {
-    kpiCache = {}; // clear memo on auto-refresh
-    await apiFetch();
-    navTo(currentPage);
-  }, 300000);
+  // No auto-refresh needed — data updates once per day in the morning.
+  // Users can hit 🔄 to force-fetch fresh data at any time.
 }
 
 (function boot() {
