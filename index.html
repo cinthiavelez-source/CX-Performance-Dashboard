@@ -1348,14 +1348,21 @@ function getActiveAMs() {
   return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Return all specialists (role != Supervisor / AM) whose supervisor_name matches supName. */
+/** Return specialists (role != Supervisor / AM) whose supervisor_name matches supName
+ *  AND whose hierarchy record is currently active (effective_from ≤ today ≤ effective_to). */
 function getSpecialistsUnderSupervisor(supName) {
-  const key  = normName(supName);
-  const seen = {};
+  const today = todayStr();
+  const key   = normName(supName);
+  const seen  = {};
   rawHierarchy.forEach(h => {
     if (normName(h.supervisor_name) !== key) return;
     const r = normName(h.role);
     if (r === 'supervisor' || r === 'assistant manager') return; // skip mgmt rows
+    // ── Effective-date gate ──────────────────────────────────────
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today < from || today > to) return; // record not active today
+    // ────────────────────────────────────────────────────────────
     const e = (h.agent_email || '').toLowerCase().trim();
     if (!e) return;
     if (!seen[e]) seen[e] = { email: e, name: h.agent_name || '' };
@@ -1363,15 +1370,22 @@ function getSpecialistsUnderSupervisor(supName) {
   return Object.values(seen).sort((a, b) => a.email.localeCompare(b.email));
 }
 
-/** Return all supervisors (role=Supervisor) whose am_name matches amName. */
+/** Return supervisors (role=Supervisor) whose am_name matches amName
+ *  AND whose hierarchy record is currently active. */
 function getSupervisorsUnderAM(amName) {
-  const key  = normName(amName);
-  const seen = {};
+  const today = todayStr();
+  const key   = normName(amName);
+  const seen  = {};
   rawHierarchy.forEach(h => {
     if (normName(h.am_name) !== key) return;
     if (normName(h.role) !== 'supervisor') return;
-    const e = (h.agent_email || '').toLowerCase().trim();
-    const k = e || normName(h.agent_name);
+    // ── Effective-date gate ──────────────────────────────────────
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today < from || today > to) return;
+    // ────────────────────────────────────────────────────────────
+    const e  = (h.agent_email || '').toLowerCase().trim();
+    const k  = e || normName(h.agent_name);
     if (!k) return;
     if (!seen[k]) seen[k] = { name: h.agent_name || '', email: e };
   });
