@@ -1303,6 +1303,81 @@ function getAllTeams() {
   return [...seen].sort((a, b) => a.localeCompare(b));
 }
 
+// ─── ROLE-BASED HIERARCHY HELPERS ─────────────────────────────
+// These look downward from role-holders to find their subordinates,
+// rather than grouping role-holders by their own parent entity.
+
+/** Return all people with role="Supervisor" active today. */
+function getActiveSupervisors() {
+  const today = todayStr();
+  const seen  = {};
+  rawHierarchy.forEach(h => {
+    if (normName(h.role) !== 'supervisor') return;
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today < from || today > to) return;
+    const key = (h.agent_email || '').toLowerCase().trim() || normName(h.agent_name);
+    if (!key) return;
+    if (!seen[key]) seen[key] = {
+      name:  h.agent_name  || '',
+      email: (h.agent_email || '').toLowerCase().trim(),
+      team:  h.team        || '',
+      am:    h.am_name     || ''
+    };
+  });
+  return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Return all people with role="Assistant Manager" active today. */
+function getActiveAMs() {
+  const today = todayStr();
+  const seen  = {};
+  rawHierarchy.forEach(h => {
+    if (normName(h.role) !== 'assistant manager') return;
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today < from || today > to) return;
+    const key = (h.agent_email || '').toLowerCase().trim() || normName(h.agent_name);
+    if (!key) return;
+    if (!seen[key]) seen[key] = {
+      name:  h.agent_name  || '',
+      email: (h.agent_email || '').toLowerCase().trim(),
+      team:  h.team        || ''
+    };
+  });
+  return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Return all specialists (role != Supervisor / AM) whose supervisor_name matches supName. */
+function getSpecialistsUnderSupervisor(supName) {
+  const key  = normName(supName);
+  const seen = {};
+  rawHierarchy.forEach(h => {
+    if (normName(h.supervisor_name) !== key) return;
+    const r = normName(h.role);
+    if (r === 'supervisor' || r === 'assistant manager') return; // skip mgmt rows
+    const e = (h.agent_email || '').toLowerCase().trim();
+    if (!e) return;
+    if (!seen[e]) seen[e] = { email: e, name: h.agent_name || '' };
+  });
+  return Object.values(seen).sort((a, b) => a.email.localeCompare(b.email));
+}
+
+/** Return all supervisors (role=Supervisor) whose am_name matches amName. */
+function getSupervisorsUnderAM(amName) {
+  const key  = normName(amName);
+  const seen = {};
+  rawHierarchy.forEach(h => {
+    if (normName(h.am_name) !== key) return;
+    if (normName(h.role) !== 'supervisor') return;
+    const e = (h.agent_email || '').toLowerCase().trim();
+    const k = e || normName(h.agent_name);
+    if (!k) return;
+    if (!seen[k]) seen[k] = { name: h.agent_name || '', email: e };
+  });
+  return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // Hierarchy lookup by email for today (used by filter dropdowns and grouping)
 function currentHier(agentEmail) {
   return getHierarchyForAgent(agentEmail, todayStr());
@@ -1548,47 +1623,61 @@ function toggleDrillDown(groupKey, btn, labelCollapse, labelExpand) {
 }
 
 function renderSupervisorView() {
-  // Only show people whose hierarchy role is "Supervisor" (case-insensitive).
-  // KPI cards + group aggregations reflect Supervisor-role agents only.
-  const allAgents = filteredAgents(getAllAgents())
-    .filter(a => normName(currentHier(a.email).role) === normName('Supervisor'));
-  const periods   = getTabPeriods('supervisor');
-  renderKPICards('sup-kpi-cards', allAgents);
+  // ── 1. Get supervisors directly from hierarchy (role = "Supervisor") ──────
+  let sups = getActiveSupervisors();
 
-  const wrap = document.getElementById('sup-table-wrap');
-  // Group by supervisor
-  const bySup = {};
-  allAgents.forEach(a => {
-    const sup = currentHier(a.email).supervisor || '(No Supervisor)';
-    if (!bySup[sup]) bySup[sup] = [];
-    bySup[sup].push(a);
-  });
-  const supNames = Object.keys(bySup).sort();
+  // ── 2. Apply filter bar (supervisor / AM / team dropdowns) ───────────────
+  if (activeFilters.supervisor) {
+    const f = activeFilters.supervisor;
+    sups = sups.filter(s => s.email === f || normName(s.name) === normName(f));
+  }
+  if (activeFilters.am) {
+    const f = activeFilters.am;
+    sups = sups.filter(s => normName(s.am) === normName(f) ||
+      (f.includes('@') && nameToEmail[normName(s.am)] === f.toLowerCase().trim()));
+  }
+  if (activeFilters.team) {
+    sups = sups.filter(s => normName(s.team) === normName(activeFilters.team));
+  }
 
-  if (!supNames.length) {
-    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No hierarchy data. Add hierarchy records first.</p></div>`;
+  const periods = getTabPeriods('supervisor');
+  const wrap    = document.getElementById('sup-table-wrap');
+
+  if (!sups.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No Supervisor-role records found. Make sure the "role" column in Hierarchy_Log is set to <strong>Supervisor</strong>.</p></div>`;
+    renderKPICards('sup-kpi-cards', []);
     return;
   }
 
+  // ── 3. For each supervisor, look downward to their specialist agents ──────
+  const supRows = sups.map(sup => {
+    let agents = getSpecialistsUnderSupervisor(sup.name);
+    // Optional: filter to a specific agent
+    if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
+    return { sup, agents };
+  }).filter(r => !activeFilters.agent || r.agents.length); // hide sups with 0 agents when agent filter active
+
+  // Aggregate all visible specialist emails for KPI cards
+  const allSpecialistEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
+  renderKPICards('sup-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
+
+  // ── 4. Build table ────────────────────────────────────────────────────────
   let html = `<table class="perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Supervisor</th>
     <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
-  html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th>
-  </tr><tr>`;
+  html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
   periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
   html += `</tr></thead><tbody>`;
 
-  supNames.forEach((sup, si) => {
-    const agents = bySup[sup];
+  supRows.forEach(({ sup, agents }, si) => {
     const emails = agents.map(a => a.email);
     const gKey   = `sup-${si}`;
 
-    // Supervisor summary row
-    const supEmail = nameToEmail[normName(sup)] || '';
+    // Supervisor summary row — display email if available, else name
     html += `<tr><td class="sticky-col col-agent">
-        <span style="font-weight:700">${escHtml(supEmail || sup)}</span>
-        ${supEmail ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup)}</span>` : ''}
+        <span style="font-weight:700">${escHtml(sup.email || sup.name)}</span>
+        ${sup.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup.name)}</span>` : ''}
       </td>
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agents.length}</td>`;
     periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end)); });
@@ -1596,8 +1685,8 @@ function renderSupervisorView() {
       <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Agents')">▼ Agents</button>
     </td></tr>`;
 
-    // Hidden agent drill-down rows (emails)
-    agents.slice().sort((a,b)=>a.email.localeCompare(b.email)).forEach(agent => {
+    // Hidden agent drill-down rows
+    agents.forEach(agent => {
       html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
         <td class="sticky-col col-agent" style="padding-left:26px;font-weight:400;font-size:12px;color:#475CC7">${escHtml(agent.email)}</td>
         <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
@@ -1606,17 +1695,17 @@ function renderSupervisorView() {
     });
   });
 
-  // Footer
+  // Footer — totals across all visible specialist agents
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TEAM TOTAL</td>
-    <td style="text-align:center;font-weight:700;color:#AA0061">${allAgents.length}</td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAgents.map(a=>a.email), p.start, p.end)); });
+    <td style="text-align:center;font-weight:700;color:#AA0061">${allSpecialistEmails.length}</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allSpecialistEmails, p.start, p.end)); });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
   const supModeLabel = tabPeriodMode.supervisor === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('sup-table-subtitle').textContent =
-    `${supModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${supNames.length} supervisor${supNames.length!==1?'s':''}`;
+    `${supModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${supRows.length} supervisor${supRows.length !== 1 ? 's' : ''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1624,73 +1713,91 @@ function renderSupervisorView() {
 // ═══════════════════════════════════════════════════════════
 
 function renderAMView() {
-  // Only show people whose hierarchy role is "Assistant Manager" (case-insensitive).
-  const allAgents = filteredAgents(getAllAgents())
-    .filter(a => normName(currentHier(a.email).role) === normName('Assistant Manager'));
-  const periods   = getTabPeriods('am');
-  renderKPICards('am-kpi-cards', allAgents);
+  // ── 1. Get AMs directly from hierarchy (role = "Assistant Manager") ───────
+  let ams = getActiveAMs();
 
-  const wrap = document.getElementById('am-table-wrap');
-  // Group AM → supervisor → agents
-  const byAM = {};
-  allAgents.forEach(a => {
-    const hier = currentHier(a.email);
-    const am   = hier.am  || '(No AM)';
-    const sup  = hier.supervisor || '(No Supervisor)';
-    if (!byAM[am])      byAM[am]      = {};
-    if (!byAM[am][sup]) byAM[am][sup] = [];
-    byAM[am][sup].push(a);
-  });
-  const amNames = Object.keys(byAM).sort();
+  // ── 2. Apply filter bar (AM / team dropdowns) ─────────────────────────────
+  if (activeFilters.am) {
+    const f = activeFilters.am;
+    ams = ams.filter(a => a.email === f || normName(a.name) === normName(f));
+  }
+  if (activeFilters.team) {
+    ams = ams.filter(a => normName(a.team) === normName(activeFilters.team));
+  }
 
-  if (!amNames.length) {
-    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No hierarchy data. Add hierarchy records first.</p></div>`;
+  const periods = getTabPeriods('am');
+  const wrap    = document.getElementById('am-table-wrap');
+
+  if (!ams.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No Assistant Manager-role records found. Make sure the "role" column in Hierarchy_Log is set to <strong>Assistant Manager</strong>.</p></div>`;
+    renderKPICards('am-kpi-cards', []);
     return;
   }
 
+  // ── 3. For each AM → look downward: supervisors → specialists ─────────────
+  const amRows = ams.map(am => {
+    let sups = getSupervisorsUnderAM(am.name);
+    // Apply supervisor filter
+    if (activeFilters.supervisor) {
+      const f = activeFilters.supervisor;
+      sups = sups.filter(s => s.email === f || normName(s.name) === normName(f));
+    }
+    const supRows = sups.map(sup => {
+      let agents = getSpecialistsUnderSupervisor(sup.name);
+      if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
+      return { sup, agents };
+    }).filter(r => !activeFilters.agent || r.agents.length);
+    return { am, supRows };
+  }).filter(r => !activeFilters.supervisor || r.supRows.length);
+
+  // Aggregate all visible specialist emails for KPI cards
+  const allSpecialistEmails = [...new Set(
+    amRows.flatMap(r => r.supRows.flatMap(s => s.agents.map(a => a.email)))
+  )];
+  renderKPICards('am-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
+
+  // ── 4. Build table ────────────────────────────────────────────────────────
   let html = `<table class="perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">A.Manager</th>
     <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
-  html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th>
-  </tr><tr>`;
+  html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
   periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
   html += `</tr></thead><tbody>`;
 
-  amNames.forEach((am, ai) => {
-    const supMap   = byAM[am];
-    const allAMAgents = Object.values(supMap).flat();
-    const supNames = Object.keys(supMap).sort();
-    const gKey     = `am-${ai}`;
+  amRows.forEach(({ am, supRows }, ai) => {
+    const allAMEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
+    const gKey        = `am-${ai}`;
 
-    // AM summary row
-    const amEmail = nameToEmail[normName(am)] || '';
+    // AM summary row — display email if available, else name
     html += `<tr><td class="sticky-col col-agent">
-        <span style="font-weight:700">${escHtml(amEmail || am)}</span>
-        ${amEmail ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(am)}</span>` : ''}
+        <span style="font-weight:700">${escHtml(am.email || am.name)}</span>
+        ${am.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(am.name)}</span>` : ''}
       </td>
-      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${allAMAgents.length}</td>`;
-    periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAMAgents.map(a=>a.email), p.start, p.end)); });
+      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${allAMEmails.length}</td>`;
+    periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAMEmails, p.start, p.end)); });
     html += `<td style="text-align:center">
       <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Supervisors')">▼ Supervisors</button>
     </td></tr>`;
 
     // Hidden supervisor drill-down rows
-    supNames.forEach((sup, si) => {
-      const supAgents = supMap[sup];
-      const supEmails = supAgents.map(a => a.email);
+    supRows.forEach(({ sup, agents }, si) => {
+      const supEmails = agents.map(a => a.email);
       const supGKey   = `am-${ai}-sup-${si}`;
 
       html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
-        <td class="sticky-col col-agent" style="padding-left:26px;font-size:13px;color:#475CC7;font-weight:600">${escHtml(sup)}</td>
-        <td style="text-align:center;color:#64748B;font-size:12px">${supAgents.length}</td>`;
+        <td class="sticky-col col-agent" style="padding-left:26px;font-size:13px;color:#475CC7;font-weight:600">
+          ${escHtml(sup.email || sup.name)}
+          ${sup.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup.name)}</span>` : ''}
+        </td>
+        <td style="text-align:center;color:#64748B;font-size:12px">${agents.length}</td>`;
       periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(supEmails, p.start, p.end)); });
       html += `<td style="text-align:center">
         <button class="btn-expand" onclick="toggleDrillDown('${supGKey}',this,'▲ Hide','▼ Agents')" style="font-size:10px;padding:2px 8px">▼ Agents</button>
       </td></tr>`;
 
       // Hidden agent rows under this supervisor
-      supAgents.slice().sort((a,b)=>a.email.localeCompare(b.email)).forEach(agent => {
+      agents.forEach(agent => {
         html += `<tr class="drill-row" data-group="${supGKey}" style="display:none">
           <td class="sticky-col col-agent" style="padding-left:48px;font-weight:400;font-size:11px;color:#94A3B8">${escHtml(agent.email)}</td>
           <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
@@ -1700,17 +1807,17 @@ function renderAMView() {
     });
   });
 
-  // Footer
+  // Footer — totals across all visible specialist agents
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TOTAL</td>
-    <td style="text-align:center;font-weight:700;color:#AA0061">${allAgents.length}</td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAgents.map(a=>a.email), p.start, p.end)); });
+    <td style="text-align:center;font-weight:700;color:#AA0061">${allSpecialistEmails.length}</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allSpecialistEmails, p.start, p.end)); });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
   const amModeLabel = tabPeriodMode.am === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('am-table-subtitle').textContent =
-    `${amModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${amNames.length} A.Manager${amNames.length!==1?'s':''}`;
+    `${amModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${amRows.length} A.Manager${amRows.length !== 1 ? 's' : ''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
