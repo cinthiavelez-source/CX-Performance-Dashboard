@@ -1471,7 +1471,9 @@ function periodHeaders(periods, extraColBefore, extraColAfter) {
 // ═══════════════════════════════════════════════════════════
 
 function renderAgentView() {
-  const agents  = filteredAgents(getAllAgents());
+  // Only show people whose hierarchy role is "Specialist" (case-insensitive)
+  const agents  = filteredAgents(getAllAgents())
+    .filter(a => normName(currentHier(a.email).role) === normName('Specialist'));
   const periods = getTabPeriods('agent');   // always last 3 WoW or MoM per tab toggle
   renderKPICards('agent-kpi-cards', agents);
 
@@ -1546,7 +1548,10 @@ function toggleDrillDown(groupKey, btn, labelCollapse, labelExpand) {
 }
 
 function renderSupervisorView() {
-  const allAgents = filteredAgents(getAllAgents());
+  // Only show people whose hierarchy role is "Supervisor" (case-insensitive).
+  // KPI cards + group aggregations reflect Supervisor-role agents only.
+  const allAgents = filteredAgents(getAllAgents())
+    .filter(a => normName(currentHier(a.email).role) === normName('Supervisor'));
   const periods   = getTabPeriods('supervisor');
   renderKPICards('sup-kpi-cards', allAgents);
 
@@ -1619,7 +1624,9 @@ function renderSupervisorView() {
 // ═══════════════════════════════════════════════════════════
 
 function renderAMView() {
-  const allAgents = filteredAgents(getAllAgents());
+  // Only show people whose hierarchy role is "Assistant Manager" (case-insensitive).
+  const allAgents = filteredAgents(getAllAgents())
+    .filter(a => normName(currentHier(a.email).role) === normName('Assistant Manager'));
   const periods   = getTabPeriods('am');
   renderKPICards('am-kpi-cards', allAgents);
 
