@@ -1022,6 +1022,33 @@ function fmtWeekLabel(sundayStr) {
   return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
 }
 
+// Matches Google Sheets WEEKNUM(date, 1) — week starts Sunday, week 1 = week containing Jan 1
+function weekNum(dateStr) {
+  const d    = new Date(dateStr + 'T12:00:00');
+  const jan1 = new Date(d.getFullYear(), 0, 1);
+  const dayOfYear = Math.floor((d - jan1) / 86400000) + 1; // 1-based
+  return Math.ceil((dayOfYear + jan1.getDay()) / 7);
+}
+
+// Formats a Sun–Sat date range as "May 12–18" or "May 26–Jun 1" (cross-month)
+function fmtWkRange(sunStr, satStr) {
+  const sun = new Date(sunStr + 'T12:00:00');
+  const sat = new Date(satStr + 'T12:00:00');
+  const sunLabel = sun.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  const satLabel = sun.getMonth() === sat.getMonth()
+    ? String(sat.getDate())
+    : sat.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  return `${sunLabel}–${satLabel}`;
+}
+
+// Builds the full column header label for a WoW period
+// e.g. "Wk 21 · May 19–25"  or  "Wk 21 · WTD May 19"
+function fmtWowLabel(sunStr, satStr, isCurrentWk) {
+  const wn = weekNum(sunStr);
+  if (isCurrentWk) return `Wk ${wn} · WTD ${fmtWeekLabel(sunStr)}`;
+  return `Wk ${wn} · ${fmtWkRange(sunStr, satStr)}`;
+}
+
 // Returns array of up to 3 week periods (Sun–Sat) based on active period/filters
 function getActivePeriods() {
   const today = todayStr();
@@ -1034,7 +1061,7 @@ function getActivePeriods() {
       const sat    = getWeekEndOf(sun);         // Saturday
       const isCurrentWk = (i === 0);
       periods.push({
-        label: isCurrentWk ? `WTD ${fmtWeekLabel(sun)}` : `Wk ${fmtWeekLabel(sun)}`,
+        label: fmtWowLabel(sun, sat, isCurrentWk),
         start: sun,
         end:   isCurrentWk ? today : sat,
         wk:    i === 2 ? 'w1' : i === 1 ? 'w2' : 'w3'
@@ -1045,7 +1072,8 @@ function getActivePeriods() {
 
   if (activePeriod === '1w') {
     const sun = getWeekStartOf(today);
-    return [{ label:`WTD ${fmtWeekLabel(sun)}`, start:sun, end:today, wk:'wc' }];
+    const sat = getWeekEndOf(sun);
+    return [{ label: fmtWowLabel(sun, sat, true), start:sun, end:today, wk:'wc' }];
   }
 
   if (activePeriod === '1m') {
@@ -1117,9 +1145,10 @@ function getTabPeriods(tab) {
     const ref = addDays(today, -i * 7);
     const sun = getWeekStartOf(ref);
     const sat = getWeekEndOf(sun);
+    const isCurrentWk = (i === 0);
     return {
-      label: i === 0 ? `WTD ${fmtWeekLabel(sun)}` : `Wk ${fmtWeekLabel(sun)}`,
-      start: sun, end: i === 0 ? today : sat,
+      label: fmtWowLabel(sun, sat, isCurrentWk),
+      start: sun, end: isCurrentWk ? today : sat,
       wk: wkCls[idx]
     };
   });
@@ -2165,7 +2194,7 @@ function renderGeneralView() {
     const sat   = getWeekEndOf(sun);
     const end   = (i === 0) ? today : sat;
     wowWeeks.push({
-      label: i === 0 ? `WTD ${fmtWeekLabel(sun)}` : fmtWeekLabel(sun),
+      label: fmtWowLabel(sun, sat, i === 0),
       start: sun, end,
       kpis: computeGroupKPIs(emails, sun, end)
     });
