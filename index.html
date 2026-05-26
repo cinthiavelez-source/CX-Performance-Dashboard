@@ -270,9 +270,29 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 @media (max-width: 768px) { .main { padding: 1rem; } .filter-bar { padding: 10px 1rem; } }
 
 /* ─── THRESHOLD ALERT ROW ────────────────────────────────── */
-/* rows below any threshold get a red left border + pale tint  */
 tr[style*="border-left:3px solid #EF4444"] td { background: #FFF8F8 !important; }
 tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !important; }
+
+/* ─── TAB SEARCH BOX ─────────────────────────────────────── */
+.tab-search { display:flex; align-items:center; gap:6px;
+  border:1px solid #CBD5E1; border-radius:7px; padding:4px 10px;
+  background:#F8FAFC; transition: border-color .15s; }
+.tab-search:focus-within { border-color:#AA0061; }
+.tab-search input { border:none; background:transparent; outline:none;
+  font-size:13px; color:#1E293B; width:180px; }
+.tab-search input::placeholder { color:#94A3B8; }
+
+/* ─── RANK BADGE ─────────────────────────────────────────── */
+.rank-badge { display:inline-block; min-width:22px; text-align:center;
+  font-size:11px; font-weight:700; padding:1px 5px; border-radius:4px; }
+.rank-badge.r-top  { background:#DCFCE7; color:#166534; }
+.rank-badge.r-mid  { background:#F1F5F9; color:#475569; }
+.rank-badge.r-low  { background:#FEE2E2; color:#991B1B; }
+
+/* ─── SORTABLE COLUMN HEADER ─────────────────────────────── */
+.perf-table th.sortable { cursor:pointer; user-select:none; }
+.perf-table th.sortable:hover { filter:brightness(1.12); }
+.sort-arrow { font-size:9px; margin-left:3px; opacity:.6; }
 
 /* ─── DRILL-DOWN ROWS & EXPAND BUTTON ────────────────────── */
 .btn-expand { background: #475CC7; color: #fff; border-radius: 5px;
@@ -420,37 +440,52 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 </div>
 
 <!-- ─── FILTER BAR ────────────────────────────────────────── -->
-<div class="filter-bar">
-  <label>Agent
-    <select id="f-agent"><option value="">All Agents</option></select>
-  </label>
-  <label>Supervisor
-    <select id="f-supervisor"><option value="">All Supervisors</option></select>
-  </label>
-  <label>Asst. Manager
-    <select id="f-am"><option value="">All A.Managers</option></select>
-  </label>
-  <label>Team
-    <select id="f-team"><option value="">All Teams</option></select>
-  </label>
-  <div class="filter-sep"></div>
-  <label>Period
-    <select id="f-period" onchange="onPeriodChange()">
-      <option value="3w">Last 3 Weeks</option>
-      <option value="1w">This Week</option>
-      <option value="1m">This Month</option>
-      <option value="lm">Last Month</option>
-      <option value="q">This Quarter</option>
-      <option value="custom">Custom Range</option>
-    </select>
-  </label>
-  <div id="f-custom-range" style="display:none;gap:8px;align-items:center;">
-    <label>From <input type="date" id="f-date-from" onchange="onDateInput()"></label>
-    <label>To <input type="date" id="f-date-to" onchange="onDateInput()"></label>
+<div id="filter-bar-wrapper">
+  <div class="filter-bar" id="filter-bar-inner">
+    <label>Agent
+      <select id="f-agent"><option value="">All Agents</option></select>
+    </label>
+    <label>Supervisor
+      <select id="f-supervisor"><option value="">All Supervisors</option></select>
+    </label>
+    <label>Asst. Manager
+      <select id="f-am"><option value="">All A.Managers</option></select>
+    </label>
+    <label>Team
+      <select id="f-team"><option value="">All Teams</option></select>
+    </label>
+    <div class="filter-sep"></div>
+    <label>Period
+      <select id="f-period" onchange="onPeriodChange()">
+        <option value="3w">Last 3 Weeks</option>
+        <option value="1w">This Week</option>
+        <option value="1m">This Month</option>
+        <option value="lm">Last Month</option>
+        <option value="q">This Quarter</option>
+        <option value="custom">Custom Range</option>
+      </select>
+    </label>
+    <div id="f-custom-range" style="display:none;gap:8px;align-items:center;">
+      <label>From <input type="date" id="f-date-from" onchange="onDateInput()"></label>
+      <label>To <input type="date" id="f-date-to" onchange="onDateInput()"></label>
+    </div>
+    <button class="btn-apply" onclick="applyFilters()">Apply</button>
+    <button class="btn-reset" onclick="resetFilters()">Reset</button>
+    <span class="period-badge" id="period-badge">Last 3 Weeks</span>
+    <button id="filter-collapse-btn" onclick="toggleFilterBar()"
+      style="margin-left:auto;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:6px;
+             padding:4px 10px;font-size:11px;font-weight:600;color:#64748B;white-space:nowrap"
+      title="Collapse filter bar">▲ Hide filters</button>
   </div>
-  <button class="btn-apply" onclick="applyFilters()">Apply</button>
-  <button class="btn-reset" onclick="resetFilters()">Reset</button>
-  <span class="period-badge" id="period-badge">Last 3 Weeks</span>
+  <!-- Collapsed strip — shows only the period badge + expand button -->
+  <div id="filter-bar-collapsed" style="display:none;background:#fff;border-bottom:1px solid #E2E8F0;
+       padding:6px 1.5rem;display:none;align-items:center;gap:10px;">
+    <span style="font-size:12px;color:#64748B;font-weight:600">Filters hidden</span>
+    <span class="period-badge" id="period-badge-mini">Last 3 Weeks</span>
+    <button onclick="toggleFilterBar()"
+      style="background:#AA0061;color:#fff;border:none;border-radius:6px;
+             padding:4px 12px;font-size:11px;font-weight:600">▼ Show filters</button>
+  </div>
 </div>
 
 <!-- ─── MAIN ─────────────────────────────────────────────── -->
@@ -466,6 +501,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <p id="agent-table-subtitle">Last 3 weeks · all 4 KPIs per agent</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="agent-search-box"></div>
           <div id="agent-mode-pills" style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="agent-mode-wow" onclick="setTabMode('agent','wow')"
@@ -493,6 +529,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <p id="sup-table-subtitle">Last 3 weeks · select a supervisor to focus</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="supervisor-search-box"></div>
           <div style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="supervisor-mode-wow" onclick="setTabMode('supervisor','wow')"
@@ -520,6 +557,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <p id="am-table-subtitle">Last 3 weeks · select an AM to focus</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="am-search-box"></div>
           <div style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="am-mode-wow" onclick="setTabMode('am','wow')"
@@ -809,8 +847,18 @@ let activeFilters = { agent:'', supervisor:'', am:'', team:'', dateFrom:'', date
 let activePeriod  = '3w';
 
 // ─── PER-TAB WoW/MoM TOGGLE STATE ───────────────────────────
-// Each view tab tracks whether to show last-3 weeks or last-3 months independently.
 let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow' };
+
+// ─── PER-TAB SEARCH STATE ────────────────────────────────────
+let tabSearch = { agent: '', supervisor: '', am: '' };
+
+// ─── PER-TAB SORT STATE ──────────────────────────────────────
+// col: 'tph'|'aht'|'csat'|'iqa'|null   dir: 1=asc / -1=desc
+let tabSort = {
+  agent:      { col: null, dir: -1 },
+  supervisor: { col: null, dir: -1 },
+  am:         { col: null, dir: -1 }
+};
 
 // ─── CHART.JS INSTANCES (destroyed & recreated on render) ────
 let chartInstances = {};
@@ -1023,9 +1071,16 @@ function getActivePeriods() {
 }
 
 // ─── PER-TAB PERIOD HELPERS ───────────────────────────────
-// Returns exactly 3 period objects regardless of the global filter.
-// mode 'wow' → last 3 Sun–Sat weeks  |  'mom' → last 3 calendar months
+// When the global PERIOD filter is anything other than the default '3w',
+// the tab's WoW/MoM toggle is overridden and getActivePeriods() is used.
+// This ensures table columns always match whatever the filter bar shows.
 function getTabPeriods(tab) {
+  // Global period override — any non-default selection wins
+  if (activePeriod && activePeriod !== '3w') {
+    return getActivePeriods();
+  }
+
+  // Default: use per-tab WoW/MoM toggle (always last 3 cycles)
   const mode  = tabPeriodMode[tab] || 'wow';
   const today = todayStr();
   const wkCls = ['w1', 'w2', 'wc'];  // header CSS classes per position
@@ -1076,8 +1131,21 @@ function setTabMode(tab, mode) {
   if (tab === 'cr')         renderContactReasonView();
 }
 
-// Renders the WoW/MoM pill-toggle HTML (used inside each tab's table-card-header)
+// Renders the WoW/MoM pill-toggle HTML (used inside each tab's table-card-header).
+// When the global PERIOD filter is active, the toggle is replaced by a "period override" badge.
 function tabModePills(tab) {
+  // Global period override — show badge instead of toggle
+  if (activePeriod && activePeriod !== '3w') {
+    const periodLabels = { '1w':'This Week', '1m':'This Month', 'lm':'Last Month', 'q':'QTD', 'custom':'Custom Range' };
+    const label = periodLabels[activePeriod] || activePeriod;
+    return `<div style="display:flex;gap:4px;align-items:center">
+      <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">Period:</span>
+      <span style="background:#FFF0F7;color:#AA0061;border:1px solid #F9A8D4;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;white-space:nowrap">📅 ${label}</span>
+      <span style="font-size:10px;color:#94A3B8;white-space:nowrap">(set in filter bar)</span>
+    </div>`;
+  }
+
+  // Default: WoW / MoM toggle pills
   const m = tabPeriodMode[tab] || 'wow';
   const pill = (key, label) => {
     const active = key === m;
@@ -1486,33 +1554,57 @@ function escHtml(s) {
 // ═══════════════════════════════════════════════════════════
 
 function renderKPICards(containerId, agents) {
-  // agents is [{email, name}] — extract emails for group computation
-  const emails = agents.map(a => a.email);
-  const periods = getActivePeriods();
-  const latestPeriod = periods[periods.length-1];
-  const kpis = computeGroupKPIs(emails, latestPeriod.start, latestPeriod.end);
+  const emails       = agents.map(a => a.email);
+  const periods      = getActivePeriods();
+  const latest       = periods[periods.length - 1];
+  const kpis         = computeGroupKPIs(emails, latest.start, latest.end);
+
+  // Prior period for delta: one period before the latest
+  let prior = null;
+  if (periods.length >= 2) {
+    prior = computeGroupKPIs(emails, periods[periods.length - 2].start, periods[periods.length - 2].end);
+  } else {
+    // If only 1 period shown, compute the preceding equivalent range
+    const dur   = Math.max(1, Math.round((new Date(latest.end) - new Date(latest.start)) / 86400000));
+    const pEnd  = addDays(latest.start, -1);
+    const pStart= addDays(pEnd, -(dur - 1));
+    prior = computeGroupKPIs(emails, pStart, pEnd);
+  }
+
+  const dTPH  = prior ? fmtDelta(kpis.tph,     prior.tph,     false, 'tph') : '';
+  const dAHT  = prior ? fmtDelta(kpis.ahtSecs, prior.ahtSecs, true,  'mm')  : '';
+  const dCSAT = prior ? fmtDelta(kpis.csat,    prior.csat,    false, 'pp')  : '';
+  const dIQA  = prior ? fmtDelta(kpis.iqa,     prior.iqa,     false, 'pp')  : '';
 
   const el = document.getElementById(containerId);
   if (!el) return;
   el.innerHTML = `
     <div class="kpi-card blue">
       <div class="kpi-label">⚡ TPH (Latest Period)</div>
-      <div class="kpi-value">${fmtTPH(kpis.tph)}</div>
+      <div class="kpi-value" style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px">
+        ${fmtTPH(kpis.tph)}${dTPH}
+      </div>
       <div class="kpi-sub">Tickets per hour · ${kpis.totalTickets} tickets</div>
     </div>
     <div class="kpi-card yellow">
       <div class="kpi-label">⏱ AHT (Latest Period)</div>
-      <div class="kpi-value">${fmtMMSS(kpis.ahtSecs)}</div>
+      <div class="kpi-value" style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px">
+        ${fmtMMSS(kpis.ahtSecs)}${dAHT}
+      </div>
       <div class="kpi-sub">Avg handle time per ticket</div>
     </div>
     <div class="kpi-card green">
       <div class="kpi-label">😊 CSAT (Latest Period)</div>
-      <div class="kpi-value">${fmtPct(kpis.csat)}</div>
+      <div class="kpi-value" style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px">
+        ${fmtPct(kpis.csat)}${dCSAT}
+      </div>
       <div class="kpi-sub">Good / (Good + Bad) surveys</div>
     </div>
     <div class="kpi-card purple">
       <div class="kpi-label">🎯 IQA (Latest Period)</div>
-      <div class="kpi-value">${fmtPct(kpis.iqa)}</div>
+      <div class="kpi-value" style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px">
+        ${fmtPct(kpis.iqa)}${dIQA}
+      </div>
       <div class="kpi-sub">Average quality review score</div>
     </div>
   `;
@@ -1534,13 +1626,119 @@ function kpiCells(k, allTPH, allAHT, allCSAT, allIQA) {
     <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)      : '<span style="color:#CBD5E1">—</span>'}</td>`;
 }
 
-function groupKpiCells(g) {
-  return `
-    <td class="cell-kpi">${g.tph     !== null ? fmtTPH(g.tph)      : '—'}</td>
-    <td class="cell-kpi">${g.ahtSecs !== null ? fmtMMSS(g.ahtSecs) : '—'}</td>
-    <td class="cell-kpi">${g.csat    !== null ? fmtPct(g.csat)     : '—'}</td>
-    <td class="cell-kpi">${g.iqa     !== null ? fmtPct(g.iqa)      : '—'}</td>`;
+// Absolute-threshold coloring for group rows (supervisor/AM aggregates)
+// Thresholds: CSAT ≥80 good / 70-79 warn / <70 bad  |  IQA ≥90 / 80-89 / <80
+// TPH ≥5 good / 3-4.9 warn / <3 bad  |  AHT ≤8m good / 8-10m warn / >10m bad
+function absKpiClass(metric, value) {
+  if (value === null || value === undefined) return '';
+  if (metric === 'csat' || metric === 'iqa') {
+    const tGood = metric === 'csat' ? 80 : 90;
+    const tWarn = metric === 'csat' ? 70 : 80;
+    if (value >= tGood) return 'good';
+    if (value >= tWarn) return 'warn';
+    return 'bad';
+  }
+  if (metric === 'tph') {
+    if (value >= 5)  return 'good';
+    if (value >= 3)  return 'warn';
+    return 'bad';
+  }
+  if (metric === 'aht') {
+    if (value <= 480)  return 'good'; // ≤ 8 min
+    if (value <= 600)  return 'warn'; // ≤ 10 min
+    return 'bad';
+  }
+  return '';
 }
+
+function groupKpiCells(g) {
+  const tphCls  = absKpiClass('tph',  g.tph);
+  const ahtCls  = absKpiClass('aht',  g.ahtSecs);
+  const csatCls = absKpiClass('csat', g.csat);
+  const iqaCls  = absKpiClass('iqa',  g.iqa);
+  return `
+    <td class="cell-kpi ${tphCls}">${g.tph     !== null ? fmtTPH(g.tph)      : '—'}</td>
+    <td class="cell-kpi ${ahtCls}">${g.ahtSecs !== null ? fmtMMSS(g.ahtSecs) : '—'}</td>
+    <td class="cell-kpi ${csatCls}">${g.csat   !== null ? fmtPct(g.csat)     : '—'}</td>
+    <td class="cell-kpi ${iqaCls}">${g.iqa     !== null ? fmtPct(g.iqa)      : '—'}</td>`;
+}
+
+// ─── DELTA BADGE HELPERS ─────────────────────────────────────
+function fmtDelta(curr, prev, lowerIsBetter, unit) {
+  if (curr === null || prev === null) return '';
+  const diff = curr - prev;
+  const good = lowerIsBetter ? diff < 0 : diff > 0;
+  const col  = good ? '#166534' : (diff === 0 ? '#64748B' : '#991B1B');
+  const bg   = good ? '#DCFCE7' : (diff === 0 ? '#F1F5F9' : '#FEE2E2');
+  const sign = diff > 0 ? '+' : '';
+  const label = unit === 'pp' ? `${sign}${diff.toFixed(1)}pp` :
+                unit === 'tph' ? `${sign}${diff.toFixed(1)}` :
+                unit === 'mm' ? (diff > 0 ? '+' : '') + fmtMMSS(Math.abs(diff)) * (diff < 0 ? -1 : 1) :
+                `${sign}${diff.toFixed(1)}`;
+  return `<span style="display:inline-block;background:${bg};color:${col};border-radius:4px;
+    padding:1px 6px;font-size:11px;font-weight:700;margin-left:6px">${good ? '▲' : (diff === 0 ? '●' : '▼')} ${label}</span>`;
+}
+
+// ─── COLLAPSIBLE FILTER BAR ──────────────────────────────────
+function toggleFilterBar() {
+  const inner     = document.getElementById('filter-bar-inner');
+  const collapsed = document.getElementById('filter-bar-collapsed');
+  const hidden    = inner.style.display === 'none';
+  inner.style.display     = hidden ? '' : 'none';
+  collapsed.style.display = hidden ? 'none' : 'flex';
+}
+
+// ─── TAB SEARCH HELPER ───────────────────────────────────────
+function tabSearchBox(tab, placeholder) {
+  const val = tabSearch[tab] || '';
+  return `<div class="tab-search">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" placeholder="${placeholder}" value="${escHtml(val)}"
+      oninput="tabSearch['${tab}']=this.value; render${tab.charAt(0).toUpperCase()+tab.slice(1)}View()"
+      style="font-size:13px">
+    ${val ? `<button onclick="tabSearch['${tab}']=''; render${tab.charAt(0).toUpperCase()+tab.slice(1)}View()"
+      style="background:none;border:none;color:#94A3B8;padding:0;font-size:14px;line-height:1;cursor:pointer" title="Clear">✕</button>` : ''}
+  </div>`;
+}
+
+// ─── SORT HELPERS ────────────────────────────────────────────
+function sortKpiRows(rows, tab, kpiGetter) {
+  const s = tabSort[tab];
+  if (!s.col) return rows;
+  return [...rows].sort((a, b) => {
+    const va = kpiGetter(a, s.col);
+    const vb = kpiGetter(b, s.col);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    return (va - vb) * s.dir;
+  });
+}
+
+function sortArrow(tab, col) {
+  const s = tabSort[tab];
+  if (s.col !== col) return `<span class="sort-arrow">⇅</span>`;
+  return `<span class="sort-arrow">${s.dir === -1 ? '▼' : '▲'}</span>`;
+}
+
+function onSortClick(tab, col) {
+  const s = tabSort[tab];
+  if (s.col === col) s.dir *= -1;
+  else { s.col = col; s.dir = -1; }
+  if (tab === 'agent')      renderAgentView();
+  if (tab === 'supervisor') renderSupervisorView();
+  if (tab === 'am')         renderAMView();
+}
+
+// ─── RANK BADGE HELPER ───────────────────────────────────────
+function rankBadge(rank, total) {
+  const pct = rank / total;
+  const cls = pct <= 0.25 ? 'r-top' : pct <= 0.75 ? 'r-mid' : 'r-low';
+  return `<span class="rank-badge ${cls}">#${rank}</span>`;
+}
+
+// ─── PERIOD-BADGE SYNC (also updates mini badge) ─────────────
+const _origUpdatePeriodBadge = typeof updatePeriodBadge !== 'undefined' ? updatePeriodBadge : null;
 
 function periodHeaders(periods, extraColBefore, extraColAfter) {
   let h = '<tr>';
@@ -1584,18 +1782,52 @@ function renderAgentView() {
   const allCSAT = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].csat).filter(v=>v!==null));
   const allIQA  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].iqa).filter(v=>v!==null));
 
+  // ── Inject search box into header ────────────────────────────
+  const sbEl = document.getElementById('agent-search-box');
+  if (sbEl) sbEl.innerHTML = tabSearchBox('agent', 'Search agents…');
+
+  // ── Search filter ────────────────────────────────────────────
+  const sq = (tabSearch.agent || '').toLowerCase().trim();
+  let displayAgents = sq
+    ? agents.filter(a => a.email.toLowerCase().includes(sq) || (a.name||'').toLowerCase().includes(sq))
+    : agents;
+
+  // ── Rank by CSAT in latest period (computed before sorting) ──
+  const latestPi  = periods.length - 1;
+  const csatForRank = displayAgents
+    .map(a => ({ email: a.email, csat: allKPIs[a.email][latestPi].csat }))
+    .sort((a, b) => (b.csat ?? -1) - (a.csat ?? -1));
+  const rankMap = {};
+  csatForRank.forEach((r, i) => { rankMap[r.email] = i + 1; });
+
+  // ── Sort ────────────────────────────────────────────────────
+  displayAgents = sortKpiRows(displayAgents, 'agent', (a, col) => {
+    const k = allKPIs[a.email][latestPi];
+    if (col === 'tph')  return k.tph;
+    if (col === 'aht')  return k.ahtSecs;
+    if (col === 'csat') return k.csat;
+    if (col === 'iqa')  return k.iqa;
+    return null;
+  });
+
+  const sortTh = (col, label) =>
+    `<th class="sortable" onclick="onSortClick('agent','${col}')" style="cursor:pointer">${label}${sortArrow('agent',col)}</th>`;
+
   let html = `<table class="perf-table" id="agent-perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent Email</th>
+    <th class="week-hdr" style="background:#1E293B;text-align:center;white-space:nowrap" rowspan="2">#</th>
     <th class="week-hdr" style="background:#334155;text-align:center;white-space:nowrap" rowspan="2">Team</th>
     <th class="week-hdr" style="background:#334155;text-align:center;white-space:nowrap" rowspan="2">Role</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `</tr><tr>`;
-  periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
+  periods.forEach(() => {
+    html += `${sortTh('tph','TPH')}${sortTh('aht','AHT')}${sortTh('csat','CSAT')}${sortTh('iqa','IQA')}`;
+  });
   html += `</tr></thead><tbody>`;
 
-  agents.forEach(agent => {
-    const lastK   = allKPIs[agent.email][periods.length - 1];
-    const warnRow = thresholdRowStyle(lastK);
+  displayAgents.forEach(agent => {
+    const lastK     = allKPIs[agent.email][periods.length - 1];
+    const warnRow   = thresholdRowStyle(lastK);
     const agentHier = currentHier(agent.email);
     const agentTeam = agentHier.team || '';
     const agentRole = agentHier.role || '';
@@ -1605,7 +1837,10 @@ function renderAgentView() {
     const roleBadge = agentRole
       ? `<span style="background:#FFF7ED;color:#C2410C;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600;white-space:nowrap">${escHtml(agentRole)}</span>`
       : `<span style="color:#CBD5E1;font-size:11px">—</span>`;
-    html += `<tr${warnRow}><td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>
+    const rank = rankMap[agent.email];
+    html += `<tr${warnRow}>
+      <td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>
+      <td style="text-align:center;white-space:nowrap">${rank ? rankBadge(rank, displayAgents.length) : '—'}</td>
       <td style="text-align:center">${teamBadge}</td>
       <td style="text-align:center">${roleBadge}</td>`;
     periods.forEach((_,pi) => {
@@ -1615,14 +1850,16 @@ function renderAgentView() {
   });
 
   // Footer
-  html += `</tbody><tfoot><tr><td class="sticky-col col-agent">TEAM TOTAL / AVG</td><td></td><td></td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(agents.map(a=>a.email), p.start, p.end)); });
+  html += `</tbody><tfoot><tr><td class="sticky-col col-agent">TOTAL / AVG</td><td></td><td></td><td></td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(displayAgents.map(a=>a.email), p.start, p.end)); });
   html += `</tr></tfoot></table>`;
   wrap.innerHTML = html;
 
   const agentModeLabel = tabPeriodMode.agent === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
+  const shownCount = displayAgents.length;
+  const totalCount = agents.length;
   document.getElementById('agent-table-subtitle').textContent =
-    `${agentModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${agents.length} agent${agents.length!==1?'s':''}`;
+    `${agentModeLabel} · ${periods.map(p=>p.label).join(' | ')} · ${shownCount}${shownCount!==totalCount?` of ${totalCount}`:''} agent${totalCount!==1?'s':''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1675,16 +1912,42 @@ function renderSupervisorView() {
   const allSpecialistEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
   renderKPICards('sup-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
 
+  // ── Inject search box ──────────────────────────────────────────────────────
+  const supSbEl = document.getElementById('supervisor-search-box');
+  if (supSbEl) supSbEl.innerHTML = tabSearchBox('supervisor', 'Search supervisors…');
+
+  // ── Search filter ──────────────────────────────────────────────────────────
+  const supSq = (tabSearch.supervisor || '').toLowerCase().trim();
+  let visSupRows = supSq
+    ? supRows.filter(r => r.sup.name.toLowerCase().includes(supSq) || r.sup.email.toLowerCase().includes(supSq))
+    : supRows;
+
+  // ── Sort by latest-period aggregated KPI ──────────────────────────────────
+  const latestSupPi = periods.length - 1;
+  visSupRows = sortKpiRows(visSupRows, 'supervisor', (r, col) => {
+    const g = computeGroupKPIs(r.agents.map(a => a.email), periods[latestSupPi].start, periods[latestSupPi].end);
+    if (col === 'tph')  return g.tph;
+    if (col === 'aht')  return g.ahtSecs;
+    if (col === 'csat') return g.csat;
+    if (col === 'iqa')  return g.iqa;
+    return null;
+  });
+
+  const supSortTh = (col, label) =>
+    `<th class="sortable" onclick="onSortClick('supervisor','${col}')" style="cursor:pointer">${label}${sortArrow('supervisor',col)}</th>`;
+
   // ── 4. Build table ────────────────────────────────────────────────────────
   let html = `<table class="perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Supervisor</th>
     <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
-  periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
+  periods.forEach(() => {
+    html += `${supSortTh('tph','TPH')}${supSortTh('aht','AHT')}${supSortTh('csat','CSAT')}${supSortTh('iqa','IQA')}`;
+  });
   html += `</tr></thead><tbody>`;
 
-  supRows.forEach(({ sup, agents }, si) => {
+  visSupRows.forEach(({ sup, agents }, si) => {
     const emails = agents.map(a => a.email);
     const gKey   = `sup-${si}`;
 
@@ -1709,17 +1972,18 @@ function renderSupervisorView() {
     });
   });
 
-  // Footer — totals across all visible specialist agents
+  // Footer — totals across visible supervisors only
+  const visSupEmails = [...new Set(visSupRows.flatMap(r => r.agents.map(a => a.email)))];
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TEAM TOTAL</td>
-    <td style="text-align:center;font-weight:700;color:#AA0061">${allSpecialistEmails.length}</td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allSpecialistEmails, p.start, p.end)); });
+    <td style="text-align:center;font-weight:700;color:#AA0061">${visSupEmails.length}</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(visSupEmails, p.start, p.end)); });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
   const supModeLabel = tabPeriodMode.supervisor === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('sup-table-subtitle').textContent =
-    `${supModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${supRows.length} supervisor${supRows.length !== 1 ? 's' : ''}`;
+    `${supModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${visSupRows.length}${visSupRows.length!==supRows.length?` of ${supRows.length}`:''} supervisor${supRows.length !== 1 ? 's' : ''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1770,16 +2034,43 @@ function renderAMView() {
   )];
   renderKPICards('am-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
 
+  // ── Inject search box ──────────────────────────────────────────────────────
+  const amSbEl = document.getElementById('am-search-box');
+  if (amSbEl) amSbEl.innerHTML = tabSearchBox('am', 'Search A.Managers…');
+
+  // ── Search filter ──────────────────────────────────────────────────────────
+  const amSq = (tabSearch.am || '').toLowerCase().trim();
+  let visAmRows = amSq
+    ? amRows.filter(r => r.am.name.toLowerCase().includes(amSq) || r.am.email.toLowerCase().includes(amSq))
+    : amRows;
+
+  // ── Sort by latest-period aggregated KPI ──────────────────────────────────
+  const latestAmPi = periods.length - 1;
+  visAmRows = sortKpiRows(visAmRows, 'am', (r, col) => {
+    const emails = r.supRows.flatMap(s => s.agents.map(a => a.email));
+    const g = computeGroupKPIs(emails, periods[latestAmPi].start, periods[latestAmPi].end);
+    if (col === 'tph')  return g.tph;
+    if (col === 'aht')  return g.ahtSecs;
+    if (col === 'csat') return g.csat;
+    if (col === 'iqa')  return g.iqa;
+    return null;
+  });
+
+  const amSortTh = (col, label) =>
+    `<th class="sortable" onclick="onSortClick('am','${col}')" style="cursor:pointer">${label}${sortArrow('am',col)}</th>`;
+
   // ── 4. Build table ────────────────────────────────────────────────────────
   let html = `<table class="perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">A.Manager</th>
     <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
-  periods.forEach(() => { html += `<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>`; });
+  periods.forEach(() => {
+    html += `${amSortTh('tph','TPH')}${amSortTh('aht','AHT')}${amSortTh('csat','CSAT')}${amSortTh('iqa','IQA')}`;
+  });
   html += `</tr></thead><tbody>`;
 
-  amRows.forEach(({ am, supRows }, ai) => {
+  visAmRows.forEach(({ am, supRows }, ai) => {
     const allAMEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
     const gKey        = `am-${ai}`;
 
@@ -1821,17 +2112,18 @@ function renderAMView() {
     });
   });
 
-  // Footer — totals across all visible specialist agents
+  // Footer — totals across visible AMs only
+  const visAmEmails = [...new Set(visAmRows.flatMap(r => r.supRows.flatMap(s => s.agents.map(a => a.email))))];
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TOTAL</td>
-    <td style="text-align:center;font-weight:700;color:#AA0061">${allSpecialistEmails.length}</td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allSpecialistEmails, p.start, p.end)); });
+    <td style="text-align:center;font-weight:700;color:#AA0061">${visAmEmails.length}</td>`;
+  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(visAmEmails, p.start, p.end)); });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
   const amModeLabel = tabPeriodMode.am === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
   document.getElementById('am-table-subtitle').textContent =
-    `${amModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${amRows.length} A.Manager${amRows.length !== 1 ? 's' : ''}`;
+    `${amModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${visAmRows.length}${visAmRows.length!==amRows.length?` of ${amRows.length}`:''} A.Manager${amRows.length !== 1 ? 's' : ''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2847,7 +3139,10 @@ function onDateInput() {
 
 function updatePeriodBadge() {
   const labels = { '3w':'Last 3 Weeks','1w':'This Week','1m':'This Month','lm':'Last Month','q':'This Quarter','custom':'Custom Range' };
-  document.getElementById('period-badge').textContent = labels[activePeriod] || activePeriod;
+  const label  = labels[activePeriod] || activePeriod;
+  document.getElementById('period-badge').textContent = label;
+  const mini = document.getElementById('period-badge-mini');
+  if (mini) mini.textContent = label;
 }
 
 function updateSyncLabel() {
