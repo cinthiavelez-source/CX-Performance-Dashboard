@@ -693,7 +693,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       <!-- IQS -->
       <div class="upload-card">
         <h4>🎯 IQS / Quality Review Data</h4>
-        <p class="desc">Quality review export. Required columns: <em>Review ID, Review created, Reviewee, Reviewee email, Review score (e.g. "87.50%")</em>. The Review ID is used as the unique key — re-uploading the same reviews will update scores instead of creating duplicates.</p>
+        <p class="desc">Quality review export. Required columns: <em>Review ID, Conversation created, Reviewee, Reviewee email, Review score (e.g. "87.50%")</em>. <strong>Use "Conversation created" (not "Review created")</strong> so scores are attributed to the week the conversation happened. The Review ID is the unique key — re-uploading the same reviews will update scores instead of creating duplicates.</p>
         <div class="drop-zone" id="dz-iqa" onclick="document.getElementById('f-iqa').click()"
           ondragover="dzOver(event,'dz-iqa')" ondragleave="dzLeave('dz-iqa')" ondrop="dzDrop(event,'iqa')">
           <div class="dz-icon">📁</div>
@@ -3840,7 +3840,7 @@ const FIELD_DEFS = {
   ],
   iqa: [
     { key:'review_id',   label:'Review ID column',         required:true,  hints:['Review ID','review_id','id'] },
-    { key:'date',        label:'Date column',              required:true,  hints:['Review created','date'] },
+    { key:'date',        label:'Conversation date column', required:true,  hints:['Conversation created','conversation_created','Conversation Date','Review created','date'] },
     { key:'agent_name',  label:'Agent Name column',        required:true,  hints:['Reviewee','agent'] },
     { key:'agent_email', label:'Agent Email column',       required:false, hints:['Reviewee email','email'] },
     { key:'iqa_score',   label:'Score column (e.g. 87.50%)', required:true, hints:['Review score','score','iqa'] },
@@ -4073,7 +4073,7 @@ function downloadTemplate(type) {
   const templates = {
     tph:  'Agent Name,Agent Email,Date,Valid Tickets,Avg Handle Time (mm:ss),Total Handle Time (hh:mm:ss),Total Time (hh:mm:ss)\nJohn Smith,j.smith@cookunity.com,2026-01-15,36,5:25,3:15:08,5:51:56',
     csat: 'Update - Date,Update ticket assignee,Changes - Field name,Changes - New value,Ticket ID\n1/15/2026,John Smith,satisfaction_score,good,1234567\n1/15/2026,John Smith,satisfaction_score,bad,1234568',
-    iqa:  'Review ID,Review created,Reviewee,Reviewee email,Review score\n1007600001,2026-01-15,John Smith,j.smith@cookunity.com,87.50%'
+    iqa:  'Review ID,Conversation created,Reviewee,Reviewee email,Review score\n1007600001,2026-01-15,John Smith,j.smith@cookunity.com,87.50%'
   };
   const label = { tph:'TPH_AHT_template', csat:'CSAT_template', iqa:'IQA_template' };
   const blob  = new Blob([templates[type]], { type:'text/csv' });
