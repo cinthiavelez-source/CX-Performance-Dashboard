@@ -778,6 +778,26 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       </div>
     </div>
 
+    <!-- Login Activity Log -->
+    <div class="admin-section">
+      <h3>🔐 Login Activity</h3>
+      <p class="desc">Everyone who has signed into the dashboard. Most recent logins shown first.</p>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <button class="btn-apply" onclick="fetchLoginLog()" style="padding:5px 14px;font-size:12px">⟳ Refresh</button>
+        <span id="login-log-status" style="font-size:12px;color:#64748B"></span>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Time</th><th>Email</th><th>Name</th></tr>
+          </thead>
+          <tbody id="login-log-tbody">
+            <tr><td colspan="3" style="text-align:center;color:#94A3B8;padding:1rem">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Weekly Email Reports -->
     <div class="admin-section">
       <h3>📧 Weekly Email Reports</h3>
@@ -3317,7 +3337,7 @@ function navTo(page) {
     if (page === 'am')             renderAMView();
     if (page === 'general')        renderGeneralView();
     if (page === 'contact-reason') renderContactReasonView();
-    if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); fetchEmailRecipients(); }
+    if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); fetchEmailRecipients(); fetchLoginLog(); }
     renderedTabs.add(page);
   }
 }
@@ -3527,6 +3547,45 @@ async function fetchRoles() {
     const data = await res.json();
     renderRolesTable(data.roles || []);
   } catch(e) { /* silently fail if not admin */ }
+}
+
+// ─── LOGIN LOG ────────────────────────────────────────────────────────────────
+
+async function fetchLoginLog() {
+  const tbody  = document.getElementById('login-log-tbody');
+  const status = document.getElementById('login-log-status');
+  if (!tbody) return;
+
+  if (status) status.textContent = 'Loading…';
+  try {
+    const u   = currentUser;
+    const url = `${SCRIPT_URL}?action=getLoginLog&email=${encodeURIComponent(u ? u.email : '')}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const logins = data.logins || [];
+    if (status) status.textContent = `${logins.length} entries`;
+
+    if (!logins.length) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#94A3B8;padding:1rem">No logins recorded yet.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = logins.map(l => {
+      const ts  = String(l.timestamp || '');
+      const dt  = ts ? new Date(ts) : null;
+      const fmt = dt ? dt.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : ts;
+      return `<tr>
+        <td style="white-space:nowrap;color:#64748B;font-size:12px">${escHtml(fmt)}</td>
+        <td>${escHtml(l.email || '')}</td>
+        <td style="color:#64748B">${escHtml(l.name || '—')}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    if (status) status.textContent = 'Error loading log';
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#DC2626;padding:1rem">${escHtml(e.message)}</td></tr>`;
+  }
 }
 
 // ─── WEEKLY EMAIL REPORT FUNCTIONS ────────────────────────────────────────────
@@ -4085,6 +4144,9 @@ function handleGoogleSignIn(response) {
     };
     setUser(user);
     currentUser = user;
+
+    // Fire-and-forget login log — doesn't block app startup
+    apiPost({ action: 'logLogin', email: user.email, name: user.name }).catch(() => {});
 
     // Hide login overlay and start the app
     document.getElementById('login-overlay').classList.remove('open');
