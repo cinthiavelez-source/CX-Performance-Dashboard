@@ -3747,15 +3747,18 @@ function renderEmailRecipientsTable(recipients) {
     return;
   }
   tbody.innerHTML = recipients.map(r => {
-    const roleBadge = r.role.toLowerCase().includes('assistant')
+    const rNorm    = (r.role || '').toLowerCase();
+    const isAM     = rNorm.includes('assistant') || rNorm === 'a.manager' || rNorm === 'a. manager' || rNorm === 'am';
+    const roleBadge = isAM
       ? `<span style="background:#EEF4FF;color:#475CC7;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">A.Manager</span>`
       : `<span style="background:#F0FDF4;color:#218848;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">Supervisor</span>`;
+    const countLabel = r.countLabel || (isAM ? 'supervisors' : 'agents');
     return `<tr>
       <td style="font-weight:600">${escHtml(r.name)}</td>
       <td style="color:#475CC7;font-size:12px">${escHtml(r.email)}</td>
       <td>${roleBadge}</td>
       <td style="color:#64748B;font-size:12px">${escHtml(r.team || '—')}</td>
-      <td style="text-align:center;font-weight:600;color:#AA0061">${r.agentCount}</td>
+      <td style="text-align:center;font-weight:600;color:#AA0061">${r.agentCount} <span style="font-size:10px;font-weight:400;color:#94A3B8">${escHtml(countLabel)}</span></td>
       <td style="text-align:center">
         <button onclick="sendWeeklyEmailTo('${escHtml(r.email)}', '${escHtml(r.name)}')"
           style="background:#F1F5F9;color:#475CC7;border:1px solid #CBD5E1;border-radius:5px;
