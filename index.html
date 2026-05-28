@@ -1797,14 +1797,41 @@ function toggleFilterBar() {
 }
 
 // ─── TAB SEARCH HELPER ───────────────────────────────────────
-function tabSearchBox(tab, placeholder) {
-  const val = tabSearch[tab] || '';
+// tabSearchBox(tab, placeholder, containerEl)
+//   • First call (no <input> yet): injects full HTML and wires the input
+//   • Subsequent calls (input already exists): only updates the clear button
+//     visibility so the live input element is never destroyed → focus is kept
+function tabSearchBox(tab, placeholder, containerEl) {
+  const renderFn = 'render' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'View';
+  const val      = tabSearch[tab] || '';
+
+  // ── Already initialised — just sync clear-button state ───────
+  if (containerEl) {
+    const existingInput = containerEl.querySelector('input');
+    if (existingInput) {
+      let clearBtn = containerEl.querySelector('button[data-clear]');
+      if (val && !clearBtn) {
+        clearBtn = document.createElement('button');
+        clearBtn.dataset.clear = tab;
+        clearBtn.title = 'Clear';
+        clearBtn.textContent = '✕';
+        clearBtn.style.cssText = 'background:none;border:none;color:#94A3B8;padding:0;font-size:14px;line-height:1;cursor:pointer';
+        clearBtn.onclick = function() { tabSearch[tab] = ''; window[renderFn](); };
+        containerEl.querySelector('.tab-search').appendChild(clearBtn);
+      } else if (!val && clearBtn) {
+        clearBtn.remove();
+      }
+      return null; // signal: nothing to inject
+    }
+  }
+
+  // ── First render: return the full HTML string ─────────────────
   return `<div class="tab-search">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input type="text" placeholder="${placeholder}" value="${escHtml(val)}"
-      oninput="tabSearch['${tab}']=this.value; render${tab.charAt(0).toUpperCase()+tab.slice(1)}View()"
+      oninput="tabSearch['${tab}']=this.value; ${renderFn}()"
       style="font-size:13px">
-    ${val ? `<button onclick="tabSearch['${tab}']=''; render${tab.charAt(0).toUpperCase()+tab.slice(1)}View()"
+    ${val ? `<button data-clear="${tab}" onclick="tabSearch['${tab}']=''; ${renderFn}()"
       style="background:none;border:none;color:#94A3B8;padding:0;font-size:14px;line-height:1;cursor:pointer" title="Clear">✕</button>` : ''}
   </div>`;
 }
@@ -1894,9 +1921,12 @@ function renderAgentView() {
   const allCSAT = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].csat).filter(v=>v!==null));
   const allIQA  = periods.map((_,i) => agents.map(a => allKPIs[a.email][i].iqa).filter(v=>v!==null));
 
-  // ── Inject search box into header ────────────────────────────
+  // ── Inject search box into header (no-op if already exists — preserves focus)
   const sbEl = document.getElementById('agent-search-box');
-  if (sbEl) sbEl.innerHTML = tabSearchBox('agent', 'Search agents…');
+  if (sbEl) {
+    const html = tabSearchBox('agent', 'Search agents…', sbEl);
+    if (html) sbEl.innerHTML = html;
+  }
 
   // ── Search filter ────────────────────────────────────────────
   const sq = (tabSearch.agent || '').toLowerCase().trim();
@@ -2034,9 +2064,12 @@ function renderSupervisorView() {
   const allSpecialistEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
   renderKPICards('sup-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
 
-  // ── Inject search box ──────────────────────────────────────────────────────
+  // ── Inject search box (no-op if already exists — preserves focus) ─────────
   const supSbEl = document.getElementById('supervisor-search-box');
-  if (supSbEl) supSbEl.innerHTML = tabSearchBox('supervisor', 'Search supervisors…');
+  if (supSbEl) {
+    const html = tabSearchBox('supervisor', 'Search supervisors…', supSbEl);
+    if (html) supSbEl.innerHTML = html;
+  }
 
   // ── Search filter ──────────────────────────────────────────────────────────
   const supSq = (tabSearch.supervisor || '').toLowerCase().trim();
@@ -2177,9 +2210,12 @@ function renderAMView() {
   )];
   renderKPICards('am-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
 
-  // ── Inject search box ──────────────────────────────────────────────────────
+  // ── Inject search box (no-op if already exists — preserves focus) ─────────
   const amSbEl = document.getElementById('am-search-box');
-  if (amSbEl) amSbEl.innerHTML = tabSearchBox('am', 'Search A.Managers…');
+  if (amSbEl) {
+    const html = tabSearchBox('am', 'Search A.Managers…', amSbEl);
+    if (html) amSbEl.innerHTML = html;
+  }
 
   // ── Search filter ──────────────────────────────────────────────────────────
   const amSq = (tabSearch.am || '').toLowerCase().trim();
