@@ -190,6 +190,22 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 .hier-upload-panel { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px;
   padding: 1rem; margin-bottom: 1rem; display: none; }
 .hier-upload-panel.open { display: block; }
+/* Hierarchy accordion */
+.hier-acc-group { border: 1px solid #E2E8F0; border-radius: 8px; margin-bottom: 6px; overflow: hidden; }
+.hier-acc-header { display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+  background: #F8FAFC; cursor: pointer; user-select: none; }
+.hier-acc-header:hover { background: #EEF4FF; }
+.hier-acc-chevron { font-size: 10px; color: #94A3B8; transition: transform .15s; }
+.hier-acc-header.open .hier-acc-chevron { transform: rotate(90deg); }
+.hier-acc-body { display: none; border-top: 1px solid #E2E8F0; }
+.hier-acc-body.open { display: block; }
+.hier-acc-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.hier-acc-table th { background: #F1F5F9; padding: 6px 10px; text-align: left; font-weight: 700;
+  font-size: 10px; color: #64748B; text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 1px solid #E2E8F0; white-space: nowrap; }
+.hier-acc-table td { padding: 6px 10px; border-bottom: 1px solid #F8FAFC; color: #1E293B; vertical-align: middle; }
+.hier-acc-table tbody tr:hover td { background: #FFF0F7; }
+.hier-acc-table tbody tr:last-child td { border-bottom: none; }
 .hier-upload-panel h5 { font-weight: 700; font-size: 13px; margin-bottom: 8px; color: #1E293B; }
 .hier-date-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
 .hier-date-row label { font-size: 11px; font-weight: 600; color: #64748B;
@@ -763,27 +779,20 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
         </div>
       </div>
 
-      <div class="admin-table-wrap">
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>Agent Name</th><th>Agent Email</th>
-              <th>Supervisor</th><th>Asst. Manager</th><th>Team</th><th>Role</th>
-              <th>Effective From</th><th>Effective To</th>
-              <th>Notes</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="hier-tbody"></tbody>
-        </table>
-      </div>
+      <div id="hier-accordion"></div>
     </div>
 
     <!-- Login Activity Log -->
     <div class="admin-section">
       <h3>🔐 Login Activity</h3>
-      <p class="desc">Everyone who has signed into the dashboard. Most recent logins shown first.</p>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <p class="desc">Who has signed into the dashboard today. Most recent first.</p>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
         <button class="btn-apply" onclick="fetchLoginLog()" style="padding:5px 14px;font-size:12px">⟳ Refresh</button>
+        <button id="login-log-toggle"
+          onclick="loginLogShowAll=!loginLogShowAll;fetchLoginLog()"
+          style="padding:5px 12px;font-size:12px;border-radius:6px;border:1px solid #CBD5E1;cursor:pointer;background:#F8FAFC;color:#475CC7;font-weight:600">
+          Show all time
+        </button>
         <span id="login-log-status" style="font-size:12px;color:#64748B"></span>
       </div>
       <div class="admin-table-wrap">
@@ -3203,22 +3212,23 @@ function downloadHierTemplate() {
 // Toggle: true = show active only (default), false = show all
 let hierShowActiveOnly = true;
 
-function renderHierarchyTable() {
-  const tbody = document.getElementById('hier-tbody');
-  if (!tbody) return;
+// Tracks which accordion groups are open (by group key)
+const hierOpenGroups = new Set();
 
-  // Update the toggle button label to reflect current state
+function renderHierarchyTable() {
+  const container = document.getElementById('hier-accordion');
+  if (!container) return;
+
   const toggleBtn = document.getElementById('hier-toggle-btn');
 
   if (!rawHierarchy.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><p>No hierarchy records yet. Add records to link agents to supervisors and AMs.</p></td></tr>`;
+    container.innerHTML = `<div class="empty-state" style="padding:2rem;text-align:center;color:#94A3B8">No hierarchy records yet. Add records to link agents to supervisors and AMs.</div>`;
     if (toggleBtn) toggleBtn.style.display = 'none';
     return;
   }
 
   const today = todayStr();
 
-  // Separate active vs historical
   const active     = rawHierarchy.filter(h => {
     const to = h.effective_to ? isoDate(String(h.effective_to)).substring(0,10) : '';
     return !to || to >= today;
@@ -3231,53 +3241,105 @@ function renderHierarchyTable() {
   const displayRows = hierShowActiveOnly ? active : [...rawHierarchy];
   const hiddenCount = historical.length;
 
-  // Update toggle button
   if (toggleBtn) {
     toggleBtn.style.display = '';
     if (hierShowActiveOnly) {
-      toggleBtn.textContent = hiddenCount > 0
-        ? `🕐 Show ${hiddenCount} historical record${hiddenCount === 1 ? '' : 's'}`
-        : '🕐 Show historical';
+      toggleBtn.textContent      = hiddenCount > 0 ? `🕐 Show ${hiddenCount} historical` : '🕐 Show historical';
       toggleBtn.style.background = '#F1F5F9';
-      toggleBtn.style.color = '#64748B';
+      toggleBtn.style.color      = '#64748B';
     } else {
-      toggleBtn.textContent = `✅ Active only (${active.length})`;
+      toggleBtn.textContent      = `✅ Active only (${active.length})`;
       toggleBtn.style.background = '#218848';
-      toggleBtn.style.color = '#fff';
+      toggleBtn.style.color      = '#fff';
     }
   }
 
-  const sorted = [...displayRows].sort((a,b) =>
-    (String(a.agent_name||'')).localeCompare(String(b.agent_name||'')));
-
-  if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><p>No records to show.</p></td></tr>`;
+  if (!displayRows.length) {
+    container.innerHTML = `<div style="padding:2rem;text-align:center;color:#94A3B8">No records to show.</div>`;
     return;
   }
 
-  tbody.innerHTML = sorted.map(h => {
-    const to = h.effective_to ? isoDate(String(h.effective_to)).substring(0,10) : '';
-    const isHistorical = to && to < today;
-    const rowStyle = isHistorical ? 'opacity:0.55;background:#F8FAFC;' : '';
-    return `
-    <tr style="${rowStyle}">
-      <td>${escHtml(h.agent_name || h.agent_email || '')}</td>
-      <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
-      <td>${escHtml(h.supervisor_name||'')}</td>
-      <td>${escHtml(h.am_name||'')}</td>
-      <td>${h.team ? `<span style="background:#EEF4FF;color:#475CC7;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">${escHtml(h.team)}</span>` : '<span style="color:#CBD5E1">—</span>'}</td>
-      <td>${h.role ? `<span style="background:#FFF7ED;color:#C2410C;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">${escHtml(h.role)}</span>` : '<span style="color:#CBD5E1">—</span>'}</td>
-      <td>${escHtml(h.effective_from||'')}</td>
-      <td>${isHistorical
-        ? `<span style="color:#DC2626;font-size:11px">${escHtml(h.effective_to)}</span>`
-        : (h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>')}</td>
-      <td style="color:#64748B;font-size:11px">${escHtml(h.notes||'')}</td>
-      <td style="white-space:nowrap">
-        <button class="btn-sm btn-edit" onclick='openHierModal(${JSON.stringify(h)})'>Edit</button>
-        <button class="btn-sm btn-del" onclick="deleteHierarchy('${escHtml(String(h.id||''))}')">Del</button>
-      </td>
-    </tr>`;
+  // Group by team (blank team → "No Team Assigned")
+  const groups = {};
+  displayRows.forEach(h => {
+    const teamKey = (h.team || '').trim() || '— No Team Assigned';
+    if (!groups[teamKey]) groups[teamKey] = [];
+    groups[teamKey].push(h);
+  });
+
+  const sortedTeams = Object.keys(groups).sort((a,b) => {
+    if (a.startsWith('—')) return 1;
+    if (b.startsWith('—')) return -1;
+    return a.localeCompare(b);
+  });
+
+  container.innerHTML = sortedTeams.map(team => {
+    const rows   = groups[team].sort((a,b) => (a.agent_name||'').localeCompare(b.agent_name||''));
+    const gKey   = 'team-' + team.replace(/\W+/g,'_');
+    const isOpen = hierOpenGroups.has(gKey) || (hierOpenGroups.size === 0 && sortedTeams.indexOf(team) === 0);
+
+    const headerHtml = `
+      <div class="hier-acc-header${isOpen ? ' open' : ''}" onclick="toggleHierGroup('${gKey}',this)">
+        <span class="hier-acc-chevron">▶</span>
+        <span style="font-size:13px;font-weight:700;color:#1E293B">${escHtml(team)}</span>
+        <span style="margin-left:6px;background:#EEF4FF;color:#475CC7;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">${rows.length} member${rows.length===1?'':'s'}</span>
+      </div>`;
+
+    const tableRows = rows.map(h => {
+      const to           = h.effective_to ? isoDate(String(h.effective_to)).substring(0,10) : '';
+      const isHistorical = to && to < today;
+      const rowStyle     = isHistorical ? 'opacity:0.55;' : '';
+      const roleBadge    = h.role
+        ? `<span style="background:#FFF7ED;color:#C2410C;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600">${escHtml(h.role)}</span>`
+        : '<span style="color:#CBD5E1">—</span>';
+      const dateBadge    = isHistorical
+        ? `<span style="color:#DC2626;font-size:11px">${escHtml(to)}</span>`
+        : (h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>');
+      const safeH = escHtml(JSON.stringify(h).replace(/'/g,"&#39;"));
+      return `<tr style="${rowStyle}">
+        <td style="font-weight:600">${escHtml(h.agent_name || h.agent_email || '')}</td>
+        <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
+        <td>${roleBadge}</td>
+        <td>${escHtml(h.supervisor_name||'—')}</td>
+        <td>${escHtml(h.am_name||'—')}</td>
+        <td style="font-size:11px;color:#64748B">${escHtml(h.effective_from||'')}</td>
+        <td>${dateBadge}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-sm btn-edit" onclick='openHierModal(${JSON.stringify(h)})'>Edit</button>
+          <button class="btn-sm btn-del" onclick="deleteHierarchy('${escHtml(String(h.id||''))}')">Del</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="hier-acc-group" id="grp-${gKey}">
+      ${headerHtml}
+      <div class="hier-acc-body${isOpen ? ' open' : ''}" id="body-${gKey}">
+        <table class="hier-acc-table">
+          <thead><tr>
+            <th>Name</th><th>Email</th><th>Role</th>
+            <th>Supervisor</th><th>Asst. Manager</th>
+            <th>From</th><th>To</th><th>Actions</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </div>`;
   }).join('');
+}
+
+function toggleHierGroup(gKey, headerEl) {
+  const body = document.getElementById('body-' + gKey);
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  if (isOpen) {
+    body.classList.remove('open');
+    headerEl.classList.remove('open');
+    hierOpenGroups.delete(gKey);
+  } else {
+    body.classList.add('open');
+    headerEl.classList.add('open');
+    hierOpenGroups.add(gKey);
+  }
 }
 
 function toggleHierHistory() {
@@ -3551,9 +3613,12 @@ async function fetchRoles() {
 
 // ─── LOGIN LOG ────────────────────────────────────────────────────────────────
 
+let loginLogShowAll = false;
+
 async function fetchLoginLog() {
-  const tbody  = document.getElementById('login-log-tbody');
-  const status = document.getElementById('login-log-status');
+  const tbody    = document.getElementById('login-log-tbody');
+  const status   = document.getElementById('login-log-status');
+  const toggleEl = document.getElementById('login-log-toggle');
   if (!tbody) return;
 
   if (status) status.textContent = 'Loading…';
@@ -3564,11 +3629,38 @@ async function fetchLoginLog() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    const logins = data.logins || [];
-    if (status) status.textContent = `${logins.length} entries`;
+    const allLogins = data.logins || [];
+
+    // Filter to today only unless "show all" is toggled
+    const todayDate = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+    const logins = loginLogShowAll
+      ? allLogins
+      : allLogins.filter(l => {
+          const ts = String(l.timestamp || '');
+          if (!ts) return false;
+          const d = new Date(ts);
+          return d.toLocaleDateString('en-CA') === todayDate;
+        });
+
+    // Update toggle button label
+    if (toggleEl) {
+      if (loginLogShowAll) {
+        toggleEl.textContent  = '📅 Today only';
+        toggleEl.style.color  = '#AA0061';
+        toggleEl.style.borderColor = '#AA0061';
+      } else {
+        toggleEl.textContent  = 'Show all time';
+        toggleEl.style.color  = '#475CC7';
+        toggleEl.style.borderColor = '#CBD5E1';
+      }
+    }
+
+    const totalToday = loginLogShowAll ? '' : ` (${allLogins.length} total)`;
+    if (status) status.textContent = `${logins.length} entr${logins.length === 1 ? 'y' : 'ies'} today${totalToday}`;
 
     if (!logins.length) {
-      tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#94A3B8;padding:1rem">No logins recorded yet.</td></tr>`;
+      const msg = loginLogShowAll ? 'No logins recorded yet.' : 'No logins recorded today.';
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#94A3B8;padding:1rem">${msg}</td></tr>`;
       return;
     }
 
@@ -3599,7 +3691,12 @@ async function fetchEmailRecipients() {
     const res  = await fetch(url, { redirect:'follow' });
     const data = await res.json();
     if (data.error) { tbody.innerHTML = `<tr><td colspan="6" style="color:#EF4444;padding:14px">${escHtml(data.error)}</td></tr>`; return; }
-    renderEmailRecipientsTable(data.recipients || []);
+    const recipients = data.recipients || [];
+    if (!recipients.length && data.debug) {
+      tbody.innerHTML = `<tr><td colspan="6" style="color:#94A3B8;padding:14px;font-size:12px">No supervisors or A.Managers found in Hierarchy_Log.<br><span style="color:#CBD5E1">Debug: ${escHtml(data.debug)}</span></td></tr>`;
+      return;
+    }
+    renderEmailRecipientsTable(recipients);
   } catch(e) {
     if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="color:#EF4444;padding:14px">Could not load recipients.</td></tr>`;
   }
@@ -4092,8 +4189,11 @@ function isAdminUser() {
 }
 
 function updateRoleUI() {
+  const isAdm     = isAdminUser();
   const adminTab  = document.getElementById('btn-admin-tab');
-  if (adminTab) adminTab.style.display = isAdminUser() ? '' : 'none';
+  const uploadTab = document.getElementById('btn-upload-tab');
+  if (adminTab)  adminTab.style.display  = isAdm ? '' : 'none';
+  if (uploadTab) uploadTab.style.display = isAdm ? '' : 'none';
 }
 
 // ═══════════════════════════════════════════════════════════
