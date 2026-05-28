@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-US">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -96,6 +96,9 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   text-transform: uppercase; letter-spacing: .05em; color: #64748B;
   padding: 8px 10px; border-bottom: 2px solid #E2E8F0; white-space: nowrap;
   position: sticky; top: 0; z-index: 10; }
+/* Freeze both header rows: row 1 (timeframe labels) sticks at top:0,
+   row 2 (KPI labels) sticks just below at top:34px (height of row 1) */
+.perf-table thead tr:nth-child(2) th { top: 34px; }
 /* Week header columns — CookUnity brand palette per week */
 .perf-table th.week-hdr { background: #AA0061;
   color: #fff; text-align: center; border-bottom: none; font-size: 12px;
@@ -113,6 +116,13 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   border-right: 1px solid #E2E8F0; min-width: 170px; }
 .perf-table tbody tr:hover td { background: #FFF0F7 !important; }
 .perf-table tbody tr:hover td.col-agent { background: #FFE8F4 !important; }
+/* Contact Reason active-filter chips */
+.cr-chip { display:inline-flex; align-items:center; gap:4px; background:#FFF0F7; color:#AA0061;
+  border:1px solid #F9A8D4; border-radius:20px; padding:2px 10px 2px 10px;
+  font-size:11px; font-weight:600; white-space:nowrap; }
+.cr-chip button { background:none; border:none; cursor:pointer; color:#AA0061;
+  font-size:13px; line-height:1; padding:0 0 0 3px; font-weight:700; }
+.cr-chip button:hover { color:#8B0050; }
 .perf-table tfoot td { font-weight: 700; background: #F8FAFC !important;
   border-top: 2px solid #E2E8F0; color: #AA0061; }
 .perf-table tfoot td.col-agent { background: #FFF0F7 !important; }
@@ -605,6 +615,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
         <div>
           <h3>📋 CSAT by Contact Reason</h3>
           <p id="cr-subtitle">Ranked by volume · color = relative CSAT quartile</p>
+          <div id="cr-filter-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <!-- WoW / MoM toggle -->
@@ -2739,6 +2750,16 @@ function setCRSort(by) {
   renderContactReasonView();
 }
 
+// Clear a single active filter from the Contact Reason view (chip ✕ button)
+function clearCRFilter(key) {
+  activeFilters[key] = '';
+  const domMap = { agent: 'f-agent', supervisor: 'f-supervisor', am: 'f-am', team: 'f-team' };
+  const el = document.getElementById(domMap[key]);
+  if (el) el.value = '';
+  renderedTabs.clear();
+  navTo('contact-reason');
+}
+
 function renderContactReasonView() {
   const agents   = filteredAgents(getAllAgents());
   const emails   = new Set(agents.map(a => a.email.toLowerCase()));
@@ -2928,8 +2949,32 @@ function renderContactReasonView() {
 
   wrap.innerHTML = html;
   const crCycleLabel = crMode === 'mom' ? '3-month' : '3-week';
+
+  // ── Active filter chips ───────────────────────────────────────────────────
+  const chipsEl = document.getElementById('cr-filter-chips');
+  if (chipsEl) {
+    const chips = [];
+    const chipLabel = (icon, filterKey, val) => {
+      const name = (val.includes('@') ? (emailToName[val.toLowerCase()] || val) : val);
+      return `<span class="cr-chip">${icon} ${escHtml(name)}`
+           + `<button onclick="clearCRFilter('${filterKey}')" title="Clear filter">✕</button></span>`;
+    };
+    if (activeFilters.agent)      chips.push(chipLabel('👤', 'agent',      activeFilters.agent));
+    if (activeFilters.supervisor) chips.push(chipLabel('🧑‍💼', 'supervisor', activeFilters.supervisor));
+    if (activeFilters.am)         chips.push(chipLabel('🏢', 'am',         activeFilters.am));
+    if (activeFilters.team)       chips.push(chipLabel('👥', 'team',       activeFilters.team));
+    chipsEl.innerHTML = chips.join('');
+  }
+
+  // ── Subtitle ─────────────────────────────────────────────────────────────
+  const filterCtx = [];
+  if (activeFilters.supervisor) filterCtx.push('Sup: ' + (emailToName[activeFilters.supervisor.toLowerCase()] || activeFilters.supervisor));
+  if (activeFilters.am)         filterCtx.push('AM: '  + (emailToName[activeFilters.am.toLowerCase()]         || activeFilters.am));
+  if (activeFilters.agent)      filterCtx.push('Agent: '+ (emailToName[activeFilters.agent.toLowerCase()]     || activeFilters.agent));
+  if (activeFilters.team)       filterCtx.push(activeFilters.team);
+  const filterStr = filterCtx.length ? ` · ${filterCtx.join(' · ')}` : '';
   document.getElementById('cr-subtitle').textContent =
-    `${months[0].label} → ${months[2].label} · ${agents.length} agent${agents.length!==1?'s':''} · ${reasonRows.length} reasons · sorted by ${crSortBy === 'vol' ? `${crCycleLabel} volume` : 'current CSAT%'}`;
+    `${months[0].label} → ${months[2].label} · ${agents.length} agent${agents.length!==1?'s':''}${filterStr} · ${reasonRows.length} reasons · sorted by ${crSortBy === 'vol' ? `${crCycleLabel} volume` : 'current CSAT%'}`;
 }
 
 // ═══════════════════════════════════════════════════════════
