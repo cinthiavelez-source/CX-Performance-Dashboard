@@ -721,6 +721,16 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   <!-- ADMIN TAB -->
   <div class="page" id="page-admin">
 
+    <!-- Refresh Cache -->
+    <div class="admin-section" style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1rem">
+      <h3 style="margin:0 0 4px;font-size:14px;color:#C2410C">🔄 Refresh Dashboard Data</h3>
+      <p class="desc" style="margin:0 0 10px">If you edited the Google Sheet directly (hierarchy, roles, etc.), the dashboard won't see it until the 1-hour cache expires. Use this to force an immediate refresh.</p>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn-apply" onclick="clearDashboardCache()" style="padding:6px 16px;font-size:12px;background:#C2410C;border-color:#C2410C">⟳ Refresh Now</button>
+        <span id="clear-cache-status" style="font-size:12px;color:#64748B"></span>
+      </div>
+    </div>
+
     <!-- Hierarchy Log -->
     <div class="admin-section">
       <h3>📋 Reporting Hierarchy Log</h3>
@@ -3398,7 +3408,7 @@ function navTo(page) {
     if (page === 'supervisor')     renderSupervisorView();
     if (page === 'am')             renderAMView();
     if (page === 'general')        renderGeneralView();
-    if (page === 'contact-reason') renderContactReasonView();
+    if (page === 'contact-reason') { crSortBy = 'vol'; renderContactReasonView(); }
     if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); fetchEmailRecipients(); fetchLoginLog(); }
     renderedTabs.add(page);
   }
@@ -3614,6 +3624,32 @@ async function fetchRoles() {
 // ─── LOGIN LOG ────────────────────────────────────────────────────────────────
 
 let loginLogShowAll = false;
+
+async function clearDashboardCache() {
+  const status = document.getElementById('clear-cache-status');
+  const btn    = document.querySelector('[onclick="clearDashboardCache()"]');
+  if (status) status.textContent = 'Clearing…';
+  if (btn)    btn.disabled = true;
+  try {
+    const u   = currentUser;
+    const url = `${SCRIPT_URL}?action=clearCache&email=${encodeURIComponent(u ? u.email : '')}`;
+    const res  = await fetch(url, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (status) status.textContent = '✅ Cache cleared — reloading data…';
+    // Also clear the client-side localStorage cache so this browser reloads too
+    Object.keys(localStorage).filter(k => k.startsWith('cx_perf_')).forEach(k => localStorage.removeItem(k));
+    renderedTabs.clear();
+    setTimeout(async () => {
+      await apiFetch(true);
+      if (status) status.textContent = '✅ Done — dashboard updated with latest sheet data.';
+      if (btn)    btn.disabled = false;
+    }, 800);
+  } catch(e) {
+    if (status) status.textContent = '❌ ' + e.message;
+    if (btn)    btn.disabled = false;
+  }
+}
 
 async function fetchLoginLog() {
   const tbody    = document.getElementById('login-log-tbody');
