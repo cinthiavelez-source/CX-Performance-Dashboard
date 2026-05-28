@@ -674,9 +674,9 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
         <span class="template-link" onclick="downloadTemplate('csat')">⬇ Download template</span>
       </div>
 
-      <!-- IQA -->
+      <!-- IQS -->
       <div class="upload-card">
-        <h4>🎯 IQA / Quality Review Data</h4>
+        <h4>🎯 IQS / Quality Review Data</h4>
         <p class="desc">Quality review export. Required columns: <em>Review created, Reviewee, Reviewee email, Review score (e.g. "87.50%")</em></p>
         <div class="drop-zone" id="dz-iqa" onclick="document.getElementById('f-iqa').click()"
           ondragover="dzOver(event,'dz-iqa')" ondragleave="dzLeave('dz-iqa')" ondrop="dzDrop(event,'iqa')">
@@ -713,10 +713,15 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
         When the org changes (every 2–3 months), add a new record with the new dates — historical data is preserved automatically.
         Leave <em>Effective To</em> blank for the current assignment.
       </p>
-      <!-- Button row: manual add + bulk CSV upload -->
-      <div class="admin-btn-row">
+      <!-- Button row: manual add + bulk CSV upload + active-only toggle -->
+      <div class="admin-btn-row" style="flex-wrap:wrap;gap:8px;align-items:center">
         <button class="btn-add" onclick="openHierModal()">+ Add Record</button>
         <button class="btn-bulk" onclick="toggleHierUploadPanel()">⬆ Bulk Upload CSV</button>
+        <button id="hier-toggle-btn"
+          onclick="toggleHierHistory()"
+          style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid #CBD5E1;font-size:12px;cursor:pointer;font-weight:600;transition:all .15s">
+          🕐 Show historical
+        </button>
       </div>
 
       <!-- Collapsible bulk hierarchy upload panel -->
@@ -769,6 +774,43 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
             </tr>
           </thead>
           <tbody id="hier-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Weekly Email Reports -->
+    <div class="admin-section">
+      <h3>📧 Weekly Email Reports</h3>
+      <p class="desc">
+        Every Sunday at 8 AM, each supervisor and A.Manager automatically receives an email showing
+        their team's last 6 weeks of TPH, CSAT &amp; IQS, plus a per-agent breakdown for the most
+        recently completed week. Use the buttons below to send ad-hoc reports at any time.
+        <br><br>
+        <strong>One-time setup:</strong> Open Apps Script → run <code>setupWeeklyEmailTrigger()</code>
+        once to activate the automatic Sunday trigger.
+      </p>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn-apply" onclick="sendWeeklyEmailsAll()"
+          style="display:flex;align-items:center;gap:6px;padding:8px 18px">
+          📤 Send to All Now
+        </button>
+        <span id="email-send-status" style="font-size:12px;color:#64748B"></span>
+      </div>
+
+      <div class="admin-table-wrap">
+        <table class="admin-table" id="email-recipients-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Email</th><th>Role</th><th>Team</th>
+              <th style="text-align:center">Agents</th>
+              <th style="text-align:center">Send</th>
+            </tr>
+          </thead>
+          <tbody id="email-recipients-tbody">
+            <tr><td colspan="6" style="text-align:center;color:#94A3B8;padding:20px">
+              Loading recipients…</td></tr>
+          </tbody>
         </table>
       </div>
     </div>
@@ -1667,7 +1709,7 @@ function renderKPICards(containerId, agents) {
       <div class="kpi-sub">Good / (Good + Bad) surveys</div>
     </div>
     <div class="kpi-card purple">
-      <div class="kpi-label">🎯 IQA (Latest Period)</div>
+      <div class="kpi-label">🎯 IQS (Latest Period)</div>
       <div class="kpi-value" style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px">
         ${fmtPct(kpis.iqa)}${dIQA}
       </div>
@@ -1813,7 +1855,7 @@ function periodHeaders(periods, extraColBefore, extraColAfter) {
   if (extraColAfter) h += extraColAfter;
   h += '</tr><tr>';
   if (extraColBefore) h += ''; // already has rowspan="2"
-  periods.forEach(() => { h += '<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQA</th>'; });
+  periods.forEach(() => { h += '<th>TPH</th><th>AHT</th><th>CSAT</th><th>IQS</th>'; });
   if (extraColAfter) h += '';
   h += '</tr>';
   return h;
@@ -1901,7 +1943,7 @@ function renderAgentView() {
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `</tr><tr>`;
   periods.forEach(() => {
-    html += `${sortTh('tph','TPH')}${sortTh('aht','AHT')}${sortTh('csat','CSAT')}${sortTh('iqa','IQA')}`;
+    html += `${sortTh('tph','TPH')}${sortTh('aht','AHT')}${sortTh('csat','CSAT')}${sortTh('iqa','IQS')}`;
   });
   html += `</tr></thead><tbody>`;
 
@@ -2040,7 +2082,7 @@ function renderSupervisorView() {
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
   periods.forEach(() => {
-    html += `${supSortTh('tph','TPH')}${supSortTh('aht','AHT')}${supSortTh('csat','CSAT')}${supSortTh('iqa','IQA')}`;
+    html += `${supSortTh('tph','TPH')}${supSortTh('aht','AHT')}${supSortTh('csat','CSAT')}${supSortTh('iqa','IQS')}`;
   });
   html += `</tr></thead><tbody>`;
 
@@ -2167,7 +2209,7 @@ function renderAMView() {
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
   periods.forEach(() => {
-    html += `${amSortTh('tph','TPH')}${amSortTh('aht','AHT')}${amSortTh('csat','CSAT')}${amSortTh('iqa','IQA')}`;
+    html += `${amSortTh('tph','TPH')}${amSortTh('aht','AHT')}${amSortTh('csat','CSAT')}${amSortTh('iqa','IQS')}`;
   });
   html += `</tr></thead><tbody>`;
 
@@ -2303,7 +2345,7 @@ function renderGeneralView() {
         <th colspan="2" class="week-hdr w1" style="text-align:center">⚡ TPH</th>
         <th colspan="2" class="week-hdr w2" style="text-align:center">⏱ AHT</th>
         <th colspan="2" class="week-hdr wc" style="text-align:center">😊 CSAT</th>
-        <th colspan="2" class="week-hdr w3" style="text-align:center">🎯 IQA</th>
+        <th colspan="2" class="week-hdr w3" style="text-align:center">🎯 IQS</th>
       </tr>
       <tr>
         <th class="week-hdr w1" style="font-size:10px;padding:4px 6px">Value</th>
@@ -2363,7 +2405,7 @@ function renderGeneralView() {
       <div class="table-card" style="padding:0">
         <div class="table-card-header" style="padding:12px 16px 8px">
           <div>
-            <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQA% — WoW</h3>
+            <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQS% — WoW</h3>
             <p style="font-size:11px">Last 8 weeks · team average</p>
           </div>
         </div>
@@ -2389,7 +2431,7 @@ function renderGeneralView() {
       <div class="table-card" style="padding:0">
         <div class="table-card-header" style="padding:12px 16px 8px">
           <div>
-            <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQA% — MoM</h3>
+            <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQS% — MoM</h3>
             <p style="font-size:11px">Last 6 months · team average</p>
           </div>
         </div>
@@ -2536,7 +2578,7 @@ function initGeneralCharts(
         labels: wowLabels,
         datasets: [
           lineDataset('CSAT%', wowCSAT, '#218848', 'y'),
-          lineDataset('IQA%',  wowIQA,  '#475CC7', 'y')
+          lineDataset('IQS%',  wowIQA,  '#475CC7', 'y')
         ]
       },
       options: commonOptions(wowLabels, qualityAxes('Score %'),
@@ -2575,7 +2617,7 @@ function initGeneralCharts(
         labels: momLabels,
         datasets: [
           lineDataset('CSAT%', momCSAT, '#218848', 'y'),
-          lineDataset('IQA%',  momIQA,  '#475CC7', 'y')
+          lineDataset('IQS%',  momIQA,  '#475CC7', 'y')
         ]
       },
       options: commonOptions(momLabels, qualityAxes('Score %'),
@@ -3102,17 +3144,67 @@ function downloadHierTemplate() {
   a.click();
 }
 
+// Toggle: true = show active only (default), false = show all
+let hierShowActiveOnly = true;
+
 function renderHierarchyTable() {
   const tbody = document.getElementById('hier-tbody');
   if (!tbody) return;
+
+  // Update the toggle button label to reflect current state
+  const toggleBtn = document.getElementById('hier-toggle-btn');
+
   if (!rawHierarchy.length) {
     tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><p>No hierarchy records yet. Add records to link agents to supervisors and AMs.</p></td></tr>`;
+    if (toggleBtn) toggleBtn.style.display = 'none';
     return;
   }
-  const sorted = [...rawHierarchy].sort((a,b) =>
+
+  const today = todayStr();
+
+  // Separate active vs historical
+  const active     = rawHierarchy.filter(h => {
+    const to = h.effective_to ? isoDate(String(h.effective_to)).substring(0,10) : '';
+    return !to || to >= today;
+  });
+  const historical = rawHierarchy.filter(h => {
+    const to = h.effective_to ? isoDate(String(h.effective_to)).substring(0,10) : '';
+    return to && to < today;
+  });
+
+  const displayRows = hierShowActiveOnly ? active : [...rawHierarchy];
+  const hiddenCount = historical.length;
+
+  // Update toggle button
+  if (toggleBtn) {
+    toggleBtn.style.display = '';
+    if (hierShowActiveOnly) {
+      toggleBtn.textContent = hiddenCount > 0
+        ? `🕐 Show ${hiddenCount} historical record${hiddenCount === 1 ? '' : 's'}`
+        : '🕐 Show historical';
+      toggleBtn.style.background = '#F1F5F9';
+      toggleBtn.style.color = '#64748B';
+    } else {
+      toggleBtn.textContent = `✅ Active only (${active.length})`;
+      toggleBtn.style.background = '#218848';
+      toggleBtn.style.color = '#fff';
+    }
+  }
+
+  const sorted = [...displayRows].sort((a,b) =>
     (String(a.agent_name||'')).localeCompare(String(b.agent_name||'')));
-  tbody.innerHTML = sorted.map(h => `
-    <tr>
+
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><p>No records to show.</p></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(h => {
+    const to = h.effective_to ? isoDate(String(h.effective_to)).substring(0,10) : '';
+    const isHistorical = to && to < today;
+    const rowStyle = isHistorical ? 'opacity:0.55;background:#F8FAFC;' : '';
+    return `
+    <tr style="${rowStyle}">
       <td>${escHtml(h.agent_name || h.agent_email || '')}</td>
       <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
       <td>${escHtml(h.supervisor_name||'')}</td>
@@ -3120,13 +3212,21 @@ function renderHierarchyTable() {
       <td>${h.team ? `<span style="background:#EEF4FF;color:#475CC7;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">${escHtml(h.team)}</span>` : '<span style="color:#CBD5E1">—</span>'}</td>
       <td>${h.role ? `<span style="background:#FFF7ED;color:#C2410C;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600">${escHtml(h.role)}</span>` : '<span style="color:#CBD5E1">—</span>'}</td>
       <td>${escHtml(h.effective_from||'')}</td>
-      <td>${h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>'}</td>
+      <td>${isHistorical
+        ? `<span style="color:#DC2626;font-size:11px">${escHtml(h.effective_to)}</span>`
+        : (h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>')}</td>
       <td style="color:#64748B;font-size:11px">${escHtml(h.notes||'')}</td>
       <td style="white-space:nowrap">
         <button class="btn-sm btn-edit" onclick='openHierModal(${JSON.stringify(h)})'>Edit</button>
         <button class="btn-sm btn-del" onclick="deleteHierarchy('${escHtml(String(h.id||''))}')">Del</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
+}
+
+function toggleHierHistory() {
+  hierShowActiveOnly = !hierShowActiveOnly;
+  renderHierarchyTable();
 }
 
 function renderRolesTable(roles) {
@@ -3181,7 +3281,7 @@ function navTo(page) {
     if (page === 'am')             renderAMView();
     if (page === 'general')        renderGeneralView();
     if (page === 'contact-reason') renderContactReasonView();
-    if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); }
+    if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); fetchEmailRecipients(); }
     renderedTabs.add(page);
   }
 }
@@ -3393,6 +3493,96 @@ async function fetchRoles() {
   } catch(e) { /* silently fail if not admin */ }
 }
 
+// ─── WEEKLY EMAIL REPORT FUNCTIONS ────────────────────────────────────────────
+
+async function fetchEmailRecipients() {
+  const tbody = document.getElementById('email-recipients-tbody');
+  if (!tbody) return;
+  try {
+    const u   = currentUser;
+    const url = `${SCRIPT_URL}?action=getEmailRecipients&email=${encodeURIComponent(u?.email||'')}`;
+    const res  = await fetch(url, { redirect:'follow' });
+    const data = await res.json();
+    if (data.error) { tbody.innerHTML = `<tr><td colspan="6" style="color:#EF4444;padding:14px">${escHtml(data.error)}</td></tr>`; return; }
+    renderEmailRecipientsTable(data.recipients || []);
+  } catch(e) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="color:#EF4444;padding:14px">Could not load recipients.</td></tr>`;
+  }
+}
+
+function renderEmailRecipientsTable(recipients) {
+  const tbody = document.getElementById('email-recipients-tbody');
+  if (!tbody) return;
+  if (!recipients.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#94A3B8;padding:20px">
+      No supervisors or A.Managers found in Hierarchy_Log.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = recipients.map(r => {
+    const roleBadge = r.role.toLowerCase().includes('assistant')
+      ? `<span style="background:#EEF4FF;color:#475CC7;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">A.Manager</span>`
+      : `<span style="background:#F0FDF4;color:#218848;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">Supervisor</span>`;
+    return `<tr>
+      <td style="font-weight:600">${escHtml(r.name)}</td>
+      <td style="color:#475CC7;font-size:12px">${escHtml(r.email)}</td>
+      <td>${roleBadge}</td>
+      <td style="color:#64748B;font-size:12px">${escHtml(r.team || '—')}</td>
+      <td style="text-align:center;font-weight:600;color:#AA0061">${r.agentCount}</td>
+      <td style="text-align:center">
+        <button onclick="sendWeeklyEmailTo('${escHtml(r.email)}', '${escHtml(r.name)}')"
+          style="background:#F1F5F9;color:#475CC7;border:1px solid #CBD5E1;border-radius:5px;
+                 padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer"
+          title="Send report email to ${escHtml(r.name)} now">
+          📤 Send
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function sendWeeklyEmailsAll() {
+  const statusEl = document.getElementById('email-send-status');
+  if (statusEl) statusEl.textContent = '⏳ Sending to all recipients…';
+  try {
+    const u    = currentUser;
+    const res  = await fetch(SCRIPT_URL, {
+      method: 'POST', redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'sendWeeklyEmails', email: u?.email || '' })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const sentCount = (data.sent || []).length;
+    const errCount  = (data.errors || []).length;
+    if (statusEl) statusEl.textContent = `✅ Sent to ${sentCount} recipient${sentCount !== 1 ? 's' : ''}` + (errCount ? ` · ⚠️ ${errCount} error${errCount !== 1 ? 's' : ''}` : '');
+    showToast(`✅ Weekly reports sent to ${sentCount} people`);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ ' + e.message;
+    showToast('❌ Send failed: ' + e.message, '#EF4444');
+  }
+}
+
+async function sendWeeklyEmailTo(targetEmail, targetName) {
+  const statusEl = document.getElementById('email-send-status');
+  if (statusEl) statusEl.textContent = `⏳ Sending to ${targetName}…`;
+  try {
+    const u   = currentUser;
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST', redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'sendWeeklyEmails', email: u?.email || '', targetEmail })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (statusEl) statusEl.textContent = `✅ Sent to ${targetName}`;
+    showToast(`✅ Report sent to ${targetName}`);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ ' + e.message;
+    showToast('❌ Send failed: ' + e.message, '#EF4444');
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ═══════════════════════════════════════════════════════════
 // CSV UPLOAD
 // ═══════════════════════════════════════════════════════════
@@ -3580,23 +3770,32 @@ async function submitUpload(type) {
       await apiPost({ action:'clearDateRange', sheetKey: type.toUpperCase(), dateFrom: dates[0], dateTo: dates[dates.length-1] });
     }
 
-    // Upload in batches of 200 rows
+    // Upload in batches of 200 rows — upsert: server deduplicates
     const BATCH = 200;
-    let uploaded = 0;
+    let totalInserted = 0, totalUpdated = 0, totalUnchanged = 0;
     for (let i = 0; i < rows.length; i += BATCH) {
-      const batch = rows.slice(i, i + BATCH);
-      await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
-      uploaded += batch.length;
-      st.textContent = `Uploading… ${uploaded}/${rows.length}`;
+      const batch  = rows.slice(i, i + BATCH);
+      const result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
+      totalInserted  += result.inserted  || 0;
+      totalUpdated   += result.updated   || 0;
+      totalUnchanged += result.unchanged || 0;
+      const done = Math.min(i + BATCH, rows.length);
+      st.textContent = `Processing… ${done}/${rows.length}`;
     }
 
-    st.textContent = `✅ ${uploaded} rows uploaded!`;
+    const parts = [];
+    if (totalInserted)  parts.push(`${totalInserted} new`);
+    if (totalUpdated)   parts.push(`${totalUpdated} updated`);
+    if (totalUnchanged) parts.push(`${totalUnchanged} unchanged`);
+    const summary = parts.join(' · ') || '0 rows';
+    st.textContent = `✅ ${summary}`;
     st.className = 'upload-status ok';
-    showToast(`✅ ${uploaded} rows uploaded successfully!`);
+    showToast(`✅ Upload complete — ${summary}`);
 
-    // Refresh data
+    // Refresh data — clear cache so new/updated rows are immediately visible
+    _lsClear();
     showLoading(true, 'Refreshing data…');
-    await apiFetch();
+    await apiFetch(true); // forceNetwork: bypass localStorage cache
     navTo(currentPage);
 
   } catch(err) {
