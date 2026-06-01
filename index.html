@@ -2370,41 +2370,54 @@ function renderGeneralView() {
     return;
   }
 
-  // ── WoW: all Sun–Sat weeks whose Sunday falls in 2025 ───────────────────────
+  // ── Charts: independent last-8-weeks and last-6-months (not tied to tables) ──
+  const chartWowWeeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const ref = addDays(today, -i * 7);
+    const sun = getWeekStartOf(ref), sat = getWeekEndOf(sun);
+    const end = (i === 0) ? today : sat;
+    chartWowWeeks.push({ label: fmtWowLabel(sun, sat, i === 0), kpis: computeGroupKPIs(emails, sun, end) });
+  }
+  const chartMomMonths = [];
+  const _now = new Date(today + 'T12:00:00');
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(_now.getFullYear(), _now.getMonth() - i, 1);
+    const y = d.getFullYear(), mo = d.getMonth();
+    const from = `${y}-${String(mo+1).padStart(2,'0')}-01`;
+    const lastD = new Date(y, mo+1, 0);
+    const to = (i === 0) ? today : `${y}-${String(mo+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
+    chartMomMonths.push({ label: d.toLocaleDateString('en-US',{month:'short',year:'numeric'}), kpis: computeGroupKPIs(emails, from, to) });
+  }
+
+  // ── WoW TABLE: all Sun–Sat weeks whose Sunday falls in 2026 ─────────────────
   const wowWeeks = [];
   {
-    let cur = new Date('2025-01-05T12:00:00'); // first Sunday of 2025 (Jan 5)
+    let cur = new Date('2025-12-28T12:00:00'); // first Sunday on/after Jan 1 2026
     const todayD = new Date(today + 'T12:00:00');
     while (cur <= todayD) {
       const sun = cur.toISOString().split('T')[0];
-      if (sun.slice(0,4) !== '2025') { cur = new Date(cur.getTime() + 7*86400000); continue; }
+      if (sun.slice(0,4) !== '2026') { cur = new Date(cur.getTime() + 7*86400000); continue; }
       const sat = getWeekEndOf(sun);
       const isWTD = sun <= today && sat >= today;
       const end   = isWTD ? today : sat;
       if (sun <= today) {
-        wowWeeks.push({
-          label: fmtWowLabel(sun, sat, isWTD),
-          start: sun, end,
-          kpis: computeGroupKPIs(emails, sun, end)
-        });
+        wowWeeks.push({ label: fmtWowLabel(sun, sat, isWTD), start: sun, end,
+          kpis: computeGroupKPIs(emails, sun, end) });
       }
       cur = new Date(cur.getTime() + 7*86400000);
     }
   }
 
-  // ── MoM: all 12 months of 2025 (cap current month at today) ─────────────────
+  // ── MoM TABLE: all months of 2026 up to today ───────────────────────────────
   const momMonths = [];
   for (let m = 0; m < 12; m++) {
-    const from  = `2025-${String(m+1).padStart(2,'0')}-01`;
-    const lastD = new Date(2025, m+1, 0);
-    const last  = `2025-${String(m+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
+    const from  = `2026-${String(m+1).padStart(2,'0')}-01`;
+    const lastD = new Date(2026, m+1, 0);
+    const last  = `2026-${String(m+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
     const to    = last > today ? today : last;
-    if (from > today) break; // don't add future months
-    momMonths.push({
-      label: new Date(2025, m, 1).toLocaleDateString('en-US', { month:'short', year:'numeric' }),
-      from, to,
-      kpis: computeGroupKPIs(emails, from, to)
-    });
+    if (from > today) break;
+    momMonths.push({ label: new Date(2026, m, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'}),
+      from, to, kpis: computeGroupKPIs(emails, from, to) });
   }
 
   // Pre-extract all values for quartile coloring across the full trend series
@@ -2528,19 +2541,17 @@ function renderGeneralView() {
 
   const agentLabel = `${agents.length} agent${agents.length!==1?'s':''}`;
 
-  // ── KPI chart data prep ──────────────────────────────────────────────────────
-  // Charts show last 8 weeks (top row) and last 6 months (bottom row), always.
-  // We pass labels + datasets after setting innerHTML so canvases exist in DOM.
-  const wowLabels = wowWeeks.map(w => w.label);
-  const momLabels = momMonths.map(m => m.label);
-  const wowCSAT   = wowWeeks.map(w => w.kpis.csat   !== null ? +w.kpis.csat.toFixed(2)   : null);
-  const wowIQA    = wowWeeks.map(w => w.kpis.iqa    !== null ? +w.kpis.iqa.toFixed(2)    : null);
-  const wowTPH    = wowWeeks.map(w => w.kpis.tph    !== null ? +w.kpis.tph.toFixed(2)    : null);
-  const wowAHT    = wowWeeks.map(w => w.kpis.ahtSecs !== null ? +(w.kpis.ahtSecs/60).toFixed(2) : null); // mins
-  const momCSAT   = momMonths.map(m => m.kpis.csat   !== null ? +m.kpis.csat.toFixed(2)   : null);
-  const momIQA    = momMonths.map(m => m.kpis.iqa    !== null ? +m.kpis.iqa.toFixed(2)    : null);
-  const momTPH    = momMonths.map(m => m.kpis.tph    !== null ? +m.kpis.tph.toFixed(2)    : null);
-  const momAHT    = momMonths.map(m => m.kpis.ahtSecs !== null ? +(m.kpis.ahtSecs/60).toFixed(2) : null);
+  // ── KPI chart data prep — always last 8 weeks / last 6 months ───────────────
+  const wowLabels = chartWowWeeks.map(w => w.label);
+  const momLabels = chartMomMonths.map(m => m.label);
+  const wowCSAT   = chartWowWeeks.map(w => w.kpis.csat    !== null ? +w.kpis.csat.toFixed(2)    : null);
+  const wowIQA    = chartWowWeeks.map(w => w.kpis.iqa     !== null ? +w.kpis.iqa.toFixed(2)     : null);
+  const wowTPH    = chartWowWeeks.map(w => w.kpis.tph     !== null ? +w.kpis.tph.toFixed(2)     : null);
+  const wowAHT    = chartWowWeeks.map(w => w.kpis.ahtSecs !== null ? +(w.kpis.ahtSecs/60).toFixed(2) : null);
+  const momCSAT   = chartMomMonths.map(m => m.kpis.csat    !== null ? +m.kpis.csat.toFixed(2)    : null);
+  const momIQA    = chartMomMonths.map(m => m.kpis.iqa     !== null ? +m.kpis.iqa.toFixed(2)     : null);
+  const momTPH    = chartMomMonths.map(m => m.kpis.tph     !== null ? +m.kpis.tph.toFixed(2)     : null);
+  const momAHT    = chartMomMonths.map(m => m.kpis.ahtSecs !== null ? +(m.kpis.ahtSecs/60).toFixed(2) : null);
 
   wrap.innerHTML = `
     <!-- ══ CHARTS ROW 1: WoW ══════════════════════════════════ -->
@@ -2600,7 +2611,7 @@ function renderGeneralView() {
       <div class="table-card-header">
         <div>
           <h3>📅 Week-over-Week KPI Trend</h3>
-          <p>2025 · all weeks · Sun–Sat · ${agentLabel} · grouped by quarter (click to expand/collapse) · color = quartile · Δ = % vs prior week</p>
+          <p>2026 · all weeks · Sun–Sat · ${agentLabel} · grouped by quarter (click to expand/collapse) · color = quartile · Δ = % vs prior week</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button onclick="toggleTrendCard('wow-trend-table','wow-card-toggle')"
@@ -2620,7 +2631,7 @@ function renderGeneralView() {
       <div class="table-card-header">
         <div>
           <h3>📆 Month-over-Month KPI Trend</h3>
-          <p>2025 · Jan–Dec · ${agentLabel} · color = quartile vs full-year range · Δ = % change vs prior month</p>
+          <p>2026 · Jan–Dec · ${agentLabel} · color = quartile vs full-year range · Δ = % change vs prior month</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button onclick="toggleTrendCard('mom-trend-table','mom-card-toggle')"
