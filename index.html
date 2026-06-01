@@ -96,8 +96,9 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 .perf-table thead { position: sticky; top: 0; z-index: 15; }
 .perf-table th { background: #F8FAFC; font-weight: 700; font-size: 11px;
   text-transform: uppercase; letter-spacing: .05em; color: #64748B;
-  padding: 8px 10px; border-bottom: 2px solid #E2E8F0; white-space: nowrap; }
+  padding: 6px 8px; border-bottom: 2px solid #E2E8F0; white-space: nowrap; }
 /* Week header columns — CookUnity brand palette per week */
+.perf-table th.week-hdr.w0 { background: #94A3B8; }   /* Slate  — Week -3 (oldest) */
 .perf-table th.week-hdr { background: #AA0061;
   color: #fff; text-align: center; border-bottom: none; font-size: 12px;
   padding: 7px 10px; letter-spacing: 0; }
@@ -107,7 +108,7 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 .perf-table th.week-hdr.wc { background: #218848; }   /* Earth — WTD/current */
 .perf-table th.sticky-col { position: sticky; z-index: 20; }
 .perf-table th.col-agent { left: 0; min-width: 170px; }
-.perf-table td { padding: 8px 10px; border-bottom: 1px solid #F1F5F9;
+.perf-table td { padding: 6px 8px; border-bottom: 1px solid #F1F5F9;
   font-size: 13px; color: #1E293B; white-space: nowrap; }
 .perf-table td.sticky-col { position: sticky; background: #fff; z-index: 5; }
 .perf-table td.col-agent { left: 0; font-weight: 600; color: #1E293B;
@@ -482,7 +483,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
     <div class="filter-sep"></div>
     <label>Period
       <select id="f-period" onchange="onPeriodChange()">
-        <option value="3w">Last 3 Weeks</option>
+        <option value="4w">Last 4 Weeks</option>
         <option value="1w">This Week</option>
         <option value="1m">This Month</option>
         <option value="lm">Last Month</option>
@@ -496,7 +497,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
     </div>
     <button class="btn-apply" onclick="applyFilters()">Apply</button>
     <button class="btn-reset" onclick="resetFilters()">Reset</button>
-    <span class="period-badge" id="period-badge">Last 3 Weeks</span>
+    <span class="period-badge" id="period-badge">Last 4 Weeks</span>
     <button id="filter-collapse-btn" onclick="toggleFilterBar()"
       style="margin-left:auto;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:6px;
              padding:4px 10px;font-size:11px;font-weight:600;color:#64748B;white-space:nowrap"
@@ -506,7 +507,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   <div id="filter-bar-collapsed" style="display:none;background:#fff;border-bottom:1px solid #E2E8F0;
        padding:6px 1.5rem;display:none;align-items:center;gap:10px;">
     <span style="font-size:12px;color:#64748B;font-weight:600">Filters hidden</span>
-    <span class="period-badge" id="period-badge-mini">Last 3 Weeks</span>
+    <span class="period-badge" id="period-badge-mini">Last 4 Weeks</span>
     <button onclick="toggleFilterBar()"
       style="background:#AA0061;color:#fff;border:none;border-radius:6px;
              padding:4px 12px;font-size:11px;font-weight:600">▼ Show filters</button>
@@ -523,16 +524,16 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       <div class="table-card-header">
         <div>
           <h3>Agent Performance</h3>
-          <p id="agent-table-subtitle">Last 3 weeks · all 4 KPIs per agent</p>
+          <p id="agent-table-subtitle">Last 4 weeks · all 4 KPIs per agent</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div id="agent-search-box"></div>
           <div id="agent-mode-pills" style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="agent-mode-wow" onclick="setTabMode('agent','wow')"
-              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 4)</button>
             <button id="agent-mode-mom" onclick="setTabMode('agent','mom')"
-              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 4)</button>
           </div>
           <button onclick="exportTable('agent-perf-table')"
             style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
@@ -551,16 +552,16 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       <div class="table-card-header">
         <div>
           <h3>Supervisor View — Agents by Team</h3>
-          <p id="sup-table-subtitle">Last 3 weeks · select a supervisor to focus</p>
+          <p id="sup-table-subtitle">Last 4 weeks · select a supervisor to focus</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div id="supervisor-search-box"></div>
           <div style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="supervisor-mode-wow" onclick="setTabMode('supervisor','wow')"
-              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 4)</button>
             <button id="supervisor-mode-mom" onclick="setTabMode('supervisor','mom')"
-              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 4)</button>
           </div>
           <button onclick="exportTableBySelector('#sup-table-wrap table')"
             style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
@@ -579,16 +580,16 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       <div class="table-card-header">
         <div>
           <h3>Assistant Manager View — Agents by Region</h3>
-          <p id="am-table-subtitle">Last 3 weeks · select an AM to focus</p>
+          <p id="am-table-subtitle">Last 4 weeks · select an AM to focus</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <div id="am-search-box"></div>
           <div style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="am-mode-wow" onclick="setTabMode('am','wow')"
-              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 4)</button>
             <button id="am-mode-mom" onclick="setTabMode('am','mom')"
-              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 4)</button>
           </div>
           <button onclick="exportTableBySelector('#am-table-wrap table')"
             style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
@@ -621,9 +622,9 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
           <div style="display:flex;gap:4px;align-items:center">
             <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
             <button id="cr-mode-wow" onclick="setTabMode('cr','wow')"
-              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 3)</button>
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 4)</button>
             <button id="cr-mode-mom" onclick="setTabMode('cr','mom')"
-              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 3)</button>
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 4)</button>
           </div>
           <!-- Sort toggle -->
           <div style="display:flex;gap:4px;align-items:center">
@@ -946,7 +947,7 @@ let sortState = { col: null, dir: 1 }; // dir: 1=asc, -1=desc
 
 // active filter state
 let activeFilters = { agent:'', supervisor:'', am:'', team:'', dateFrom:'', dateTo:'' };
-let activePeriod  = '3w';
+let activePeriod  = '4w';
 
 // ─── PER-TAB WoW/MoM TOGGLE STATE ───────────────────────────
 let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow' };
@@ -1144,9 +1145,9 @@ function fmtWowLabel(sunStr, satStr, isCurrentWk) {
 function getActivePeriods() {
   const today = todayStr();
 
-  if (activePeriod === '3w') {
+  if (activePeriod === '4w') {
     const periods = [];
-    for (let i = 2; i >= 0; i--) {
+    for (let i = 3; i >= 0; i--) {
       const refDay = addDays(today, -i * 7);
       const sun    = getWeekStartOf(refDay);   // Sunday
       const sat    = getWeekEndOf(sun);         // Saturday
@@ -1155,7 +1156,7 @@ function getActivePeriods() {
         label: fmtWowLabel(sun, sat, isCurrentWk),
         start: sun,
         end:   isCurrentWk ? today : sat,
-        wk:    i === 2 ? 'w1' : i === 1 ? 'w2' : 'w3'
+        wk:    i === 3 ? 'w0' : i === 2 ? 'w1' : i === 1 ? 'w2' : 'wc'
       });
     }
     return periods;
@@ -1209,12 +1210,12 @@ function getTabPeriods(tab) {
   const mode  = tabPeriodMode[tab] || 'wow';
   const today = todayStr();
 
-  // Helper: assign color classes — last 3 columns get w1/w2/wc, older get w1
+  // Helper: assign color classes — last 4 columns get w0/w1/w2/wc, older get w0
   function assignColors(periods) {
     const n = periods.length;
     return periods.map((p, i) => {
-      const pos = i - (n - 3); // 0=w1, 1=w2, 2=wc for the last 3
-      return { ...p, wk: pos === 2 ? 'wc' : pos === 1 ? 'w2' : pos === 0 ? 'w1' : 'w1' };
+      const pos = i - (n - 4); // 0=w0, 1=w1, 2=w2, 3=wc for the last 4
+      return { ...p, wk: pos === 3 ? 'wc' : pos === 2 ? 'w2' : pos === 1 ? 'w1' : 'w0' };
     });
   }
 
@@ -1262,16 +1263,16 @@ function getTabPeriods(tab) {
   }
 
   // ── Other non-default presets (1w, 1m, lm, q) — single column ────────────
-  if (activePeriod && activePeriod !== '3w') {
+  if (activePeriod && activePeriod !== '4w') {
     return getActivePeriods();
   }
 
-  // ── Default: rolling last-3 weeks or last-3 months ───────────────────────
-  const wkCls = ['w1', 'w2', 'wc'];
+  // ── Default: rolling last-4 weeks or last-4 months ───────────────────────
+  const wkCls = ['w0', 'w1', 'w2', 'wc'];
 
   if (mode === 'mom') {
     const now = new Date(today + 'T12:00:00');
-    return [2, 1, 0].map((i, idx) => {
+    return [3, 2, 1, 0].map((i, idx) => {
       const d    = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const y    = d.getFullYear(), m = d.getMonth();
       const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
@@ -1284,8 +1285,8 @@ function getTabPeriods(tab) {
     });
   }
 
-  // WoW: last 3 Sun–Sat weeks
-  return [2, 1, 0].map((i, idx) => {
+  // WoW: last 4 Sun–Sat weeks
+  return [3, 2, 1, 0].map((i, idx) => {
     const ref = addDays(today, -i * 7);
     const sun = getWeekStartOf(ref);
     const sat = getWeekEndOf(sun);
@@ -1318,7 +1319,7 @@ function setTabMode(tab, mode) {
 // When the global PERIOD filter is active, the toggle is replaced by a "period override" badge.
 function tabModePills(tab) {
   // Global period override — show badge instead of toggle
-  if (activePeriod && activePeriod !== '3w') {
+  if (activePeriod && activePeriod !== '4w') {
     const periodLabels = { '1w':'This Week', '1m':'This Month', 'lm':'Last Month', 'q':'QTD', 'custom':'Custom Range' };
     const label = periodLabels[activePeriod] || activePeriod;
     return `<div style="display:flex;gap:4px;align-items:center">
@@ -1340,7 +1341,7 @@ function tabModePills(tab) {
   };
   return `<div style="display:flex;gap:4px;align-items:center">
     <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
-    ${pill('wow','📅 WoW (Last 3)')}${pill('mom','📆 MoM (Last 3)')}
+    ${pill('wow','📅 WoW (Last 4)')}${pill('mom','📆 MoM (Last 4)')}
   </div>`;
 }
 
@@ -2108,7 +2109,7 @@ function renderAgentView() {
   html += `</tr></tfoot></table>`;
   wrap.innerHTML = html;
 
-  const agentModeLabel = tabPeriodMode.agent === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
+  const agentModeLabel = tabPeriodMode.agent === 'mom' ? 'Last 3 months' : 'Last 4 weeks';
   const shownCount = displayAgents.length;
   const totalCount = agents.length;
   document.getElementById('agent-table-subtitle').textContent =
@@ -2258,7 +2259,7 @@ function renderSupervisorView() {
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
-  const supModeLabel = tabPeriodMode.supervisor === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
+  const supModeLabel = tabPeriodMode.supervisor === 'mom' ? 'Last 3 months' : 'Last 4 weeks';
   document.getElementById('sup-table-subtitle').textContent =
     `${supModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${visSupRows.length}${visSupRows.length!==supRows.length?` of ${supRows.length}`:''} supervisor${supRows.length !== 1 ? 's' : ''}`;
 }
@@ -2401,7 +2402,7 @@ function renderAMView() {
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
-  const amModeLabel = tabPeriodMode.am === 'mom' ? 'Last 3 months' : 'Last 3 weeks';
+  const amModeLabel = tabPeriodMode.am === 'mom' ? 'Last 3 months' : 'Last 4 weeks';
   document.getElementById('am-table-subtitle').textContent =
     `${amModeLabel} · ${periods.map(p => p.label).join(' | ')} · ${visAmRows.length}${visAmRows.length!==amRows.length?` of ${amRows.length}`:''} A.Manager${amRows.length !== 1 ? 's' : ''}`;
 }
@@ -3646,12 +3647,12 @@ function applyFilters() {
 
 function resetFilters() {
   activeFilters = { agent:'', supervisor:'', am:'', team:'', dateFrom:'', dateTo:'' };
-  activePeriod  = '3w';
+  activePeriod  = '4w';
   document.getElementById('f-agent').value      = '';
   document.getElementById('f-supervisor').value = '';
   document.getElementById('f-am').value         = '';
   document.getElementById('f-team').value       = '';
-  document.getElementById('f-period').value     = '3w';
+  document.getElementById('f-period').value     = '4w';
   document.getElementById('f-date-from').value  = '';
   document.getElementById('f-date-to').value    = '';
   document.getElementById('f-custom-range').style.display = 'none';
@@ -3675,7 +3676,7 @@ function onDateInput() {
 }
 
 function updatePeriodBadge() {
-  const labels = { '3w':'Last 3 Weeks','1w':'This Week','1m':'This Month','lm':'Last Month','q':'This Quarter','custom':'Custom Range' };
+  const labels = { '4w':'Last 4 Weeks','1w':'This Week','1m':'This Month','lm':'Last Month','q':'This Quarter','custom':'Custom Range' };
   let label = labels[activePeriod] || activePeriod;
   if (activePeriod === 'custom' && activeFilters.dateFrom && activeFilters.dateTo) {
     label = `${activeFilters.dateFrom} → ${activeFilters.dateTo}`;
