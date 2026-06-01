@@ -2370,31 +2370,38 @@ function renderGeneralView() {
     return;
   }
 
-  // ── WoW: full year — 52 Sun–Sat weeks ───────────────────────────────────────
+  // ── WoW: all Sun–Sat weeks whose Sunday falls in 2025 ───────────────────────
   const wowWeeks = [];
-  for (let i = 51; i >= 0; i--) {
-    const ref   = addDays(today, -i * 7);
-    const sun   = getWeekStartOf(ref);
-    const sat   = getWeekEndOf(sun);
-    const end   = (i === 0) ? today : sat;
-    wowWeeks.push({
-      label: fmtWowLabel(sun, sat, i === 0),
-      start: sun, end,
-      kpis: computeGroupKPIs(emails, sun, end)
-    });
+  {
+    let cur = new Date('2025-01-05T12:00:00'); // first Sunday of 2025 (Jan 5)
+    const todayD = new Date(today + 'T12:00:00');
+    while (cur <= todayD) {
+      const sun = cur.toISOString().split('T')[0];
+      if (sun.slice(0,4) !== '2025') { cur = new Date(cur.getTime() + 7*86400000); continue; }
+      const sat = getWeekEndOf(sun);
+      const isWTD = sun <= today && sat >= today;
+      const end   = isWTD ? today : sat;
+      if (sun <= today) {
+        wowWeeks.push({
+          label: fmtWowLabel(sun, sat, isWTD),
+          start: sun, end,
+          kpis: computeGroupKPIs(emails, sun, end)
+        });
+      }
+      cur = new Date(cur.getTime() + 7*86400000);
+    }
   }
 
-  // ── MoM: full year — 12 calendar months ──────────────────────────────────────
+  // ── MoM: all 12 months of 2025 (cap current month at today) ─────────────────
   const momMonths = [];
-  const now = new Date(today + 'T12:00:00');
-  for (let i = 11; i >= 0; i--) {
-    const d    = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const y    = d.getFullYear(), m = d.getMonth();
-    const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
-    const last = new Date(y, m+1, 0);
-    const to   = (i === 0) ? today : `${y}-${String(m+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+  for (let m = 0; m < 12; m++) {
+    const from  = `2025-${String(m+1).padStart(2,'0')}-01`;
+    const lastD = new Date(2025, m+1, 0);
+    const last  = `2025-${String(m+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
+    const to    = last > today ? today : last;
+    if (from > today) break; // don't add future months
     momMonths.push({
-      label: d.toLocaleDateString('en-US', { month:'short', year:'numeric' }),
+      label: new Date(2025, m, 1).toLocaleDateString('en-US', { month:'short', year:'numeric' }),
       from, to,
       kpis: computeGroupKPIs(emails, from, to)
     });
@@ -2593,7 +2600,7 @@ function renderGeneralView() {
       <div class="table-card-header">
         <div>
           <h3>📅 Week-over-Week KPI Trend</h3>
-          <p>Full year · 52 weeks · Sun–Sat · ${agentLabel} · grouped by quarter (click to expand/collapse) · color = quartile · Δ = % vs prior week</p>
+          <p>2025 · all weeks · Sun–Sat · ${agentLabel} · grouped by quarter (click to expand/collapse) · color = quartile · Δ = % vs prior week</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button onclick="toggleTrendCard('wow-trend-table','wow-card-toggle')"
@@ -2613,7 +2620,7 @@ function renderGeneralView() {
       <div class="table-card-header">
         <div>
           <h3>📆 Month-over-Month KPI Trend</h3>
-          <p>Full year · 12 months · ${agentLabel} · color = quartile vs 12-month range · Δ = % change vs prior month</p>
+          <p>2025 · Jan–Dec · ${agentLabel} · color = quartile vs full-year range · Δ = % change vs prior month</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button onclick="toggleTrendCard('mom-trend-table','mom-card-toggle')"
