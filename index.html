@@ -1201,19 +1201,73 @@ function getActivePeriods() {
 }
 
 // ─── PER-TAB PERIOD HELPERS ───────────────────────────────
-// When the global PERIOD filter is anything other than the default '3w',
-// the tab's WoW/MoM toggle is overridden and getActivePeriods() is used.
-// This ensures table columns always match whatever the filter bar shows.
+// Returns the array of period columns to render for a given tab.
+// Custom range: broken into weeks (WoW) or months (MoM) within the range.
+// Other period presets (1w, 1m, lm, q): single column via getActivePeriods().
+// Default (3w): rolling last-3 weeks or last-3 months per tab toggle.
 function getTabPeriods(tab) {
-  // Global period override — any non-default selection wins
+  const mode  = tabPeriodMode[tab] || 'wow';
+  const today = todayStr();
+
+  // Helper: assign color classes — last 3 columns get w1/w2/wc, older get w1
+  function assignColors(periods) {
+    const n = periods.length;
+    return periods.map((p, i) => {
+      const pos = i - (n - 3); // 0=w1, 1=w2, 2=wc for the last 3
+      return { ...p, wk: pos === 2 ? 'wc' : pos === 1 ? 'w2' : pos === 0 ? 'w1' : 'w1' };
+    });
+  }
+
+  // ── Custom range: slice into weeks or months ──────────────────────────────
+  if (activePeriod === 'custom' && (activeFilters.dateFrom || activeFilters.dateTo)) {
+    const from = activeFilters.dateFrom || addDays(today, -29);
+    const to   = activeFilters.dateTo   || today;
+
+    if (mode === 'wow') {
+      // One column per Sun–Sat week that overlaps the range
+      const periods = [];
+      let sun = getWeekStartOf(from);
+      while (sun <= to) {
+        const sat    = getWeekEndOf(sun);
+        const wStart = sun < from ? from : sun;   // clamp to range start
+        const wEnd   = sat > to   ? to   : sat;   // clamp to range end
+        const isWTD  = sun <= today && sat >= today;
+        periods.push({ label: fmtWowLabel(sun, sat, isWTD), start: wStart, end: wEnd, wk: 'w1' });
+        sun = addDays(sat, 1);
+      }
+      return assignColors(periods);
+    }
+
+    if (mode === 'mom') {
+      // One column per calendar month that overlaps the range
+      const periods = [];
+      const fromD = new Date(from + 'T12:00:00');
+      let y = fromD.getFullYear(), m = fromD.getMonth();
+      while (true) {
+        const mFrom = `${y}-${String(m+1).padStart(2,'0')}-01`;
+        if (mFrom > to) break;
+        const lastD = new Date(y, m+1, 0);
+        const mTo   = `${y}-${String(m+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
+        const isMTD = mTo > to || (mTo >= today && mFrom <= today);
+        periods.push({
+          label: new Date(y, m, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'}) + (isMTD ? ' MTD':''),
+          start: mFrom < from ? from : mFrom,
+          end:   mTo   > to   ? to   : mTo,
+          wk: 'w1'
+        });
+        m++; if (m > 11) { m = 0; y++; }
+      }
+      return assignColors(periods);
+    }
+  }
+
+  // ── Other non-default presets (1w, 1m, lm, q) — single column ────────────
   if (activePeriod && activePeriod !== '3w') {
     return getActivePeriods();
   }
 
-  // Default: use per-tab WoW/MoM toggle (always last 3 cycles)
-  const mode  = tabPeriodMode[tab] || 'wow';
-  const today = todayStr();
-  const wkCls = ['w1', 'w2', 'wc'];  // header CSS classes per position
+  // ── Default: rolling last-3 weeks or last-3 months ───────────────────────
+  const wkCls = ['w1', 'w2', 'wc'];
 
   if (mode === 'mom') {
     const now = new Date(today + 'T12:00:00');
@@ -1225,8 +1279,7 @@ function getTabPeriods(tab) {
       const to   = i === 0 ? today : `${y}-${String(m+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
       return {
         label: d.toLocaleDateString('en-US', { month:'short', year:'numeric' }) + (i === 0 ? ' MTD' : ''),
-        start: from, end: to,
-        wk: wkCls[idx]
+        start: from, end: to, wk: wkCls[idx]
       };
     });
   }
@@ -1236,10 +1289,9 @@ function getTabPeriods(tab) {
     const ref = addDays(today, -i * 7);
     const sun = getWeekStartOf(ref);
     const sat = getWeekEndOf(sun);
-    const isCurrentWk = (i === 0);
     return {
-      label: fmtWowLabel(sun, sat, isCurrentWk),
-      start: sun, end: isCurrentWk ? today : sat,
+      label: fmtWowLabel(sun, sat, i === 0),
+      start: sun, end: i === 0 ? today : sat,
       wk: wkCls[idx]
     };
   });
@@ -3624,7 +3676,10 @@ function onDateInput() {
 
 function updatePeriodBadge() {
   const labels = { '3w':'Last 3 Weeks','1w':'This Week','1m':'This Month','lm':'Last Month','q':'This Quarter','custom':'Custom Range' };
-  const label  = labels[activePeriod] || activePeriod;
+  let label = labels[activePeriod] || activePeriod;
+  if (activePeriod === 'custom' && activeFilters.dateFrom && activeFilters.dateTo) {
+    label = `${activeFilters.dateFrom} → ${activeFilters.dateTo}`;
+  }
   document.getElementById('period-badge').textContent = label;
   const mini = document.getElementById('period-badge-mini');
   if (mini) mini.textContent = label;
