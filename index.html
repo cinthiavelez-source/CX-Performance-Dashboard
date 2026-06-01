@@ -1577,11 +1577,27 @@ function getAllAgents() {
 // Supervisors/AMs aren't stored with emails in hierarchy, but many are also agents
 // whose email exists in the nameToEmail map built from TPH/IQA rows.
 function getAllSupervisors() {
+  const today = todayStr();
+  // Build set of names/emails that are explicitly inactive in a current record
+  const inactiveNames = new Set();
+  rawHierarchy.forEach(h => {
+    if (hierIsActive(h)) return;
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today < from || today > to) return;
+    if (h.agent_name)  inactiveNames.add(normName(h.agent_name));
+    if (h.agent_email) inactiveNames.add((h.agent_email).toLowerCase().trim());
+  });
+
   const seen = {};
   rawHierarchy.forEach(h => {
     if (!h.supervisor_name) return;
+    // Skip if this supervisor is marked inactive (match by name or email)
+    const supEmail = nameToEmail[normName(h.supervisor_name)] || '';
+    if (inactiveNames.has(normName(h.supervisor_name))) return;
+    if (supEmail && inactiveNames.has(supEmail)) return;
     if (!seen[h.supervisor_name]) {
-      seen[h.supervisor_name] = nameToEmail[normName(h.supervisor_name)] || '';
+      seen[h.supervisor_name] = supEmail;
     }
   });
   return Object.entries(seen)
@@ -1590,11 +1606,26 @@ function getAllSupervisors() {
 }
 
 function getAllAMs() {
+  const today = todayStr();
+  // Build set of names/emails that are explicitly inactive in a current record
+  const inactiveNames = new Set();
+  rawHierarchy.forEach(h => {
+    if (hierIsActive(h)) return;
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today < from || today > to) return;
+    if (h.agent_name)  inactiveNames.add(normName(h.agent_name));
+    if (h.agent_email) inactiveNames.add((h.agent_email).toLowerCase().trim());
+  });
+
   const seen = {};
   rawHierarchy.forEach(h => {
     if (!h.am_name) return;
+    const amEmail = nameToEmail[normName(h.am_name)] || '';
+    if (inactiveNames.has(normName(h.am_name))) return;
+    if (amEmail && inactiveNames.has(amEmail)) return;
     if (!seen[h.am_name]) {
-      seen[h.am_name] = nameToEmail[normName(h.am_name)] || '';
+      seen[h.am_name] = amEmail;
     }
   });
   return Object.entries(seen)
