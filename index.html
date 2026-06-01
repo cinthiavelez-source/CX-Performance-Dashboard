@@ -401,6 +401,13 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       <label>Notes</label>
       <input type="text" id="hm-notes" placeholder="Optional — reason for change, etc.">
     </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px;padding:6px 0">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;margin:0">
+        <input type="checkbox" id="hm-is-active" checked style="accent-color:#218848;width:16px;height:16px">
+        <span>Active</span>
+        <span style="font-size:11px;font-weight:400;color:#64748B">(unchecked = hidden from performance views)</span>
+      </label>
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeHierModal()">Cancel</button>
       <button class="btn-save" onclick="saveHierarchy()">Save Record</button>
@@ -1345,6 +1352,13 @@ function tabModePills(tab) {
   </div>`;
 }
 
+// Returns true if a hierarchy record's is_active field means "active".
+// Blank / true / 'true' → active; false / 'false' → inactive.
+function hierIsActive(h) {
+  const v = h.is_active;
+  return !(v === false || String(v).toLowerCase() === 'false');
+}
+
 // ─── HIERARCHY LOOKUP (email-first, name fallback) ────────
 
 function getHierarchyForAgent(agentEmail, dateStr) {
@@ -1540,7 +1554,21 @@ function getAllAgents() {
     }
   });
 
+  // Build a set of emails whose current hierarchy record is explicitly inactive
+  const today = todayStr();
+  const inactiveEmails = new Set();
+  rawHierarchy.forEach(h => {
+    if (hierIsActive(h)) return; // still active — leave in
+    const e = (h.agent_email || '').toLowerCase().trim();
+    if (!e) return;
+    // Only hide if this is their *current* record (date-active or no end date)
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (today >= from && today <= to) inactiveEmails.add(e);
+  });
+
   return Object.entries(byEmail)
+    .filter(([email]) => !inactiveEmails.has(email))
     .map(([email, name]) => ({ email, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -1591,6 +1619,7 @@ function getActiveSupervisors() {
   const seen  = {};
   rawHierarchy.forEach(h => {
     if (normName(h.role) !== 'supervisor') return;
+    if (!hierIsActive(h)) return;
     const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
     const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
     if (today < from || today > to) return;
@@ -1612,6 +1641,7 @@ function getActiveAMs() {
   const seen  = {};
   rawHierarchy.forEach(h => {
     if (normName(h.role) !== 'assistant manager') return;
+    if (!hierIsActive(h)) return;
     const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
     const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
     if (today < from || today > to) return;
@@ -1636,6 +1666,7 @@ function getSpecialistsUnderSupervisor(supName) {
     if (normName(h.supervisor_name) !== key) return;
     const r = normName(h.role);
     if (r === 'supervisor' || r === 'assistant manager') return; // skip mgmt rows
+    if (!hierIsActive(h)) return; // hidden from views
     // ── Effective-date gate ──────────────────────────────────────
     const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
     const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
@@ -1657,6 +1688,7 @@ function getSupervisorsUnderAM(amName) {
   rawHierarchy.forEach(h => {
     if (normName(h.am_name) !== key) return;
     if (normName(h.role) !== 'supervisor') return;
+    if (!hierIsActive(h)) return; // hidden from views
     // ── Effective-date gate ──────────────────────────────────────
     const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
     const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
@@ -3300,6 +3332,7 @@ async function submitHierarchyUpload() {
     effective_from:  from,
     effective_to:    to,
     notes:           'Bulk import',
+    is_active:       true,
   }));
 
   let uploaded = 0;
@@ -3508,7 +3541,11 @@ function renderHierarchyTable() {
       const dateBadge    = isHistorical
         ? `<span style="color:#DC2626;font-size:11px">${escHtml(to)}</span>`
         : (h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>');
-      const safeH = escHtml(JSON.stringify(h).replace(/'/g,"&#39;"));
+      // is_active: blank or 'true'/true → active; 'false'/false → inactive
+      const isActive = !(h.is_active === false || String(h.is_active).toLowerCase() === 'false');
+      const activeDot = isActive
+        ? `<span title="Active — visible in performance views" style="display:inline-flex;align-items:center;gap:4px;background:#DCFCE7;color:#166534;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">● Active</span>`
+        : `<span title="Inactive — hidden from performance views" style="display:inline-flex;align-items:center;gap:4px;background:#F1F5F9;color:#94A3B8;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">○ Inactive</span>`;
       return `<tr style="${rowStyle}">
         <td style="font-weight:600">${escHtml(h.agent_name || h.agent_email || '')}</td>
         <td style="font-size:11px;color:#64748B">${escHtml(h.agent_email||'')}</td>
@@ -3517,7 +3554,11 @@ function renderHierarchyTable() {
         <td>${escHtml(h.am_name||'—')}</td>
         <td style="font-size:11px;color:#64748B">${escHtml(h.effective_from||'')}</td>
         <td>${dateBadge}</td>
+        <td>${activeDot}</td>
         <td style="white-space:nowrap">
+          <button class="btn-sm" onclick="toggleHierActive('${escHtml(String(h.id||''))}', this)"
+            style="background:${isActive?'#FEF2F2':'#F0FDF4'};color:${isActive?'#DC2626':'#218848'};border:1px solid ${isActive?'#FECACA':'#BBF7D0'};border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer"
+            title="${isActive?'Mark as Inactive':'Mark as Active'}">${isActive?'Deactivate':'Activate'}</button>
           <button class="btn-sm btn-edit" onclick='openHierModal(${JSON.stringify(h)})'>Edit</button>
           <button class="btn-sm btn-del" onclick="deleteHierarchy('${escHtml(String(h.id||''))}')">Del</button>
         </td>
@@ -3531,7 +3572,7 @@ function renderHierarchyTable() {
           <thead><tr>
             <th>Name</th><th>Email</th><th>Role</th>
             <th>Supervisor</th><th>Asst. Manager</th>
-            <th>From</th><th>To</th><th>Actions</th>
+            <th>From</th><th>To</th><th>Status</th><th>Actions</th>
           </tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
@@ -4362,6 +4403,9 @@ function openHierModal(record) {
   document.getElementById('hm-from').value         = isEdit ? isoDate(String(record.effective_from||'')) : '';
   document.getElementById('hm-to').value           = isEdit ? isoDate(String(record.effective_to||''))   : '';
   document.getElementById('hm-notes').value        = isEdit ? record.notes       || '' : '';
+  // is_active: default true for new records, respect stored value for edits (blank = active)
+  const isActiveVal = isEdit ? (record.is_active === false || String(record.is_active).toLowerCase() === 'false' ? false : true) : true;
+  document.getElementById('hm-is-active').checked = isActiveVal;
   document.getElementById('hier-modal').classList.add('open');
 }
 
@@ -4381,6 +4425,7 @@ async function saveHierarchy() {
     effective_from:  document.getElementById('hm-from').value,
     effective_to:    document.getElementById('hm-to').value,
     notes:           document.getElementById('hm-notes').value.trim(),
+    is_active:       document.getElementById('hm-is-active').checked,
   };
   if (!record.agent_name || !record.supervisor_name || !record.am_name || !record.effective_from) {
     return showToast('Please fill all required fields.', '#FFB81C');
@@ -4396,6 +4441,35 @@ async function saveHierarchy() {
   } catch(e) {
     showToast('Error: ' + e.message, '#EF4444');
   } finally { showLoading(false); }
+}
+
+// Inline toggle — flips is_active on a single hierarchy record without opening the edit modal.
+// btn: the button element clicked, used to give optimistic UI feedback.
+async function toggleHierActive(id, btn) {
+  const wasActive = btn.textContent.trim() === 'Deactivate';
+  // Optimistic UI update
+  btn.textContent  = wasActive ? 'Activate' : 'Deactivate';
+  btn.style.background = wasActive ? '#F0FDF4' : '#FEF2F2';
+  btn.style.color      = wasActive ? '#218848' : '#DC2626';
+  btn.style.borderColor = wasActive ? '#BBF7D0' : '#FECACA';
+  btn.disabled = true;
+  try {
+    await apiPost({ action: 'toggleHierActive', id });
+    // Re-fetch & re-render so the dot badge and everything stays in sync
+    await apiFetch();
+    renderedTabs.clear();
+    renderHierarchyTable();
+    populateFilters();
+  } catch(e) {
+    showToast('Error: ' + e.message, '#EF4444');
+    // Revert optimistic update on error
+    btn.textContent = wasActive ? 'Deactivate' : 'Activate';
+    btn.style.background = wasActive ? '#FEF2F2' : '#F0FDF4';
+    btn.style.color      = wasActive ? '#DC2626' : '#218848';
+    btn.style.borderColor = wasActive ? '#FECACA' : '#BBF7D0';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function deleteHierarchy(id) {
