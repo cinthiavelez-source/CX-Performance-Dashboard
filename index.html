@@ -332,6 +332,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 <div class="loading-overlay" id="loading">
   <div class="spinner"></div>
   <p id="loading-msg">Loading data…</p>
+  <p id="loading-sub" style="font-size:11px;color:#94A3B8;font-weight:400;margin-top:-6px;max-width:280px;text-align:center"></p>
 </div>
 
 <!-- ─── LOGIN ────────────────────────────────────────────── -->
@@ -2369,9 +2370,9 @@ function renderGeneralView() {
     return;
   }
 
-  // ── WoW: last 8 Sun–Sat weeks ──────────────────────────────────────────────
+  // ── WoW: full year — 52 Sun–Sat weeks ───────────────────────────────────────
   const wowWeeks = [];
-  for (let i = 7; i >= 0; i--) {
+  for (let i = 51; i >= 0; i--) {
     const ref   = addDays(today, -i * 7);
     const sun   = getWeekStartOf(ref);
     const sat   = getWeekEndOf(sun);
@@ -2383,10 +2384,10 @@ function renderGeneralView() {
     });
   }
 
-  // ── MoM: last 6 calendar months ────────────────────────────────────────────
+  // ── MoM: full year — 12 calendar months ──────────────────────────────────────
   const momMonths = [];
   const now = new Date(today + 'T12:00:00');
-  for (let i = 5; i >= 0; i--) {
+  for (let i = 11; i >= 0; i--) {
     const d    = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const y    = d.getFullYear(), m = d.getMonth();
     const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
@@ -2420,12 +2421,12 @@ function renderGeneralView() {
     return `<td class="cell-kpi" style="background:${bg};color:${col};font-size:11px;font-weight:700;width:52px">${sign}${pct.toFixed(1)}%</td>`;
   }
 
-  function trendTable(rows, labelKey, isWeek) {
-    const av = buildAllVals(rows);
-    // Column group headers
-    let t = `<table class="perf-table" style="min-width:700px"><thead>
+  // Shared table header HTML
+  function trendTableHead(isWeek) {
+    const deltaLabel = isWeek ? 'Δ WoW' : 'Δ MoM';
+    return `<thead>
       <tr>
-        <th class="sticky-col col-agent week-hdr" style="background:#1E293B;min-width:130px" rowspan="2">${isWeek ? 'Week (Sun–Sat)' : 'Month'}</th>
+        <th class="sticky-col col-agent week-hdr" style="background:#1E293B;min-width:150px" rowspan="2">${isWeek ? 'Week (Sun–Sat)' : 'Month'}</th>
         <th colspan="2" class="week-hdr w1" style="text-align:center">⚡ TPH</th>
         <th colspan="2" class="week-hdr w2" style="text-align:center">⏱ AHT</th>
         <th colspan="2" class="week-hdr wc" style="text-align:center">😊 CSAT</th>
@@ -2433,35 +2434,86 @@ function renderGeneralView() {
       </tr>
       <tr>
         <th class="week-hdr w1" style="font-size:10px;padding:4px 6px">Value</th>
-        <th class="week-hdr w1" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr w1" style="font-size:10px;padding:4px 6px;opacity:.75">${deltaLabel}</th>
         <th class="week-hdr w2" style="font-size:10px;padding:4px 6px">Value</th>
-        <th class="week-hdr w2" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr w2" style="font-size:10px;padding:4px 6px;opacity:.75">${deltaLabel}</th>
         <th class="week-hdr wc" style="font-size:10px;padding:4px 6px">Value</th>
-        <th class="week-hdr wc" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr wc" style="font-size:10px;padding:4px 6px;opacity:.75">${deltaLabel}</th>
         <th class="week-hdr w3" style="font-size:10px;padding:4px 6px">Value</th>
-        <th class="week-hdr w3" style="font-size:10px;padding:4px 6px;opacity:.75">Δ WoW</th>
+        <th class="week-hdr w3" style="font-size:10px;padding:4px 6px;opacity:.75">${deltaLabel}</th>
       </tr>
-    </thead><tbody>`;
+    </thead>`;
+  }
 
+  // Single data row
+  function trendRow(row, prev, av, labelKey) {
+    const k = row.kpis;
+    const tphCls  = getKPIClass(k.tph,     av.tph,  false);
+    const ahtCls  = getKPIClass(k.ahtSecs, av.aht,  true);
+    const csatCls = getKPIClass(k.csat,    av.csat, false);
+    const iqaCls  = getKPIClass(k.iqa,     av.iqa,  false);
+    return `<tr>
+      <td class="sticky-col col-agent" style="font-size:13px;font-weight:600">${escHtml(row[labelKey])}</td>
+      <td class="cell-kpi ${tphCls}">${k.tph     !== null ? fmtTPH(k.tph)      : '<span style="color:#CBD5E1">—</span>'}</td>
+      ${prev ? deltaCell(k.tph,     prev.tph,     false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
+      <td class="cell-kpi ${ahtCls}">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs) : '<span style="color:#CBD5E1">—</span>'}</td>
+      ${prev ? deltaCell(k.ahtSecs, prev.ahtSecs, true)  : '<td class="cell-kpi none" style="width:52px">—</td>'}
+      <td class="cell-kpi ${csatCls}">${k.csat   !== null ? fmtPct(k.csat)     : '<span style="color:#CBD5E1">—</span>'}</td>
+      ${prev ? deltaCell(k.csat,    prev.csat,    false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
+      <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)      : '<span style="color:#CBD5E1">—</span>'}</td>
+      ${prev ? deltaCell(k.iqa,     prev.iqa,     false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
+    </tr>`;
+  }
+
+  // WoW accordion table — groups 52 weeks by calendar quarter, most-recent expanded
+  function wowAccordionTable(rows) {
+    const av = buildAllVals(rows);
+    // Group rows by "YYYY-Q#"
+    const groups = [];
+    const groupMap = {};
     rows.forEach((row, i) => {
-      const k    = row.kpis;
-      const prev = i > 0 ? rows[i-1].kpis : null;
-      // Quartile-based coloring on value cells (same as agent table)
-      const tphCls  = getKPIClass(k.tph,     av.tph,  false);
-      const ahtCls  = getKPIClass(k.ahtSecs, av.aht,  true);
-      const csatCls = getKPIClass(k.csat,    av.csat, false);
-      const iqaCls  = getKPIClass(k.iqa,     av.iqa,  false);
-      t += `<tr>
-        <td class="sticky-col col-agent" style="font-size:13px;font-weight:600">${escHtml(row[labelKey])}</td>
-        <td class="cell-kpi ${tphCls}">${k.tph     !== null ? fmtTPH(k.tph)      : '<span style="color:#CBD5E1">—</span>'}</td>
-        ${prev ? deltaCell(k.tph,     prev.tph,     false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
-        <td class="cell-kpi ${ahtCls}">${k.ahtSecs !== null ? fmtMMSS(k.ahtSecs) : '<span style="color:#CBD5E1">—</span>'}</td>
-        ${prev ? deltaCell(k.ahtSecs, prev.ahtSecs, true)  : '<td class="cell-kpi none" style="width:52px">—</td>'}
-        <td class="cell-kpi ${csatCls}">${k.csat   !== null ? fmtPct(k.csat)     : '<span style="color:#CBD5E1">—</span>'}</td>
-        ${prev ? deltaCell(k.csat,    prev.csat,    false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
-        <td class="cell-kpi ${iqaCls}">${k.iqa     !== null ? fmtPct(k.iqa)      : '<span style="color:#CBD5E1">—</span>'}</td>
-        ${prev ? deltaCell(k.iqa,     prev.iqa,     false) : '<td class="cell-kpi none" style="width:52px">—</td>'}
+      const d = new Date(row.start + 'T12:00:00');
+      const qKey = `${d.getFullYear()}-Q${Math.ceil((d.getMonth()+1)/3)}`;
+      const qLabel = `Q${Math.ceil((d.getMonth()+1)/3)} ${d.getFullYear()}`;
+      if (!groupMap[qKey]) {
+        groupMap[qKey] = { key: qKey, label: qLabel, rows: [], firstIdx: i };
+        groups.push(groupMap[qKey]);
+      }
+      groupMap[qKey].rows.push({ row, globalIdx: i });
+    });
+    // Most recent quarter open by default
+    const latestKey = groups[groups.length - 1].key;
+    let html = `<table class="perf-table" style="min-width:700px">${trendTableHead(true)}<tbody>`;
+    groups.forEach(g => {
+      const isOpen = g.key === latestKey;
+      const wkCount = g.rows.length;
+      // Quarter group header row
+      html += `<tr class="trend-acc-hdr" onclick="toggleTrendGroup('${g.key}')" style="cursor:pointer;background:#F1F5F9;border-top:2px solid #E2E8F0">
+        <td class="sticky-col col-agent" colspan="1"
+          style="background:#EFF6FF;color:#1E3A8A;font-weight:700;font-size:12px;padding:7px 12px">
+          <span id="trend-arrow-${g.key}" style="margin-right:6px">${isOpen ? '▼' : '▶'}</span>${g.label}
+          <span style="font-weight:400;color:#64748B;font-size:11px;margin-left:6px">${wkCount} week${wkCount!==1?'s':''}</span>
+        </td>
+        <td colspan="8" style="background:#EFF6FF;border-top:2px solid #BFDBFE"></td>
       </tr>`;
+      // Week rows
+      g.rows.forEach(({ row, globalIdx }) => {
+        const prev = globalIdx > 0 ? rows[globalIdx - 1].kpis : null;
+        const rowHtml = trendRow(row, prev ? { kpis: rows[globalIdx-1].kpis } : null, av, 'label');
+        html += rowHtml.replace('<tr>', `<tr class="trend-acc-body-${g.key}" style="display:${isOpen ? '' : 'none'}">`);
+      });
+    });
+    html += `</tbody></table>`;
+    return html;
+  }
+
+  // MoM flat table (12 months — manageable without grouping)
+  function trendTable(rows, labelKey, isWeek) {
+    const av = buildAllVals(rows);
+    let t = `<table class="perf-table" style="min-width:700px">${trendTableHead(isWeek)}<tbody>`;
+    rows.forEach((row, i) => {
+      const prev = i > 0 ? rows[i-1] : null;
+      t += trendRow(row, prev, av, labelKey);
     });
     t += `</tbody></table>`;
     return t;
@@ -2490,7 +2542,7 @@ function renderGeneralView() {
         <div class="table-card-header" style="padding:12px 16px 8px">
           <div>
             <h3 style="font-size:14px">😊 CSAT% &amp; 🎯 IQS% — WoW</h3>
-            <p style="font-size:11px">Last 8 weeks · team average</p>
+            <p style="font-size:11px">Last 8 weeks · team average (chart shows recent 8 wks)</p>
           </div>
         </div>
         <div style="padding:0 16px 16px;position:relative;height:200px">
@@ -2539,23 +2591,41 @@ function renderGeneralView() {
     <!-- ══ TABLES ══════════════════════════════════════════════ -->
     <div class="table-card" style="margin-bottom:1.5rem">
       <div class="table-card-header">
-        <div><h3>📅 Week-over-Week KPI Trend</h3>
-          <p>Last 8 weeks · Sun–Sat · ${agentLabel} · color = quartile vs 8-week range · Δ = % change vs prior week</p></div>
-        <button onclick="exportTableBySelector('#wow-trend-table table')"
-          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
-          ⬇ Export CSV
-        </button>
+        <div>
+          <h3>📅 Week-over-Week KPI Trend</h3>
+          <p>Full year · 52 weeks · Sun–Sat · ${agentLabel} · grouped by quarter (click to expand/collapse) · color = quartile · Δ = % vs prior week</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button onclick="toggleTrendCard('wow-trend-table','wow-card-toggle')"
+            id="wow-card-toggle"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ▲ Collapse
+          </button>
+          <button onclick="exportTableBySelector('#wow-trend-table table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
-      <div class="table-wrap" id="wow-trend-table">${trendTable(wowWeeks,'label',true)}</div>
+      <div class="table-wrap" id="wow-trend-table">${wowAccordionTable(wowWeeks)}</div>
     </div>
     <div class="table-card">
       <div class="table-card-header">
-        <div><h3>📆 Month-over-Month KPI Trend</h3>
-          <p>Last 6 months · ${agentLabel} · color = quartile vs 6-month range · Δ = % change vs prior month</p></div>
-        <button onclick="exportTableBySelector('#mom-trend-table table')"
-          style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
-          ⬇ Export CSV
-        </button>
+        <div>
+          <h3>📆 Month-over-Month KPI Trend</h3>
+          <p>Full year · 12 months · ${agentLabel} · color = quartile vs 12-month range · Δ = % change vs prior month</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button onclick="toggleTrendCard('mom-trend-table','mom-card-toggle')"
+            id="mom-card-toggle"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ▲ Collapse
+          </button>
+          <button onclick="exportTableBySelector('#mom-trend-table table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
       <div class="table-wrap" id="mom-trend-table">${trendTable(momMonths,'label',false)}</div>
     </div>`;
@@ -2756,6 +2826,25 @@ function clearCRFilter(key) {
   if (el) el.value = '';
   renderedTabs.clear();
   navTo('contact-reason');
+}
+
+// Toggle a quarter group in the WoW accordion table
+function toggleTrendGroup(groupKey) {
+  const rows  = document.querySelectorAll(`.trend-acc-body-${groupKey}`);
+  const arrow = document.getElementById(`trend-arrow-${groupKey}`);
+  const open  = rows.length && rows[0].style.display !== 'none';
+  rows.forEach(r => { r.style.display = open ? 'none' : ''; });
+  if (arrow) arrow.textContent = open ? '▶' : '▼';
+}
+
+// Collapse / expand an entire trend table card
+function toggleTrendCard(tableId, btnId) {
+  const wrap = document.getElementById(tableId);
+  const btn  = document.getElementById(btnId);
+  if (!wrap || !btn) return;
+  const collapsed = wrap.style.display === 'none';
+  wrap.style.display = collapsed ? '' : 'none';
+  btn.textContent = collapsed ? '▲ Collapse' : '▼ Expand';
 }
 
 function renderContactReasonView() {
@@ -3603,13 +3692,31 @@ async function apiFetch(forceNetwork = false) {
 
   // ── 2. No valid cache — fetch from Apps Script ────────────────
   setSyncStatus('syncing');
-  showLoading(true, 'Loading performance data…');
+  showLoading(true, 'Fetching performance data…');
+  // Show a rotating progress message so it doesn't look frozen
+  const _loadMsgs = [
+    'Reading 12 months of performance data…',
+    'Processing TPH & AHT records…',
+    'Aggregating CSAT data…',
+    'Loading IQS quality scores…',
+    'Crunching the numbers…',
+    'Almost there…'
+  ];
+  let _loadMsgIdx = 0;
+  const _loadSub = document.getElementById('loading-sub');
+  if (_loadSub) _loadSub.textContent = _loadMsgs[0];
+  const _loadTimer = setInterval(() => {
+    _loadMsgIdx = (_loadMsgIdx + 1) % _loadMsgs.length;
+    if (_loadSub) _loadSub.textContent = _loadMsgs[_loadMsgIdx];
+  }, 4000);
   try {
     const u = currentUser;
     const url = u
       ? `${SCRIPT_URL}?email=${encodeURIComponent(u.email)}`
       : SCRIPT_URL;
     const res  = await fetch(url, { redirect:'follow' });
+    clearInterval(_loadTimer);
+    if (_loadSub) _loadSub.textContent = 'Applying data…';
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -3632,6 +3739,8 @@ async function apiFetch(forceNetwork = false) {
     setSyncStatus('ok');
     return data;
   } catch (err) {
+    clearInterval(_loadTimer);
+    if (_loadSub) _loadSub.textContent = '';
     console.error('Fetch error:', err);
     showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
     setSyncStatus('err');
