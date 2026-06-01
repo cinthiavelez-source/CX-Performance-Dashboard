@@ -1353,10 +1353,13 @@ function tabModePills(tab) {
 }
 
 // Returns true if a hierarchy record's is_active field means "active".
-// Blank / true / 'true' → active; false / 'false' → inactive.
+// Blank / true / 'true' / 'active' / 'yes' / '1' → active
+// false / 'false' / 'inactive' / 'no' / '0' → inactive
 function hierIsActive(h) {
   const v = h.is_active;
-  return !(v === false || String(v).toLowerCase() === 'false');
+  if (v === false || v === 0) return false;
+  const s = String(v).toLowerCase().trim();
+  return s !== 'false' && s !== 'inactive' && s !== 'no' && s !== '0';
 }
 
 // ─── HIERARCHY LOOKUP (email-first, name fallback) ────────
@@ -3572,8 +3575,8 @@ function renderHierarchyTable() {
       const dateBadge    = isHistorical
         ? `<span style="color:#DC2626;font-size:11px">${escHtml(to)}</span>`
         : (h.effective_to ? escHtml(h.effective_to) : '<span style="color:#218848;font-weight:600">Current</span>');
-      // is_active: blank or 'true'/true → active; 'false'/false → inactive
-      const isActive = !(h.is_active === false || String(h.is_active).toLowerCase() === 'false');
+      // is_active: use shared helper so string 'Inactive' / 'false' / false all work
+      const isActive = hierIsActive(h);
       const activeDot = isActive
         ? `<span title="Active — visible in performance views" style="display:inline-flex;align-items:center;gap:4px;background:#DCFCE7;color:#166534;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">● Active</span>`
         : `<span title="Inactive — hidden from performance views" style="display:inline-flex;align-items:center;gap:4px;background:#F1F5F9;color:#94A3B8;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">○ Inactive</span>`;
@@ -4434,8 +4437,8 @@ function openHierModal(record) {
   document.getElementById('hm-from').value         = isEdit ? isoDate(String(record.effective_from||'')) : '';
   document.getElementById('hm-to').value           = isEdit ? isoDate(String(record.effective_to||''))   : '';
   document.getElementById('hm-notes').value        = isEdit ? record.notes       || '' : '';
-  // is_active: default true for new records, respect stored value for edits (blank = active)
-  const isActiveVal = isEdit ? (record.is_active === false || String(record.is_active).toLowerCase() === 'false' ? false : true) : true;
+  // is_active: default true for new records, use shared helper for edits
+  const isActiveVal = isEdit ? hierIsActive(record) : true;
   document.getElementById('hm-is-active').checked = isActiveVal;
   document.getElementById('hier-modal').classList.add('open');
 }
