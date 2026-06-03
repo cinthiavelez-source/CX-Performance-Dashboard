@@ -468,6 +468,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   <button data-page="supervisor" onclick="navTo('supervisor')">🧑‍💼 Supervisor View</button>
   <button data-page="am" onclick="navTo('am')">🏢 A.Manager View</button>
   <button data-page="contact-reason" onclick="navTo('contact-reason')">📋 Contact Reasons</button>
+  <button data-page="csat-detail" onclick="navTo('csat-detail')">😊 CSAT Detail</button>
   <button data-page="upload" onclick="navTo('upload')" id="btn-upload-tab">⬆️ Upload Data</button>
   <button data-page="admin" onclick="navTo('admin')" id="btn-admin-tab" style="display:none">⚙️ Admin</button>
 </div>
@@ -605,6 +606,33 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
         </div>
       </div>
       <div class="table-wrap"><div id="am-table-wrap"></div></div>
+    </div>
+  </div>
+
+  <!-- CSAT DETAIL TAB -->
+  <div class="page" id="page-csat-detail">
+    <div class="table-card">
+      <div class="table-card-header">
+        <div>
+          <h3>😊 CSAT Detail — Surveys per Agent</h3>
+          <p id="csat-detail-subtitle">Last 4 weeks · surveys, good, bad &amp; CSAT% per agent</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="csat-detail-search-box"></div>
+          <div id="csat-detail-mode-pills" style="display:flex;gap:4px;align-items:center">
+            <span style="font-size:11px;color:#64748B;font-weight:600;white-space:nowrap">View:</span>
+            <button id="csat-detail-mode-wow" onclick="setTabMode('csat-detail','wow')"
+              style="background:#AA0061;color:#fff;border:1px solid #AA0061;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📅 WoW (Last 4)</button>
+            <button id="csat-detail-mode-mom" onclick="setTabMode('csat-detail','mom')"
+              style="background:#F1F5F9;color:#64748B;border:1px solid #E2E8F0;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;white-space:nowrap">📆 MoM (Last 4)</button>
+          </div>
+          <button onclick="exportTableBySelector('#csat-detail-table-wrap table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid #E2E8F0;">
+            ⬇ Export CSV
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap"><div id="csat-detail-table-wrap"></div></div>
     </div>
   </div>
 
@@ -957,10 +985,10 @@ let activeFilters = { agent:'', supervisor:'', am:'', team:'', dateFrom:'', date
 let activePeriod  = '4w';
 
 // ─── PER-TAB WoW/MoM TOGGLE STATE ───────────────────────────
-let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow' };
+let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow', 'csat-detail': 'wow' };
 
 // ─── PER-TAB SEARCH STATE ────────────────────────────────────
-let tabSearch = { agent: '', supervisor: '', am: '' };
+let tabSearch = { agent: '', supervisor: '', am: '', 'csat-detail': '' };
 
 // ─── PER-TAB SORT STATE ──────────────────────────────────────
 // col: 'tph'|'aht'|'csat'|'iqa'|null   dir: 1=asc / -1=desc
@@ -1316,10 +1344,11 @@ function setTabMode(tab, mode) {
     btn.style.color        = active ? '#fff'    : '#64748B';
     btn.style.borderColor  = active ? '#AA0061' : '#E2E8F0';
   });
-  if (tab === 'agent')      renderAgentView();
-  if (tab === 'supervisor') renderSupervisorView();
-  if (tab === 'am')         renderAMView();
-  if (tab === 'cr')         renderContactReasonView();
+  if (tab === 'agent')       renderAgentView();
+  if (tab === 'supervisor')  renderSupervisorView();
+  if (tab === 'am')          renderAMView();
+  if (tab === 'cr')          renderContactReasonView();
+  if (tab === 'csat-detail') renderCSATDetailView();
 }
 
 // Renders the WoW/MoM pill-toggle HTML (used inside each tab's table-card-header).
@@ -3202,6 +3231,166 @@ function renderContactReasonView() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// CSAT DETAIL VIEW
+// Shows per-agent CSAT%, total surveys, good, bad
+// for 4 rolling WoW or MoM periods — same filter bar as other tabs.
+// ═══════════════════════════════════════════════════════════
+
+function renderCSATDetailView() {
+  const wrap      = document.getElementById('csat-detail-table-wrap');
+  const subtitle  = document.getElementById('csat-detail-subtitle');
+  if (!wrap) return;
+
+  const tab    = 'csat-detail';
+  const mode   = tabPeriodMode[tab] || 'wow';
+  const search = (tabSearch[tab] || '').toLowerCase();
+
+  // ── Agents (respects all active filters) ──────────────────
+  let agents = filteredAgents(getAllAgents());
+  if (search) agents = agents.filter(a =>
+    a.email.toLowerCase().includes(search) || a.name.toLowerCase().includes(search)
+  );
+
+  // ── Periods: reuse getTabPeriods for consistent 4-col logic ─
+  const periods = getTabPeriods(tab);
+
+  // ── Helper: CSAT stats for one agent over one date window ──
+  function csatStats(email, start, end) {
+    const nameKey = normName(emailToName[email] || '');
+    const byEmail = (csatIndex[email] || []).filter(r => r.date >= start && r.date <= end);
+    const byName  = byEmail.length ? [] : (nameKey ? (csatNameIndex[nameKey]||[]).filter(r => r.date >= start && r.date <= end) : []);
+    const rows    = byEmail.length ? byEmail : byName;
+    const good    = rows.filter(r => String(r.satisfaction).toLowerCase() === 'good').length;
+    const bad     = rows.filter(r => String(r.satisfaction).toLowerCase() === 'bad').length;
+    const total   = good + bad;
+    const pct     = total > 0 ? (good / total) * 100 : null;
+    return { good, bad, total, pct };
+  }
+
+  // ── Empty state ────────────────────────────────────────────
+  if (!agents.length) {
+    wrap.innerHTML = `<div class="empty-state">No agents found for the current filters.</div>`;
+    if (subtitle) subtitle.textContent = 'No agents match the current filters.';
+    return;
+  }
+
+  // ── Build table ────────────────────────────────────────────
+  // Header row 1: sticky columns + period spans (4 sub-cols each)
+  let html = `<table class="perf-table"><thead>
+    <tr>
+      <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent</th>
+      <th class="week-hdr" style="background:#1E293B;text-align:center" rowspan="2">#</th>
+      <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Team</th>`;
+
+  periods.forEach(p => {
+    html += `<th colspan="4" class="week-hdr ${p.wk}" style="text-align:center">${escHtml(p.label)}</th>`;
+  });
+  html += `</tr><tr>`;
+
+  // Header row 2: sub-column labels per period
+  periods.forEach(p => {
+    const bg = { w0:'#94A3B8', w1:'#475CC7', w2:'#AA0061', wc:'#218848' }[p.wk] || '#475CC7';
+    const subStyle = `background:${bg};opacity:.85;font-size:10px;padding:4px 5px;text-align:center;color:#fff;font-weight:700`;
+    html += `<th class="week-hdr ${p.wk}" style="${subStyle}">CSAT%</th>
+             <th class="week-hdr ${p.wk}" style="${subStyle}">Surveys</th>
+             <th class="week-hdr ${p.wk}" style="${subStyle}">👍 Good</th>
+             <th class="week-hdr ${p.wk}" style="${subStyle}">👎 Bad</th>`;
+  });
+  html += `</tr></thead><tbody>`;
+
+  // ── Data rows ──────────────────────────────────────────────
+  let totalGoodAll = periods.map(() => 0);
+  let totalBadAll  = periods.map(() => 0);
+  let rank = 1;
+
+  agents.forEach(agent => {
+    const hier   = currentHier(agent.email);
+    const stats  = periods.map((p, i) => {
+      const s = csatStats(agent.email, p.start, p.end);
+      totalGoodAll[i] += s.good;
+      totalBadAll[i]  += s.bad;
+      return s;
+    });
+
+    // Only render agents who have at least one survey across any period
+    const hasSurveys = stats.some(s => s.total > 0);
+
+    const displayName = agent.name || agent.email;
+    html += `<tr>
+      <td class="sticky-col col-agent" title="${escHtml(agent.email)}">${escHtml(displayName)}<br>
+        <span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(agent.email)}</span></td>
+      <td style="text-align:center;color:#94A3B8;font-size:12px;font-weight:600">#${rank++}</td>
+      <td style="font-size:12px;color:#64748B;text-align:center">${escHtml(hier.team||'—')}</td>`;
+
+    stats.forEach((s, i) => {
+      const csatCls = s.pct !== null
+        ? (s.pct >= (thresholds.csat || 85) ? 'cell-good' : s.pct >= (thresholds.csat || 85) - 10 ? 'cell-warn' : 'cell-bad')
+        : '';
+      html += `
+        <td class="cell-kpi ${csatCls}" style="text-align:center;font-weight:700">
+          ${s.pct !== null ? fmtPct(s.pct) : '—'}</td>
+        <td class="cell-kpi" style="text-align:center;color:#334155;font-weight:600">
+          ${s.total > 0 ? s.total.toLocaleString() : '—'}</td>
+        <td class="cell-kpi" style="text-align:center;color:#218848;font-weight:600">
+          ${s.good > 0 ? s.good.toLocaleString() : '—'}</td>
+        <td class="cell-kpi" style="text-align:center;color:#DC2626;font-weight:600">
+          ${s.bad > 0 ? s.bad.toLocaleString() : '—'}</td>`;
+    });
+    html += `</tr>`;
+  });
+
+  // ── Footer totals ──────────────────────────────────────────
+  html += `<tr style="background:#F8FAFC;font-weight:700;border-top:2px solid #CBD5E1">
+    <td class="sticky-col col-agent" style="background:#F8FAFC;color:#1E293B">TOTAL / AVG</td>
+    <td></td><td></td>`;
+
+  periods.forEach((p, i) => {
+    const good  = totalGoodAll[i];
+    const bad   = totalBadAll[i];
+    const total = good + bad;
+    const pct   = total > 0 ? (good / total) * 100 : null;
+    const csatCls = pct !== null
+      ? (pct >= (thresholds.csat || 85) ? 'cell-good' : pct >= (thresholds.csat || 85) - 10 ? 'cell-warn' : 'cell-bad')
+      : '';
+    html += `
+      <td class="cell-kpi ${csatCls}" style="text-align:center;font-weight:700">
+        ${pct !== null ? fmtPct(pct) : '—'}</td>
+      <td class="cell-kpi" style="text-align:center;font-weight:700">
+        ${total > 0 ? total.toLocaleString() : '—'}</td>
+      <td class="cell-kpi" style="text-align:center;color:#218848;font-weight:700">
+        ${good > 0 ? good.toLocaleString() : '—'}</td>
+      <td class="cell-kpi" style="text-align:center;color:#DC2626;font-weight:700">
+        ${bad > 0 ? bad.toLocaleString() : '—'}</td>`;
+  });
+  html += `</tr></tbody></table>`;
+
+  wrap.innerHTML = html;
+
+  // ── Search box ─────────────────────────────────────────────
+  const searchBox = document.getElementById('csat-detail-search-box');
+  if (searchBox) {
+    const boxHtml = buildSearchBox('csat-detail', 'Search agent…', 'renderCSATDetailView');
+    if (boxHtml) searchBox.innerHTML = boxHtml;
+  }
+
+  // ── Mode pills (dynamic — respects period overrides) ───────
+  const pillsEl = document.getElementById('csat-detail-mode-pills');
+  if (pillsEl) pillsEl.outerHTML = `<div id="csat-detail-mode-pills">${tabModePills('csat-detail')}</div>`;
+
+  // ── Subtitle ───────────────────────────────────────────────
+  if (subtitle) {
+    const periodLabel = mode === 'mom' ? 'Last 4 months' : 'Last 4 weeks';
+    const filterCtx = [];
+    if (activeFilters.supervisor) filterCtx.push('Sup: ' + (emailToName[activeFilters.supervisor.toLowerCase()] || activeFilters.supervisor));
+    if (activeFilters.am)         filterCtx.push('AM: '  + (emailToName[activeFilters.am.toLowerCase()]         || activeFilters.am));
+    if (activeFilters.agent)      filterCtx.push('Agent: '+ (emailToName[activeFilters.agent.toLowerCase()]     || activeFilters.agent));
+    if (activeFilters.team)       filterCtx.push(activeFilters.team);
+    subtitle.textContent = `${periodLabel} · ${agents.length} agent${agents.length!==1?'s':''} · surveys, good, bad & CSAT%`
+      + (filterCtx.length ? ` · ${filterCtx.join(' · ')}` : '');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
 // HIERARCHY BULK CSV UPLOAD
 // ═══════════════════════════════════════════════════════════
 
@@ -3658,7 +3847,7 @@ function renderRolesTable(roles) {
 
 function navTo(page) {
   currentPage = page;
-  ['agent','supervisor','am','general','contact-reason','upload','admin'].forEach(p => {
+  ['agent','supervisor','am','general','contact-reason','csat-detail','upload','admin'].forEach(p => {
     const el = document.getElementById('page-'+p);
     if (el) el.classList.toggle('active', p === page);
   });
@@ -3668,7 +3857,7 @@ function navTo(page) {
 
   // Hide filter bar on non-data tabs (upload/admin don't need it)
   const filterBar = document.querySelector('.filter-bar');
-  if (filterBar) filterBar.style.display = (page === 'upload' || page === 'admin') ? 'none' : '';
+  if (filterBar) filterBar.style.display = (page === 'upload' || page === 'admin') ? 'none' : 'flex';
 
   // Show/hide upload note
   const uploadNote = document.getElementById('upload-admin-note');
@@ -3687,6 +3876,7 @@ function navTo(page) {
     if (page === 'am')             renderAMView();
     if (page === 'general')        renderGeneralView();
     if (page === 'contact-reason') { crSortBy = 'vol'; renderContactReasonView(); }
+    if (page === 'csat-detail')    renderCSATDetailView();
     if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); fetchEmailRecipients(); fetchLoginLog(); }
     renderedTabs.add(page);
   }
