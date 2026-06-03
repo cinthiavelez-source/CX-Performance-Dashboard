@@ -1751,13 +1751,16 @@ function getActiveAMs() {
  * Return specialists (role != Supervisor / AM) whose supervisor_name matches supName
  * as of `asOfDate` (YYYY-MM-DD, defaults to today).
  *
- * Temporal hierarchy: each row carries its own effective_from/to dates, so the match
- * uses asOfDate against each row directly. This means if an agent transferred from
- * Andrea → Julio on May 30, they appear under Andrea for dates ≤ May 30 and under
- * Julio for dates > May 30.
+ * Strategy — start from latestHierRecordByEmail (the universe of known people):
+ *   1. Active check: is the person's LATEST record is_active = Active?
+ *   2. Relationship check: for each active person, find their record on asOfDate via
+ *      hierRecordForDate. If no record covers that exact date (gap in imports), fall
+ *      back to their latest record. This handles cases where effective_to has passed
+ *      but the person hasn't been re-imported yet.
+ *   3. Match: does that record's supervisor_name equal supName?
  *
- * Active check uses latestHierRecordByEmail (no date gate) so people with recently-
- * expired effective_to are still shown as long as their latest is_active = Active.
+ * This correctly handles transfers (Cinthia: Andrea → Julio) AND data gaps
+ * (supervisor records expiring May 30 but still active on June 3).
  */
 function getSpecialistsUnderSupervisor(supName, asOfDate) {
   const key        = normName(supName);
@@ -1765,23 +1768,19 @@ function getSpecialistsUnderSupervisor(supName, asOfDate) {
   const latestHier = latestHierRecordByEmail();
   const seen       = {};
 
-  rawHierarchy.forEach(h => {
-    if (normName(h.supervisor_name) !== key) return;
-    const r = normName(h.role);
+  Object.entries(latestHier).forEach(([e, latest]) => {
+    // 1. Active check via latest record
+    if (!hierIsActive(latest)) return;
+
+    // 2. Skip management roles (check on latest record's role)
+    const r = normName(latest.role || '');
     if (r === 'supervisor' || r === 'assistant manager') return;
-    const e = (h.agent_email || '').toLowerCase().trim();
-    if (!e) return;
 
-    // Active check: use the person's latest record (no expiry gate)
-    const latest = latestHier[e];
-    if (!latest || !hierIsActive(latest)) return;
+    // 3. Find the record covering asOfDate; fall back to latest if gap in imports
+    const rec = hierRecordForDate(e, date) || latest;
+    if (normName(rec.supervisor_name) !== key) return;
 
-    // Temporal check: this specific record must cover asOfDate
-    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
-    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
-    if (date < from || date > to) return;
-
-    if (!seen[e]) seen[e] = { email: e, name: h.agent_name || '' };
+    if (!seen[e]) seen[e] = { email: e, name: rec.agent_name || latest.agent_name || '' };
   });
 
   return Object.values(seen).sort((a, b) => a.email.localeCompare(b.email));
@@ -1789,8 +1788,9 @@ function getSpecialistsUnderSupervisor(supName, asOfDate) {
 
 /**
  * Return supervisors (role = Supervisor) whose am_name matches amName as of `asOfDate`.
- * Same pattern as getSpecialistsUnderSupervisor: iterate rows directly, match on
- * am_name field, active check via latestHierRecordByEmail, temporal check via row dates.
+ * Same strategy as getSpecialistsUnderSupervisor: start from latestHierRecordByEmail,
+ * active check on latest record, relationship check via hierRecordForDate with
+ * fallback to latest — so expired effective_to dates don't hide active supervisors.
  */
 function getSupervisorsUnderAM(amName, asOfDate) {
   const key        = normName(amName);
@@ -1798,49 +1798,19 @@ function getSupervisorsUnderAM(amName, asOfDate) {
   const latestHier = latestHierRecordByEmail();
   const seen       = {};
 
-  // DEBUG — count why rows are excluded
-  let dbTotal=0, dbAmMatch=0, dbRoleMatch=0, dbActivePass=0, dbDatePass=0;
+  Object.entries(latestHier).forEach(([e, latest]) => {
+    // 1. Active check via latest record
+    if (!hierIsActive(latest)) return;
 
-  rawHierarchy.forEach(h => {
-    dbTotal++;
-    if (normName(h.am_name) !== key) return;
-    dbAmMatch++;
-    if (normName(h.role) !== 'supervisor') return;
-    dbRoleMatch++;
-    const e = (h.agent_email || '').toLowerCase().trim();
-    const k = e || normName(h.agent_name);
-    if (!k) return;
+    // 2. Must be a Supervisor role (check latest record's role)
+    if (normName(latest.role || '') !== 'supervisor') return;
 
-    const latest = e ? latestHier[e] : h;
-    if (!latest || !hierIsActive(latest)) return;
-    dbActivePass++;
+    // 3. Find the record covering asOfDate; fall back to latest if gap in imports
+    const rec = hierRecordForDate(e, date) || latest;
+    if (normName(rec.am_name) !== key) return;
 
-    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
-    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
-    if (date < from || date > to) return;
-    dbDatePass++;
-
-    if (!seen[k]) seen[k] = { name: h.agent_name || '', email: e };
+    if (!seen[e]) seen[e] = { name: rec.agent_name || latest.agent_name || '', email: e };
   });
-
-  console.log(`[getSupervisorsUnderAM("${amName}")] date=${date} key="${key}"`,
-    `| total rows: ${dbTotal} | am_name match: ${dbAmMatch} | role=supervisor: ${dbRoleMatch}`,
-    `| active pass: ${dbActivePass} | date pass: ${dbDatePass} | found: ${Object.keys(seen).length}`);
-
-  // If still 0, log the first few rows with this am_name to see what's there
-  if (dbAmMatch > 0 && Object.keys(seen).length === 0) {
-    console.warn('[getSupervisorsUnderAM] am_name matched but nothing made it through. Sample rows:');
-    let shown = 0;
-    rawHierarchy.forEach(h => {
-      if (normName(h.am_name) !== key || shown >= 5) return;
-      const e = (h.agent_email||'').toLowerCase().trim();
-      const latest = e ? latestHier[e] : h;
-      const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
-      const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
-      console.warn(`  role="${h.role}" normRole="${normName(h.role)}" from=${from} to=${to} date=${date} dateOK=${date>=from&&date<=to} is_active=${h.is_active} latestActive=${latest?hierIsActive(latest):'NO_LATEST'} email=${e}`);
-      shown++;
-    });
-  }
 
   return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -2331,8 +2301,6 @@ function renderSupervisorView() {
 
   const periods = getTabPeriods('supervisor');
   const wrap    = document.getElementById('sup-table-wrap');
-  // Use the end date of the most recent period for hierarchy grouping
-  const supAsOf = periods[periods.length - 1].end;
 
   if (!sups.length) {
     wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No Supervisor-role records found. Make sure the "role" column in Hierarchy_Log is set to <strong>Supervisor</strong>.</p></div>`;
@@ -2340,15 +2308,29 @@ function renderSupervisorView() {
     return;
   }
 
-  // ── 3. For each supervisor, look downward to their specialist agents ──────
+  // ── 3. Per-period agent sets ───────────────────────────────────────────────
+  // Each period column uses the hierarchy snapshot at that period's end date.
+  // This ensures group KPIs are correct even when agents change supervisor mid-view
+  // (e.g., moved from Ximena to Jose on a Sunday — Week 20 under Ximena, Week 22 under Jose).
   const supRows = sups.map(sup => {
-    let agents = getSpecialistsUnderSupervisor(sup.name, supAsOf);
-    // Optional: filter to a specific agent
-    if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
-    return { sup, agents };
-  }).filter(r => !activeFilters.agent || r.agents.length); // hide sups with 0 agents when agent filter active
+    // agentsByPeriod[i] = agents under this supervisor at the end of period i
+    const agentsByPeriod = periods.map(p => {
+      let a = getSpecialistsUnderSupervisor(sup.name, p.end);
+      if (activeFilters.agent) a = a.filter(x => x.email === activeFilters.agent);
+      return a;
+    });
+    // agents = union across all periods (for drill-down display and count)
+    const agentEmailsSeen = new Set();
+    const agentsUnion = [];
+    agentsByPeriod.flat().forEach(a => {
+      if (!agentEmailsSeen.has(a.email)) { agentEmailsSeen.add(a.email); agentsUnion.push(a); }
+    });
+    // agents for the most recent period (for the Agents count column)
+    const agentsLatest = agentsByPeriod[agentsByPeriod.length - 1];
+    return { sup, agents: agentsUnion, agentsLatest, agentsByPeriod };
+  }).filter(r => !activeFilters.agent || r.agentsUnion?.length || r.agents.length);
 
-  // Aggregate all visible specialist emails for KPI cards
+  // Aggregate all visible specialist emails for KPI cards (union across periods)
   const allSpecialistEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
   renderKPICards('sup-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
 
@@ -2365,21 +2347,23 @@ function renderSupervisorView() {
     ? supRows.filter(r => r.sup.name.toLowerCase().includes(supSq) || r.sup.email.toLowerCase().includes(supSq))
     : supRows;
 
-  // ── Composite rank: TPH 40% + CSAT 40% + IQA 20% (latest period group KPIs) ──
+  // ── Composite rank: TPH 40% + CSAT 40% + IQA 20% (latest period, period-accurate agents) ──
   const latestSupPi = periods.length - 1;
   const latestSupP  = periods[latestSupPi];
 
   const supRankMap = compositeRankMap(
     visSupRows.map(r => {
-      const g = computeGroupKPIs(r.agents.map(a => a.email), latestSupP.start, latestSupP.end);
+      const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
+      const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
       return { key: r.sup.email || r.sup.name, tph: g.tph, csat: g.csat, iqa: g.iqa };
     })
   );
 
-  // ── Sort — default: composite rank ascending; override via column header ──
+  // ── Sort ──
   if (tabSort.supervisor.col) {
     visSupRows = sortKpiRows(visSupRows, 'supervisor', (r, col) => {
-      const g = computeGroupKPIs(r.agents.map(a => a.email), latestSupP.start, latestSupP.end);
+      const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
+      const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
       if (col === 'tph')  return g.tph;
       if (col === 'aht')  return g.ahtSecs;
       if (col === 'csat') return g.csat;
@@ -2388,8 +2372,11 @@ function renderSupervisorView() {
     });
   } else {
     visSupRows = [...visSupRows].sort((a, b) => {
-      const aHas = (a.tph !== null || a.csat !== null || a.iqa !== null) ? 0 : 1;
-      const bHas = (b.tph !== null || b.csat !== null || b.iqa !== null) ? 0 : 1;
+      const eA = r => r.agentsByPeriod[latestSupPi].map(x => x.email);
+      const gA = computeGroupKPIs(eA(a), latestSupP.start, latestSupP.end);
+      const gB = computeGroupKPIs(eA(b), latestSupP.start, latestSupP.end);
+      const aHas = (gA.tph !== null || gA.csat !== null || gA.iqa !== null) ? 0 : 1;
+      const bHas = (gB.tph !== null || gB.csat !== null || gB.iqa !== null) ? 0 : 1;
       if (aHas !== bHas) return aHas - bHas;
       return (supRankMap[a.sup.email || a.sup.name] || 9999) - (supRankMap[b.sup.email || b.sup.name] || 9999);
     });
@@ -2410,24 +2397,27 @@ function renderSupervisorView() {
   });
   html += `</tr></thead><tbody>`;
 
-  visSupRows.forEach(({ sup, agents }, si) => {
-    const emails = agents.map(a => a.email);
-    const gKey   = `sup-${si}`;
-
+  visSupRows.forEach(({ sup, agents, agentsLatest, agentsByPeriod }, si) => {
+    const gKey       = `sup-${si}`;
     const supRankVal = supRankMap[sup.email || sup.name];
-    // Supervisor summary row — display email if available, else name
+
+    // Supervisor summary row
     html += `<tr><td class="sticky-col col-agent">
         <span style="font-weight:700">${escHtml(sup.email || sup.name)}</span>
         ${sup.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup.name)}</span>` : ''}
       </td>
       <td style="text-align:center;white-space:nowrap">${supRankVal ? rankBadge(supRankVal, visSupRows.length) : '—'}</td>
-      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agents.length}</td>`;
-    periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end)); });
+      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agentsLatest.length}</td>`;
+    // ★ Per-period: each column uses the agents active under this supervisor during that week
+    periods.forEach((p, pi) => {
+      const emails = agentsByPeriod[pi].map(a => a.email);
+      html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+    });
     html += `<td style="text-align:center">
       <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Agents')">▼ Agents</button>
     </td></tr>`;
 
-    // Hidden agent drill-down rows
+    // Drill-down: union of all agents across all periods (shows all who ever reported to this sup)
     agents.forEach(agent => {
       html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
         <td class="sticky-col col-agent" style="padding-left:26px;font-weight:400;font-size:12px;color:#475CC7">${escHtml(agent.email)}</td>
@@ -2438,13 +2428,15 @@ function renderSupervisorView() {
     });
   });
 
-  // Footer — totals across visible supervisors only
-  const visSupEmails = [...new Set(visSupRows.flatMap(r => r.agents.map(a => a.email)))];
+  // Footer — per-period totals across all visible supervisors
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TEAM TOTAL</td>
     <td></td>
-    <td style="text-align:center;font-weight:700;color:#AA0061">${visSupEmails.length}</td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(visSupEmails, p.start, p.end)); });
+    <td style="text-align:center;font-weight:700;color:#AA0061">${[...new Set(visSupRows.flatMap(r=>r.agentsLatest.map(a=>a.email)))].length}</td>`;
+  periods.forEach((p, pi) => {
+    const emails = [...new Set(visSupRows.flatMap(r => r.agentsByPeriod[pi].map(a => a.email)))];
+    html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+  });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
@@ -2472,8 +2464,6 @@ function renderAMView() {
 
   const periods = getTabPeriods('am');
   const wrap    = document.getElementById('am-table-wrap');
-  // Use the end date of the most recent period for hierarchy grouping
-  const amAsOf = periods[periods.length - 1].end;
 
   if (!ams.length) {
     wrap.innerHTML = `<div class="empty-state"><div class="emoji">📭</div><p>No Assistant Manager-role records found. Make sure the "role" column in Hierarchy_Log is set to <strong>Assistant Manager</strong>.</p></div>`;
@@ -2481,31 +2471,45 @@ function renderAMView() {
     return;
   }
 
-  // ── 3. For each AM → look downward: supervisors → specialists ─────────────
-  // DEBUG — open browser DevTools > Console to see this
-  console.group('[AM View Debug] asOfDate =', amAsOf);
-  console.log('AMs found:', ams.map(a => a.name + ' / ' + a.email));
+  // ── 3. Per-period hierarchy: AM → Supervisors → Agents ──────────────────────
+  // For each period, resolve the hierarchy snapshot at that period's end date.
+  // This means group KPIs for each column correctly reflect who was under whom
+  // during that specific week/month — essential when hierarchies change every 2-3 months.
   const amRows = ams.map(am => {
-    let sups = getSupervisorsUnderAM(am.name, amAsOf);
-    console.log(`  Supervisors under ${am.name}:`, sups.map(s => s.name + ' / ' + s.email));
-    // Apply supervisor filter
-    if (activeFilters.supervisor) {
-      const f = activeFilters.supervisor;
-      sups = sups.filter(s => s.email === f || normName(s.name) === normName(f));
-    }
-    const supRows = sups.map(sup => {
-      let agents = getSpecialistsUnderSupervisor(sup.name, amAsOf);
-      console.log(`    Agents under ${sup.name}:`, agents.map(a => a.email));
-      if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
-      return { sup, agents };
-    }).filter(r => !activeFilters.agent || r.agents.length);
-    return { am, supRows };
-  }).filter(r => !activeFilters.supervisor || r.supRows.length);
-  console.groupEnd();
+    // Build per-period supRows: for each period, which supervisors+agents?
+    const supRowsByPeriod = periods.map(p => {
+      let sups = getSupervisorsUnderAM(am.name, p.end);
+      if (activeFilters.supervisor) {
+        const f = activeFilters.supervisor;
+        sups = sups.filter(s => s.email === f || normName(s.name) === normName(f));
+      }
+      return sups.map(sup => {
+        let agents = getSpecialistsUnderSupervisor(sup.name, p.end);
+        if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
+        return { sup, agents };
+      }).filter(r => !activeFilters.agent || r.agents.length);
+    });
 
-  // Aggregate all visible specialist emails for KPI cards
+    // For display (drill-down): use the most recent period's structure
+    const supRowsLatest = supRowsByPeriod[supRowsByPeriod.length - 1];
+
+    // For each supervisor in the latest period, also store agentsByPeriod
+    const supRows = supRowsLatest.map(({ sup }) => {
+      const agentsByPeriod = supRowsByPeriod.map(periodSups => {
+        const found = periodSups.find(r => r.sup.email === sup.email || normName(r.sup.name) === normName(sup.name));
+        return found ? found.agents : [];
+      });
+      const agentsUnion = [...new Map(agentsByPeriod.flat().map(a => [a.email, a])).values()];
+      return { sup, agents: agentsUnion, agentsByPeriod, agentsLatest: agentsByPeriod[agentsByPeriod.length-1] };
+    });
+
+    return { am, supRows, supRowsByPeriod };
+  }).filter(r => !activeFilters.supervisor || r.supRows.length);
+
+  // KPI cards: union of all agents in the most recent period across all AMs
+  const latestAmPi = periods.length - 1;
   const allSpecialistEmails = [...new Set(
-    amRows.flatMap(r => r.supRows.flatMap(s => s.agents.map(a => a.email)))
+    amRows.flatMap(r => r.supRows.flatMap(s => s.agentsByPeriod[latestAmPi].map(a => a.email)))
   )];
   renderKPICards('am-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
 
@@ -2522,12 +2526,11 @@ function renderAMView() {
     ? amRows.filter(r => r.am.name.toLowerCase().includes(amSq) || r.am.email.toLowerCase().includes(amSq))
     : amRows;
 
-  // ── Sort: data-first, then by latest-period aggregated KPI ──────────────────
-  const latestAmPi = periods.length - 1;
+  // ── Sort: by latest-period aggregated KPI (using period-accurate agent sets) ──
+  const getAmLatestEmails = r => r.supRows.flatMap(s => s.agentsByPeriod[latestAmPi].map(a => a.email));
   if (tabSort.am.col) {
     visAmRows = sortKpiRows(visAmRows, 'am', (r, col) => {
-      const emails = r.supRows.flatMap(s => s.agents.map(a => a.email));
-      const g = computeGroupKPIs(emails, periods[latestAmPi].start, periods[latestAmPi].end);
+      const g = computeGroupKPIs(getAmLatestEmails(r), periods[latestAmPi].start, periods[latestAmPi].end);
       if (col === 'tph')  return g.tph;
       if (col === 'aht')  return g.ahtSecs;
       if (col === 'csat') return g.csat;
@@ -2536,8 +2539,8 @@ function renderAMView() {
     });
   } else {
     visAmRows = [...visAmRows].sort((a, b) => {
-      const gA = computeGroupKPIs(a.supRows.flatMap(s=>s.agents.map(x=>x.email)), periods[latestAmPi].start, periods[latestAmPi].end);
-      const gB = computeGroupKPIs(b.supRows.flatMap(s=>s.agents.map(x=>x.email)), periods[latestAmPi].start, periods[latestAmPi].end);
+      const gA = computeGroupKPIs(getAmLatestEmails(a), periods[latestAmPi].start, periods[latestAmPi].end);
+      const gB = computeGroupKPIs(getAmLatestEmails(b), periods[latestAmPi].start, periods[latestAmPi].end);
       const aHas = (gA.tph !== null || gA.csat !== null || gA.iqa !== null) ? 0 : 1;
       const bHas = (gB.tph !== null || gB.csat !== null || gB.iqa !== null) ? 0 : 1;
       return aHas - bHas;
@@ -2559,37 +2562,45 @@ function renderAMView() {
   html += `</tr></thead><tbody>`;
 
   visAmRows.forEach(({ am, supRows }, ai) => {
-    const allAMEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
-    const gKey        = `am-${ai}`;
+    const gKey = `am-${ai}`;
+    // Agents count = latest period's set
+    const amLatestEmails = [...new Set(supRows.flatMap(s => s.agentsByPeriod[latestAmPi].map(a => a.email)))];
 
-    // AM summary row — display email if available, else name
+    // AM summary row
     html += `<tr><td class="sticky-col col-agent">
         <span style="font-weight:700">${escHtml(am.email || am.name)}</span>
         ${am.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(am.name)}</span>` : ''}
       </td>
-      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${allAMEmails.length}</td>`;
-    periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(allAMEmails, p.start, p.end)); });
+      <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${amLatestEmails.length}</td>`;
+    // ★ Per-period group KPIs: each column uses agents active under this AM during that period
+    periods.forEach((p, pi) => {
+      const emails = [...new Set(supRows.flatMap(s => s.agentsByPeriod[pi].map(a => a.email)))];
+      html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+    });
     html += `<td style="text-align:center">
       <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Supervisors')">▼ Supervisors</button>
     </td></tr>`;
 
-    // Hidden supervisor drill-down rows
-    supRows.forEach(({ sup, agents }, si) => {
-      const supEmails = agents.map(a => a.email);
-      const supGKey   = `am-${ai}-sup-${si}`;
+    // Hidden supervisor drill-down rows (latest period structure for display)
+    supRows.forEach(({ sup, agents, agentsByPeriod, agentsLatest }, si) => {
+      const supGKey = `am-${ai}-sup-${si}`;
 
       html += `<tr class="drill-row" data-group="${gKey}" style="display:none">
         <td class="sticky-col col-agent" style="padding-left:26px;font-size:13px;color:#475CC7;font-weight:600">
           ${escHtml(sup.email || sup.name)}
           ${sup.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup.name)}</span>` : ''}
         </td>
-        <td style="text-align:center;color:#64748B;font-size:12px">${agents.length}</td>`;
-      periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(supEmails, p.start, p.end)); });
+        <td style="text-align:center;color:#64748B;font-size:12px">${agentsLatest.length}</td>`;
+      // Per-period supervisor group KPIs
+      periods.forEach((p, pi) => {
+        const emails = agentsByPeriod[pi].map(a => a.email);
+        html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+      });
       html += `<td style="text-align:center">
         <button class="btn-expand" onclick="toggleDrillDown('${supGKey}',this,'▲ Hide','▼ Agents')" style="font-size:10px;padding:2px 8px">▼ Agents</button>
       </td></tr>`;
 
-      // Hidden agent rows under this supervisor
+      // Agent drill-down: union of all agents who ever reported to this sup in any shown period
       agents.forEach(agent => {
         html += `<tr class="drill-row" data-group="${supGKey}" style="display:none">
           <td class="sticky-col col-agent" style="padding-left:48px;font-weight:400;font-size:11px;color:#94A3B8">${escHtml(agent.email)}</td>
@@ -2600,12 +2611,15 @@ function renderAMView() {
     });
   });
 
-  // Footer — totals across visible AMs only
-  const visAmEmails = [...new Set(visAmRows.flatMap(r => r.supRows.flatMap(s => s.agents.map(a => a.email))))];
+  // Footer — per-period totals (period-accurate agent sets)
+  const visAmLatestEmails = [...new Set(visAmRows.flatMap(r => r.supRows.flatMap(s => s.agentsByPeriod[latestAmPi].map(a => a.email))))];
   html += `</tbody><tfoot><tr>
     <td class="sticky-col col-agent">TOTAL</td>
-    <td style="text-align:center;font-weight:700;color:#AA0061">${visAmEmails.length}</td>`;
-  periods.forEach(p => { html += groupKpiCells(computeGroupKPIs(visAmEmails, p.start, p.end)); });
+    <td style="text-align:center;font-weight:700;color:#AA0061">${visAmLatestEmails.length}</td>`;
+  periods.forEach((p, pi) => {
+    const emails = [...new Set(visAmRows.flatMap(r => r.supRows.flatMap(s => s.agentsByPeriod[pi].map(a => a.email))))];
+    html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+  });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
 
