@@ -1562,6 +1562,20 @@ function getKPIClass(value, allValues, lowerIsBetter) {
 // CSAT agents with no known email are mapped via nameToEmail.
 // ═══════════════════════════════════════════════════════════
 
+// Returns a map of { email → most recent hierarchy record } for every email in hierarchy.
+// "Most recent" = highest effective_from date. Used by all inactive-filter functions
+// so an agent whose latest record is Inactive is hidden even if that record has expired.
+function latestHierRecordByEmail() {
+  const map = {};
+  rawHierarchy.forEach(h => {
+    const e = (h.agent_email || '').toLowerCase().trim();
+    if (!e) return;
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    if (!map[e] || from > map[e].from) map[e] = { ...h, from };
+  });
+  return map;
+}
+
 function getAllAgents() {
   const byEmail = {}; // email → displayName
 
@@ -1586,18 +1600,12 @@ function getAllAgents() {
     }
   });
 
-  // Build a set of emails whose current hierarchy record is explicitly inactive
-  const today = todayStr();
-  const inactiveEmails = new Set();
-  rawHierarchy.forEach(h => {
-    if (hierIsActive(h)) return; // still active — leave in
-    const e = (h.agent_email || '').toLowerCase().trim();
-    if (!e) return;
-    // Only hide if this is their *current* record (date-active or no end date)
-    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
-    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
-    if (today >= from && today <= to) inactiveEmails.add(e);
-  });
+  // Hide agents whose most recent hierarchy record is marked inactive.
+  const inactiveEmails = new Set(
+    Object.entries(latestHierRecordByEmail())
+      .filter(([, h]) => !hierIsActive(h))
+      .map(([email]) => email)
+  );
 
   return Object.entries(byEmail)
     .filter(([email]) => !inactiveEmails.has(email))
@@ -1609,16 +1617,12 @@ function getAllAgents() {
 // Supervisors/AMs aren't stored with emails in hierarchy, but many are also agents
 // whose email exists in the nameToEmail map built from TPH/IQA rows.
 function getAllSupervisors() {
-  const today = todayStr();
-  // Build set of names/emails that are explicitly inactive in a current record
+  // Use most-recent record per email to determine inactive status (same logic as getAllAgents)
   const inactiveNames = new Set();
-  rawHierarchy.forEach(h => {
+  Object.entries(latestHierRecordByEmail()).forEach(([email, h]) => {
     if (hierIsActive(h)) return;
-    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
-    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
-    if (today < from || today > to) return;
-    if (h.agent_name)  inactiveNames.add(normName(h.agent_name));
-    if (h.agent_email) inactiveNames.add((h.agent_email).toLowerCase().trim());
+    inactiveNames.add(email);
+    if (h.agent_name) inactiveNames.add(normName(h.agent_name));
   });
 
   const seen = {};
@@ -1638,16 +1642,11 @@ function getAllSupervisors() {
 }
 
 function getAllAMs() {
-  const today = todayStr();
-  // Build set of names/emails that are explicitly inactive in a current record
   const inactiveNames = new Set();
-  rawHierarchy.forEach(h => {
+  Object.entries(latestHierRecordByEmail()).forEach(([email, h]) => {
     if (hierIsActive(h)) return;
-    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
-    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
-    if (today < from || today > to) return;
-    if (h.agent_name)  inactiveNames.add(normName(h.agent_name));
-    if (h.agent_email) inactiveNames.add((h.agent_email).toLowerCase().trim());
+    inactiveNames.add(email);
+    if (h.agent_name) inactiveNames.add(normName(h.agent_name));
   });
 
   const seen = {};
@@ -2143,7 +2142,13 @@ function renderAgentView() {
     })
   );
 
-  // ── Sort — default: composite rank ascending; override via column header ──
+  // Helper: true if agent has at least one non-null KPI across ALL periods (not just latest)
+  const hasAnyData = email => periods.some((_,i) => {
+    const k = allKPIs[email][i];
+    return k.tph !== null || k.csat !== null || k.iqa !== null;
+  });
+
+  // ── Sort — default: data-first then composite rank; override via column header ──
   if (tabSort.agent.col) {
     displayAgents = sortKpiRows(displayAgents, 'agent', (a, col) => {
       const k = allKPIs[a.email][latestPi];
@@ -2154,9 +2159,12 @@ function renderAgentView() {
       return null;
     });
   } else {
-    displayAgents = [...displayAgents].sort((a, b) =>
-      (rankMap[a.email] || 9999) - (rankMap[b.email] || 9999)
-    );
+    displayAgents = [...displayAgents].sort((a, b) => {
+      const aHas = hasAnyData(a.email) ? 0 : 1; // 0 = has data, 1 = no data
+      const bHas = hasAnyData(b.email) ? 0 : 1;
+      if (aHas !== bHas) return aHas - bHas;     // data agents first
+      return (rankMap[a.email] || 9999) - (rankMap[b.email] || 9999);
+    });
   }
 
   const sortTh = (col, label) =>
@@ -2296,9 +2304,12 @@ function renderSupervisorView() {
       return null;
     });
   } else {
-    visSupRows = [...visSupRows].sort((a, b) =>
-      (supRankMap[a.sup.email || a.sup.name] || 9999) - (supRankMap[b.sup.email || b.sup.name] || 9999)
-    );
+    visSupRows = [...visSupRows].sort((a, b) => {
+      const aHas = (a.tph !== null || a.csat !== null || a.iqa !== null) ? 0 : 1;
+      const bHas = (b.tph !== null || b.csat !== null || b.iqa !== null) ? 0 : 1;
+      if (aHas !== bHas) return aHas - bHas;
+      return (supRankMap[a.sup.email || a.sup.name] || 9999) - (supRankMap[b.sup.email || b.sup.name] || 9999);
+    });
   }
 
   const supSortTh = (col, label) =>
@@ -2420,17 +2431,27 @@ function renderAMView() {
     ? amRows.filter(r => r.am.name.toLowerCase().includes(amSq) || r.am.email.toLowerCase().includes(amSq))
     : amRows;
 
-  // ── Sort by latest-period aggregated KPI ──────────────────────────────────
+  // ── Sort: data-first, then by latest-period aggregated KPI ──────────────────
   const latestAmPi = periods.length - 1;
-  visAmRows = sortKpiRows(visAmRows, 'am', (r, col) => {
-    const emails = r.supRows.flatMap(s => s.agents.map(a => a.email));
-    const g = computeGroupKPIs(emails, periods[latestAmPi].start, periods[latestAmPi].end);
-    if (col === 'tph')  return g.tph;
-    if (col === 'aht')  return g.ahtSecs;
-    if (col === 'csat') return g.csat;
-    if (col === 'iqa')  return g.iqa;
-    return null;
-  });
+  if (tabSort.am.col) {
+    visAmRows = sortKpiRows(visAmRows, 'am', (r, col) => {
+      const emails = r.supRows.flatMap(s => s.agents.map(a => a.email));
+      const g = computeGroupKPIs(emails, periods[latestAmPi].start, periods[latestAmPi].end);
+      if (col === 'tph')  return g.tph;
+      if (col === 'aht')  return g.ahtSecs;
+      if (col === 'csat') return g.csat;
+      if (col === 'iqa')  return g.iqa;
+      return null;
+    });
+  } else {
+    visAmRows = [...visAmRows].sort((a, b) => {
+      const gA = computeGroupKPIs(a.supRows.flatMap(s=>s.agents.map(x=>x.email)), periods[latestAmPi].start, periods[latestAmPi].end);
+      const gB = computeGroupKPIs(b.supRows.flatMap(s=>s.agents.map(x=>x.email)), periods[latestAmPi].start, periods[latestAmPi].end);
+      const aHas = (gA.tph !== null || gA.csat !== null || gA.iqa !== null) ? 0 : 1;
+      const bHas = (gB.tph !== null || gB.csat !== null || gB.iqa !== null) ? 0 : 1;
+      return aHas - bHas;
+    });
+  }
 
   const amSortTh = (col, label) =>
     `<th class="sortable" onclick="onSortClick('am','${col}')" style="cursor:pointer">${label}${sortArrow('am',col)}</th>`;
@@ -3245,8 +3266,22 @@ function renderCSATDetailView() {
   const mode   = tabPeriodMode[tab] || 'wow';
   const search = (tabSearch[tab] || '').toLowerCase();
 
-  // ── Agents (respects all active filters) ──────────────────
-  let agents = filteredAgents(getAllAgents());
+  // ── Scoped teams for this tab ─────────────────────────────
+  const CSAT_TEAMS = ['cu - cx', 'cu - ops'];
+
+  // Build email → latest active hierarchy record (already filtered by hierIsActive in getAllAgents,
+  // but we also need team info here)
+  const latestHier = latestHierRecordByEmail();
+
+  // ── Agents: respects filter bar AND restricts to CU-CX / CU-Ops active members only ──
+  let agents = filteredAgents(getAllAgents()).filter(a => {
+    const h = latestHier[a.email];
+    if (!h) return false;                              // no hierarchy record → exclude
+    if (!hierIsActive(h)) return false;               // inactive → exclude
+    const team = (h.team || '').toLowerCase().trim();
+    return CSAT_TEAMS.includes(team);                 // must be CU-CX or CU-Ops
+  });
+
   if (search) agents = agents.filter(a =>
     a.email.toLowerCase().includes(search) || a.name.toLowerCase().includes(search)
   );
@@ -3385,7 +3420,7 @@ function renderCSATDetailView() {
     if (activeFilters.am)         filterCtx.push('AM: '  + (emailToName[activeFilters.am.toLowerCase()]         || activeFilters.am));
     if (activeFilters.agent)      filterCtx.push('Agent: '+ (emailToName[activeFilters.agent.toLowerCase()]     || activeFilters.agent));
     if (activeFilters.team)       filterCtx.push(activeFilters.team);
-    subtitle.textContent = `${periodLabel} · ${agents.length} agent${agents.length!==1?'s':''} · surveys, good, bad & CSAT%`
+    subtitle.textContent = `${periodLabel} · CU-CX & CU-Ops active agents · ${agents.length} agent${agents.length!==1?'s':''} · surveys, good, bad & CSAT%`
       + (filterCtx.length ? ` · ${filterCtx.join(' · ')}` : '');
   }
 }
