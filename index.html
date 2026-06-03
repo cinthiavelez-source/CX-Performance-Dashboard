@@ -1798,24 +1798,49 @@ function getSupervisorsUnderAM(amName, asOfDate) {
   const latestHier = latestHierRecordByEmail();
   const seen       = {};
 
+  // DEBUG — count why rows are excluded
+  let dbTotal=0, dbAmMatch=0, dbRoleMatch=0, dbActivePass=0, dbDatePass=0;
+
   rawHierarchy.forEach(h => {
+    dbTotal++;
     if (normName(h.am_name) !== key) return;
+    dbAmMatch++;
     if (normName(h.role) !== 'supervisor') return;
+    dbRoleMatch++;
     const e = (h.agent_email || '').toLowerCase().trim();
-    const k = e || normName(h.agent_name); // fallback to name if no email
+    const k = e || normName(h.agent_name);
     if (!k) return;
 
-    // Active check: use latest record for people who have an email
     const latest = e ? latestHier[e] : h;
     if (!latest || !hierIsActive(latest)) return;
+    dbActivePass++;
 
-    // Temporal check: this row must cover asOfDate
     const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
     const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
     if (date < from || date > to) return;
+    dbDatePass++;
 
     if (!seen[k]) seen[k] = { name: h.agent_name || '', email: e };
   });
+
+  console.log(`[getSupervisorsUnderAM("${amName}")] date=${date} key="${key}"`,
+    `| total rows: ${dbTotal} | am_name match: ${dbAmMatch} | role=supervisor: ${dbRoleMatch}`,
+    `| active pass: ${dbActivePass} | date pass: ${dbDatePass} | found: ${Object.keys(seen).length}`);
+
+  // If still 0, log the first few rows with this am_name to see what's there
+  if (dbAmMatch > 0 && Object.keys(seen).length === 0) {
+    console.warn('[getSupervisorsUnderAM] am_name matched but nothing made it through. Sample rows:');
+    let shown = 0;
+    rawHierarchy.forEach(h => {
+      if (normName(h.am_name) !== key || shown >= 5) return;
+      const e = (h.agent_email||'').toLowerCase().trim();
+      const latest = e ? latestHier[e] : h;
+      const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+      const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+      console.warn(`  role="${h.role}" normRole="${normName(h.role)}" from=${from} to=${to} date=${date} dateOK=${date>=from&&date<=to} is_active=${h.is_active} latestActive=${latest?hierIsActive(latest):'NO_LATEST'} email=${e}`);
+      shown++;
+    });
+  }
 
   return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
 }
