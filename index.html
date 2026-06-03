@@ -1749,14 +1749,15 @@ function getActiveAMs() {
 
 /**
  * Return specialists (role != Supervisor / AM) whose supervisor_name matches supName
- * as of `asOfDate` (YYYY-MM-DD).  Defaults to today if omitted.
+ * as of `asOfDate` (YYYY-MM-DD, defaults to today).
  *
- * Two-layer check:
- *   1. Active overall?  → latestHierRecordByEmail() + hierIsActive()
- *   2. Reporting to this supervisor on asOfDate? → hierRecordForDate()
+ * Temporal hierarchy: each row carries its own effective_from/to dates, so the match
+ * uses asOfDate against each row directly. This means if an agent transferred from
+ * Andrea → Julio on May 30, they appear under Andrea for dates ≤ May 30 and under
+ * Julio for dates > May 30.
  *
- * This correctly handles transfers: if Cinthia moved from Andrea → Julio on May 30,
- * she shows under Andrea for dates ≤ May 30 and under Julio for dates > May 30.
+ * Active check uses latestHierRecordByEmail (no date gate) so people with recently-
+ * expired effective_to are still shown as long as their latest is_active = Active.
  */
 function getSpecialistsUnderSupervisor(supName, asOfDate) {
   const key        = normName(supName);
@@ -1764,37 +1765,32 @@ function getSpecialistsUnderSupervisor(supName, asOfDate) {
   const latestHier = latestHierRecordByEmail();
   const seen       = {};
 
-  // Collect all unique specialist emails from the full hierarchy
-  const allEmails = new Set();
   rawHierarchy.forEach(h => {
-    const e = (h.agent_email || '').toLowerCase().trim();
+    if (normName(h.supervisor_name) !== key) return;
     const r = normName(h.role);
-    if (e && r !== 'supervisor' && r !== 'assistant manager') allEmails.add(e);
-  });
+    if (r === 'supervisor' || r === 'assistant manager') return;
+    const e = (h.agent_email || '').toLowerCase().trim();
+    if (!e) return;
 
-  allEmails.forEach(e => {
-    // Layer 1: is this person currently active? (use latest record, no date gate)
+    // Active check: use the person's latest record (no expiry gate)
     const latest = latestHier[e];
     if (!latest || !hierIsActive(latest)) return;
 
-    // Layer 2: who were they reporting to on asOfDate?
-    const rec = hierRecordForDate(e, date);
-    if (!rec) return;
-    if (normName(rec.supervisor_name) !== key) return;
-    const r = normName(rec.role);
-    if (r === 'supervisor' || r === 'assistant manager') return;
+    // Temporal check: this specific record must cover asOfDate
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (date < from || date > to) return;
 
-    if (!seen[e]) seen[e] = { email: e, name: rec.agent_name || latest.agent_name || '' };
+    if (!seen[e]) seen[e] = { email: e, name: h.agent_name || '' };
   });
 
   return Object.values(seen).sort((a, b) => a.email.localeCompare(b.email));
 }
 
 /**
- * Return supervisors whose am_name matches amName as of `asOfDate`.
- * Same two-layer pattern as getSpecialistsUnderSupervisor:
- *   1. Active overall (latest record + hierIsActive)
- *   2. Reporting to this AM on asOfDate (hierRecordForDate)
+ * Return supervisors (role = Supervisor) whose am_name matches amName as of `asOfDate`.
+ * Same pattern as getSpecialistsUnderSupervisor: iterate rows directly, match on
+ * am_name field, active check via latestHierRecordByEmail, temporal check via row dates.
  */
 function getSupervisorsUnderAM(amName, asOfDate) {
   const key        = normName(amName);
@@ -1802,25 +1798,23 @@ function getSupervisorsUnderAM(amName, asOfDate) {
   const latestHier = latestHierRecordByEmail();
   const seen       = {};
 
-  // Collect all unique supervisor emails from hierarchy
-  const allSupEmails = new Set();
   rawHierarchy.forEach(h => {
+    if (normName(h.am_name) !== key) return;
+    if (normName(h.role) !== 'supervisor') return;
     const e = (h.agent_email || '').toLowerCase().trim();
-    if (e && normName(h.role) === 'supervisor') allSupEmails.add(e);
-  });
+    const k = e || normName(h.agent_name); // fallback to name if no email
+    if (!k) return;
 
-  allSupEmails.forEach(e => {
-    // Layer 1: active overall?
-    const latest = latestHier[e];
+    // Active check: use latest record for people who have an email
+    const latest = e ? latestHier[e] : h;
     if (!latest || !hierIsActive(latest)) return;
 
-    // Layer 2: was this supervisor under this AM on asOfDate?
-    const rec = hierRecordForDate(e, date);
-    if (!rec) return;
-    if (normName(rec.am_name) !== key) return;
-    if (normName(rec.role) !== 'supervisor') return;
+    // Temporal check: this row must cover asOfDate
+    const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+    const to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+    if (date < from || date > to) return;
 
-    if (!seen[e]) seen[e] = { name: rec.agent_name || latest.agent_name || '', email: e };
+    if (!seen[k]) seen[k] = { name: h.agent_name || '', email: e };
   });
 
   return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
@@ -2463,8 +2457,12 @@ function renderAMView() {
   }
 
   // ── 3. For each AM → look downward: supervisors → specialists ─────────────
+  // DEBUG — open browser DevTools > Console to see this
+  console.group('[AM View Debug] asOfDate =', amAsOf);
+  console.log('AMs found:', ams.map(a => a.name + ' / ' + a.email));
   const amRows = ams.map(am => {
     let sups = getSupervisorsUnderAM(am.name, amAsOf);
+    console.log(`  Supervisors under ${am.name}:`, sups.map(s => s.name + ' / ' + s.email));
     // Apply supervisor filter
     if (activeFilters.supervisor) {
       const f = activeFilters.supervisor;
@@ -2472,11 +2470,13 @@ function renderAMView() {
     }
     const supRows = sups.map(sup => {
       let agents = getSpecialistsUnderSupervisor(sup.name, amAsOf);
+      console.log(`    Agents under ${sup.name}:`, agents.map(a => a.email));
       if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
       return { sup, agents };
     }).filter(r => !activeFilters.agent || r.agents.length);
     return { am, supRows };
   }).filter(r => !activeFilters.supervisor || r.supRows.length);
+  console.groupEnd();
 
   // Aggregate all visible specialist emails for KPI cards
   const allSpecialistEmails = [...new Set(
