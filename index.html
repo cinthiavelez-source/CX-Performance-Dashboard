@@ -3371,21 +3371,11 @@ function renderCSATDetailView() {
   const mode   = tabPeriodMode[tab] || 'wow';
   const search = (tabSearch[tab] || '').toLowerCase();
 
-  // ── Scoped teams for this tab ─────────────────────────────
-  const CSAT_TEAMS = ['cu - cx', 'cu - ops'];
-
-  // Build email → latest active hierarchy record (already filtered by hierIsActive in getAllAgents,
-  // but we also need team info here)
-  const latestHier = latestHierRecordByEmail();
-
-  // ── Agents: respects filter bar AND restricts to CU-CX / CU-Ops active members only ──
-  let agents = filteredAgents(getAllAgents()).filter(a => {
-    const h = latestHier[a.email];
-    if (!h) return false;                              // no hierarchy record → exclude
-    if (!hierIsActive(h)) return false;               // inactive → exclude
-    const team = (h.team || '').toLowerCase().trim();
-    return CSAT_TEAMS.includes(team);                 // must be CU-CX or CU-Ops
-  });
+  // ── Agents: identical criteria to Agent View ───────────────
+  // getAllAgents() already excludes inactive (latestHierRecordByEmail + hierIsActive).
+  // filteredAgents() applies the filter bar (agent / supervisor / AM / team dropdowns).
+  // No extra team gate — same universe as Agent View.
+  let agents = filteredAgents(getAllAgents());
 
   if (search) agents = agents.filter(a =>
     a.email.toLowerCase().includes(search) || a.name.toLowerCase().includes(search)
@@ -3406,6 +3396,21 @@ function renderCSATDetailView() {
     const pct     = total > 0 ? (good / total) * 100 : null;
     return { good, bad, total, pct };
   }
+
+  // ── Data-first sort: same as Agent View ───────────────────
+  // Pre-compute CSAT stats per agent to drive sort (avoids duplicate calls in render)
+  const agentPeriodStats = {};
+  agents.forEach(a => {
+    agentPeriodStats[a.email] = periods.map(p => csatStats(a.email, p.start, p.end));
+  });
+
+  // Sort: agents with any survey data in any period first (data bucket = 0), then alphabetical
+  agents = [...agents].sort((a, b) => {
+    const aHas = agentPeriodStats[a.email].some(s => s.total > 0) ? 0 : 1;
+    const bHas = agentPeriodStats[b.email].some(s => s.total > 0) ? 0 : 1;
+    if (aHas !== bHas) return aHas - bHas;
+    return a.name.localeCompare(b.name);
+  });
 
   // ── Empty state ────────────────────────────────────────────
   if (!agents.length) {
@@ -3444,16 +3449,12 @@ function renderCSATDetailView() {
   let rank = 1;
 
   agents.forEach(agent => {
-    const hier   = currentHier(agent.email);
-    const stats  = periods.map((p, i) => {
-      const s = csatStats(agent.email, p.start, p.end);
+    const hier  = currentHier(agent.email);
+    const stats = agentPeriodStats[agent.email];
+    stats.forEach((s, i) => {
       totalGoodAll[i] += s.good;
       totalBadAll[i]  += s.bad;
-      return s;
     });
-
-    // Only render agents who have at least one survey across any period
-    const hasSurveys = stats.some(s => s.total > 0);
 
     const displayName = agent.name || agent.email;
     html += `<tr>
@@ -3525,7 +3526,7 @@ function renderCSATDetailView() {
     if (activeFilters.am)         filterCtx.push('AM: '  + (emailToName[activeFilters.am.toLowerCase()]         || activeFilters.am));
     if (activeFilters.agent)      filterCtx.push('Agent: '+ (emailToName[activeFilters.agent.toLowerCase()]     || activeFilters.agent));
     if (activeFilters.team)       filterCtx.push(activeFilters.team);
-    subtitle.textContent = `${periodLabel} · CU-CX & CU-Ops active agents · ${agents.length} agent${agents.length!==1?'s':''} · surveys, good, bad & CSAT%`
+    subtitle.textContent = `${periodLabel} · ${periods.map(p=>p.label).join(' | ')} · ${agents.length} active agent${agents.length!==1?'s':''}`
       + (filterCtx.length ? ` · ${filterCtx.join(' · ')}` : '');
   }
 }
@@ -4237,7 +4238,18 @@ async function apiPost(body) {
     redirect:'follow',
     body: JSON.stringify({ ...body, email: u?.email||'' })
   });
-  const data = await res.json();
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch(e) {
+    // GAS returned HTML instead of JSON — almost always means the web app
+    // needs to be re-deployed (Extensions > Apps Script > Deploy > Manage Deployments > New version)
+    if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+      throw new Error('Server returned an HTML page instead of JSON. This usually means the Apps Script web app needs to be re-deployed. Go to Extensions → Apps Script → Deploy → Manage Deployments → Edit → New version → Deploy.');
+    }
+    throw new Error('Invalid server response: ' + text.slice(0, 200));
+  }
   if (data.error) throw new Error(data.error);
   return data;
 }
