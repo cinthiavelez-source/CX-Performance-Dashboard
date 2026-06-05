@@ -2793,7 +2793,7 @@ function renderGeneralView() {
       // Week rows
       g.rows.forEach(({ row, globalIdx }) => {
         const prev = globalIdx > 0 ? rows[globalIdx - 1].kpis : null;
-        const rowHtml = trendRow(row, prev ? { kpis: rows[globalIdx-1].kpis } : null, av, 'label');
+        const rowHtml = trendRow(row, prev, av, 'label');
         html += rowHtml.replace('<tr>', `<tr class="trend-acc-body-${g.key}" style="display:${isOpen ? '' : 'none'}">`);
       });
     });
@@ -2806,7 +2806,7 @@ function renderGeneralView() {
     const av = buildAllVals(rows);
     let t = `<table class="perf-table" style="min-width:700px">${trendTableHead(isWeek)}<tbody>`;
     rows.forEach((row, i) => {
-      const prev = i > 0 ? rows[i-1] : null;
+      const prev = i > 0 ? rows[i-1].kpis : null;
       t += trendRow(row, prev, av, labelKey);
     });
     t += `</tbody></table>`;
