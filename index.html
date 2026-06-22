@@ -4118,10 +4118,11 @@ async function manualRefresh() {
 // ═══════════════════════════════════════════════════════════
 
 // ─── LOCALSTORAGE HELPERS ────────────────────────────────────
+const LS_STALE_MS = 2 * 60 * 60 * 1000; // treat as stale after 2 hours
+
 function _lsSave(tph, csat, iqa, hierarchy, role) {
   try {
-    const today = todayStr(); // 'YYYY-MM-DD'
-    const payload = JSON.stringify({ date: today, tph, csat, iqa, hierarchy, role });
+    const payload = JSON.stringify({ date: todayStr(), savedAt: Date.now(), tph, csat, iqa, hierarchy, role });
     localStorage.setItem(LS_CACHE_KEY, payload);
   } catch(e) { /* storage quota — ignore */ }
 }
@@ -4131,13 +4132,67 @@ function _lsLoad() {
     const raw = localStorage.getItem(LS_CACHE_KEY);
     if (!raw) return null;
     const cached = JSON.parse(raw);
-    if (cached.date !== todayStr()) return null; // stale — different calendar day
-    return cached;
+    if (!cached.tph) return null; // corrupt entry
+    // Flag as stale if >2 hours old or from a different calendar day
+    const ageMs = Date.now() - (cached.savedAt || 0);
+    cached._stale = cached.date !== todayStr() || ageMs > LS_STALE_MS;
+    return cached; // always return — caller decides whether to refresh
   } catch(e) { return null; }
 }
 
 function _lsClear() {
   try { localStorage.removeItem(LS_CACHE_KEY); } catch(e) {}
+}
+
+// Internal: hit the GAS network and apply + save the result. Returns the data object or null.
+async function _fetchFromNetwork() {
+  setSyncStatus('syncing');
+  const _loadSub = document.getElementById('loading-sub');
+  const _loadMsgs = [
+    'Reading 12 months of performance data…',
+    'Processing TPH & AHT records…',
+    'Aggregating CSAT data…',
+    'Loading IQS quality scores…',
+    'Crunching the numbers…',
+    'Almost there…'
+  ];
+  let _idx = 0;
+  if (_loadSub) _loadSub.textContent = _loadMsgs[0];
+  const _timer = setInterval(() => {
+    _idx = (_idx + 1) % _loadMsgs.length;
+    if (_loadSub) _loadSub.textContent = _loadMsgs[_idx];
+  }, 4000);
+  try {
+    const u = currentUser;
+    const url = u ? `${SCRIPT_URL}?email=${encodeURIComponent(u.email)}` : SCRIPT_URL;
+    const res  = await fetch(url, { redirect:'follow' });
+    clearInterval(_timer);
+    if (_loadSub) _loadSub.textContent = 'Applying data…';
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch(e) {
+      if (text.includes('<!DOCTYPE') || text.includes('<html'))
+        throw new Error('Apps Script returned an HTML page — please re-deploy the web app (Extensions → Apps Script → Deploy → Manage Deployments → New version).');
+      throw new Error('Invalid server response: ' + text.slice(0, 200));
+    }
+    if (data.error) throw new Error(data.error);
+    _applyRawData(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role);
+    _lsSave(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role||'viewer');
+    lastSyncTime = Date.now();
+    updateSyncLabel();
+    updateRoleUI();
+    populateFilters();
+    setSyncStatus('ok');
+    return data;
+  } catch(err) {
+    clearInterval(_timer);
+    if (_loadSub) _loadSub.textContent = '';
+    console.error('Fetch error:', err);
+    showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
+    setSyncStatus('err');
+    return null;
+  }
 }
 // ─────────────────────────────────────────────────────────────
 
@@ -4155,79 +4210,37 @@ function _applyRawData(tph, csat, iqa, hierarchy, role) {
 }
 
 async function apiFetch(forceNetwork = false) {
-  // ── 1. Try localStorage cache first (skip network entirely) ──
+  // ── 1. Check localStorage (stale-while-revalidate) ────────────
   if (!forceNetwork) {
     const cached = _lsLoad();
     if (cached) {
+      // Always show cached data immediately — never block the UI on a network fetch
       _applyRawData(cached.tph, cached.csat, cached.iqa, cached.hierarchy, cached.role);
-      lastSyncTime = null; // will show "Cached data"
-      updateSyncLabel();
       updateRoleUI();
       populateFilters();
-      setSyncStatus('ok');
       showLoading(false);
-      return cached;
+
+      if (!cached._stale) {
+        // Fresh (< 2h old, same calendar day) — no network call needed
+        lastSyncTime = null;
+        updateSyncLabel();
+        setSyncStatus('ok');
+        return cached;
+      }
+
+      // Stale (different day or > 2h) — show data now, refresh silently in background
+      setSyncStatus('syncing');
+      updateSyncLabel();
+      _fetchFromNetwork().catch(() => setSyncStatus('ok')); // fire-and-forget
+      return cached; // return immediately so the caller doesn't wait
     }
   }
 
-  // ── 2. No valid cache — fetch from Apps Script ────────────────
-  setSyncStatus('syncing');
+  // ── 2. No cache at all (first-ever load or forced) — blocking fetch ──
   showLoading(true, 'Fetching performance data…');
-  // Show a rotating progress message so it doesn't look frozen
-  const _loadMsgs = [
-    'Reading 12 months of performance data…',
-    'Processing TPH & AHT records…',
-    'Aggregating CSAT data…',
-    'Loading IQS quality scores…',
-    'Crunching the numbers…',
-    'Almost there…'
-  ];
-  let _loadMsgIdx = 0;
-  const _loadSub = document.getElementById('loading-sub');
-  if (_loadSub) _loadSub.textContent = _loadMsgs[0];
-  const _loadTimer = setInterval(() => {
-    _loadMsgIdx = (_loadMsgIdx + 1) % _loadMsgs.length;
-    if (_loadSub) _loadSub.textContent = _loadMsgs[_loadMsgIdx];
-  }, 4000);
-  try {
-    const u = currentUser;
-    const url = u
-      ? `${SCRIPT_URL}?email=${encodeURIComponent(u.email)}`
-      : SCRIPT_URL;
-    const res  = await fetch(url, { redirect:'follow' });
-    clearInterval(_loadTimer);
-    if (_loadSub) _loadSub.textContent = 'Applying data…';
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-
-    _applyRawData(
-      data.tph       || [],
-      data.csat      || [],
-      data.iqa       || [],
-      data.hierarchy || [],
-      data.role
-    );
-
-    // Save fresh data to localStorage for the rest of the day
-    _lsSave(data.tph || [], data.csat || [], data.iqa || [], data.hierarchy || [], data.role || 'viewer');
-
-    lastSyncTime = Date.now();
-    updateSyncLabel();
-    updateRoleUI();
-    populateFilters();
-    setSyncStatus('ok');
-    return data;
-  } catch (err) {
-    clearInterval(_loadTimer);
-    if (_loadSub) _loadSub.textContent = '';
-    console.error('Fetch error:', err);
-    showToast('⚠️ Could not load data: ' + err.message, '#EF4444');
-    setSyncStatus('err');
-    return null;
-  } finally {
-    showLoading(false);
-  }
+  const result = await _fetchFromNetwork();
+  showLoading(false);
+  return result;
 }
 
 async function apiPost(body) {
