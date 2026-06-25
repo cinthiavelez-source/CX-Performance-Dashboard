@@ -3800,7 +3800,7 @@ async function submitHierarchyUpload() {
     } else {
       showToast(`⚠️ ${uploaded} saved, ${errors.length} failed — see details above`, '#FFB81C');
     }
-    await apiFetch();
+    await refreshHierarchy(); // fast hierarchy-only reload (< 5s)
     renderHierarchyTable();
     populateFilters();
   } else {
@@ -4142,6 +4142,33 @@ function _lsLoad() {
 
 function _lsClear() {
   try { localStorage.removeItem(LS_CACHE_KEY); } catch(e) {}
+}
+
+// Lightweight hierarchy-only refresh — used after save/delete/toggle so the UI
+// stays accurate without triggering a full 60-120s data reload. Fast (< 5s).
+async function refreshHierarchy() {
+  try {
+    const u = currentUser;
+    const url = `${SCRIPT_URL}?action=getHierarchy&email=${encodeURIComponent(u?.email||'')}`;
+    const res  = await fetch(url, { redirect:'follow' });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server'); }
+    if (data.error) throw new Error(data.error);
+    rawHierarchy = data.hierarchy || [];
+    kpiCache     = {};          // hierarchy affects group KPIs — clear memo
+    renderedTabs.clear();       // force re-render on next nav
+    buildAgentMaps();
+    buildIndexes();
+    // Patch the localStorage cache so the next load also sees the new hierarchy
+    const ls = _lsLoad();
+    if (ls) _lsSave(ls.tph||[], ls.csat||[], ls.iqa||[], rawHierarchy, cachedRole);
+    return data.hierarchy;
+  } catch(e) {
+    console.warn('refreshHierarchy failed:', e);
+    showToast('⚠️ Could not reload hierarchy: ' + e.message, '#EF4444');
+    return null;
+  }
 }
 
 // Internal: hit the GAS network and apply + save the result. Returns the data object or null.
@@ -4681,11 +4708,12 @@ async function submitUpload(type) {
     st.className = 'upload-status ok';
     showToast(`✅ Upload complete — ${summary}`);
 
-    // Refresh data — clear cache so new/updated rows are immediately visible
+    // Invalidate the localStorage cache and refresh silently in background.
+    // We do NOT block here — the upload result already confirms what was saved.
+    // The background refresh will update all other tabs when the user navigates to them.
     _lsClear();
-    showLoading(true, 'Refreshing data…');
-    await apiFetch(true); // forceNetwork: bypass localStorage cache
-    navTo(currentPage);
+    renderedTabs.clear(); // force tabs to re-render with fresh data
+    _fetchFromNetwork().catch(e => console.warn('Background refresh after upload failed:', e));
 
   } catch(err) {
     st.textContent = '❌ ' + err.message;
@@ -4824,7 +4852,7 @@ async function saveHierarchy() {
     await apiPost({ action:'saveHierarchy', record });
     closeHierModal();
     showToast('✅ Hierarchy record saved!');
-    await apiFetch();
+    await refreshHierarchy(); // fast hierarchy-only reload (< 5s)
     renderHierarchyTable();
     populateFilters();
   } catch(e) {
@@ -4844,9 +4872,7 @@ async function toggleHierActive(id, btn) {
   btn.disabled = true;
   try {
     await apiPost({ action: 'toggleHierActive', id });
-    // Re-fetch & re-render so the dot badge and everything stays in sync
-    await apiFetch();
-    renderedTabs.clear();
+    await refreshHierarchy(); // fast hierarchy-only reload (< 5s)
     renderHierarchyTable();
     populateFilters();
   } catch(e) {
@@ -4867,7 +4893,7 @@ async function deleteHierarchy(id) {
   try {
     await apiPost({ action:'deleteHierarchy', id });
     showToast('Deleted.');
-    await apiFetch();
+    await refreshHierarchy(); // fast hierarchy-only reload (< 5s)
     renderHierarchyTable();
     populateFilters();
   } catch(e) {
