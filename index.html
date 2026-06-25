@@ -4321,7 +4321,7 @@ async function clearDashboardCache() {
     if (data.error) throw new Error(data.error);
     if (status) status.textContent = '✅ Cache cleared — reloading data…';
     // Also clear the client-side localStorage cache so this browser reloads too
-    Object.keys(localStorage).filter(k => k.startsWith('cx_perf_')).forEach(k => localStorage.removeItem(k));
+    _lsClear();
     renderedTabs.clear();
     setTimeout(async () => {
       await apiFetch(true);
