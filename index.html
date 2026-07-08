@@ -1704,25 +1704,47 @@ function getAllTeams() {
 // These look downward from role-holders to find their subordinates,
 // rather than grouping role-holders by their own parent entity.
 
-/** Return all people with role="Supervisor" active today.
- *  Uses latest record per email — no date gate. */
+/** Return all active supervisors — combines two sources:
+ *  1. Explicit role="Supervisor" rows in hierarchy (authoritative, has email/team/am)
+ *  2. Unique supervisor_name values from agent rows (fallback for supervisors with no own row)
+ *
+ *  This means a supervisor appears in the Supervisor View even if they only exist as
+ *  supervisor_name on their agents' rows, not as a stand-alone role="Supervisor" entry. */
 function getActiveSupervisors() {
   const latestHier = latestHierRecordByEmail();
-  const seen  = {};
+  const seen = {};
+
+  // ── Source 1: explicit role="Supervisor" rows ──────────────────────────────
   rawHierarchy.forEach(h => {
     if (normName(h.role) !== 'supervisor') return;
-    const key = (h.agent_email || '').toLowerCase().trim() || normName(h.agent_name);
+    const e   = (h.agent_email || '').toLowerCase().trim();
+    const key = e || normName(h.agent_name);
     if (!key) return;
-    const e = (h.agent_email || '').toLowerCase().trim();
     const latest = e ? latestHier[e] : h;
     if (!latest || !hierIsActive(latest)) return;
-    if (!seen[key]) seen[key] = {
-      name:  h.agent_name  || '',
-      email: e,
-      team:  h.team        || '',
-      am:    h.am_name     || ''
-    };
+    if (!seen[key]) seen[key] = { name: h.agent_name||'', email: e, team: h.team||'', am: h.am_name||'' };
   });
+
+  // ── Source 2: supervisor_name column in agent rows ─────────────────────────
+  // Covers supervisors who have no stand-alone role row but are referenced by their agents.
+  const inactiveNames = new Set();
+  Object.entries(latestHier).forEach(([email, h]) => {
+    if (hierIsActive(h)) return;
+    inactiveNames.add(email);
+    if (h.agent_name) inactiveNames.add(normName(h.agent_name));
+  });
+  rawHierarchy.forEach(h => {
+    if (!h.supervisor_name) return;
+    const supNameNorm = normName(h.supervisor_name);
+    if (inactiveNames.has(supNameNorm)) return;
+    const supEmail = nameToEmail[supNameNorm] || '';
+    if (supEmail && inactiveNames.has(supEmail)) return;
+    const key = supEmail || supNameNorm;
+    if (key && !seen[key]) {
+      seen[key] = { name: h.supervisor_name, email: supEmail, team: h.team||'', am: h.am_name||'' };
+    }
+  });
+
   return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -1798,18 +1820,34 @@ function getSupervisorsUnderAM(amName, asOfDate) {
   const latestHier = latestHierRecordByEmail();
   const seen       = {};
 
+  // ── Source 1: explicit role="Supervisor" rows (per-period accurate) ─────────
   Object.entries(latestHier).forEach(([e, latest]) => {
-    // 1. Active check via latest record
     if (!hierIsActive(latest)) return;
-
-    // 2. Must be a Supervisor role (check latest record's role)
     if (normName(latest.role || '') !== 'supervisor') return;
-
-    // 3. Find the record covering asOfDate; fall back to latest if gap in imports
     const rec = hierRecordForDate(e, date) || latest;
     if (normName(rec.am_name) !== key) return;
-
     if (!seen[e]) seen[e] = { name: rec.agent_name || latest.agent_name || '', email: e };
+  });
+
+  // ── Source 2: supervisor_name from agent rows whose am_name matches ─────────
+  // Covers supervisors with no stand-alone role="Supervisor" row.
+  const inactiveNames = new Set();
+  Object.entries(latestHier).forEach(([email, h]) => {
+    if (hierIsActive(h)) return;
+    inactiveNames.add(email);
+    if (h.agent_name) inactiveNames.add(normName(h.agent_name));
+  });
+  rawHierarchy.forEach(h => {
+    if (!h.supervisor_name || !h.am_name) return;
+    if (normName(h.am_name) !== key) return;
+    const supNameNorm = normName(h.supervisor_name);
+    if (inactiveNames.has(supNameNorm)) return;
+    const supEmail = nameToEmail[supNameNorm] || '';
+    if (supEmail && inactiveNames.has(supEmail)) return;
+    const supKey = supEmail || supNameNorm;
+    if (supKey && !seen[supKey]) {
+      seen[supKey] = { name: h.supervisor_name, email: supEmail };
+    }
   });
 
   return Object.values(seen).sort((a, b) => a.name.localeCompare(b.name));
@@ -4647,7 +4685,10 @@ function mapRows(type, rawRows, map) {
         agent_email:    (r[map.agent_email]     || '').toLowerCase().trim(),
         satisfaction:   (r[map.satisfaction]    || '').toLowerCase().trim(),
         ticket_id:       r[map.ticket_id]       || '',
-        contact_reason: (r[map.contact_reason]  || '').trim(),
+        // Normalize em-dash (–) to regular hyphen-dash ( - ) so sub-reason
+        // splitting works consistently. Some BI exports use en/em-dashes
+        // e.g. "billing – promo inquiry" instead of "billing - promo inquiry".
+        contact_reason: (r[map.contact_reason] || '').trim().replace(/\s*[–—]\s*/g, ' - '),
       }))
       .filter(r => r.date && r.agent_name && ['good','bad','offered'].includes(r.satisfaction));
   }
