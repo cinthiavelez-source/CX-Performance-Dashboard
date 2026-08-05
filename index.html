@@ -2229,16 +2229,21 @@ function renderAgentView() {
     : agents;
 
   // ── Composite rank (latest period): TPH 40% + CSAT 40% + IQA 20% ──
-  // Metrics are on different scales so each is min-max normalised to [0,1]
-  // before weighting. Agents with null in a metric score 0 for that component.
+  // Only agents with ALL 4 KPIs (TPH, AHT, CSAT, IQS) receive a rank badge.
+  // Agents missing any KPI show "—" to avoid misleading partial scores.
   const latestPi = periods.length - 1;
 
+  const rankedAgents = displayAgents.filter(a => {
+    const k = allKPIs[a.email][latestPi];
+    return k.tph !== null && k.ahtSecs !== null && k.csat !== null && k.iqa !== null;
+  });
   const rankMap = compositeRankMap(
-    displayAgents.map(a => {
+    rankedAgents.map(a => {
       const k = allKPIs[a.email][latestPi];
       return { key: a.email, tph: k.tph, csat: k.csat, iqa: k.iqa };
     })
   );
+  const rankedAgentCount = rankedAgents.length;
 
   // Helper: true if agent has at least one non-null KPI across ALL periods (not just latest)
   const hasAnyData = email => periods.some((_,i) => {
@@ -2270,7 +2275,7 @@ function renderAgentView() {
 
   let html = `<table class="perf-table" id="agent-perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Agent Email</th>
-    <th class="week-hdr" style="background:#1E293B;text-align:center;white-space:nowrap" rowspan="2">#</th>
+    <th class="week-hdr" style="background:#1E293B;text-align:center;white-space:nowrap;line-height:1.3" rowspan="2">#<br><span style="font-size:8px;font-weight:400;opacity:0.7">TPH·40%+CSAT·40%+IQS·20%<br>Requires all 4 KPIs</span></th>
     <th class="week-hdr" style="background:#334155;text-align:center;white-space:nowrap" rowspan="2">Team</th>
     <th class="week-hdr" style="background:#334155;text-align:center;white-space:nowrap" rowspan="2">Role</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
@@ -2295,7 +2300,7 @@ function renderAgentView() {
     const rank = rankMap[agent.email];
     html += `<tr${warnRow}>
       <td class="sticky-col col-agent" title="${escHtml(agent.name)}">${escHtml(agent.email)}</td>
-      <td style="text-align:center;white-space:nowrap">${rank ? rankBadge(rank, displayAgents.length) : '—'}</td>
+      <td style="text-align:center;white-space:nowrap">${rank ? rankBadge(rank, rankedAgentCount) : '—'}</td>
       <td style="text-align:center">${teamBadge}</td>
       <td style="text-align:center">${roleBadge}</td>`;
     periods.forEach((_,pi) => {
@@ -2395,16 +2400,23 @@ function renderSupervisorView() {
     : supRows;
 
   // ── Composite rank: TPH 40% + CSAT 40% + IQA 20% (latest period, period-accurate agents) ──
+  // Only supervisors with ALL 4 KPIs (TPH, AHT, CSAT, IQS) receive a rank badge.
   const latestSupPi = periods.length - 1;
   const latestSupP  = periods[latestSupPi];
 
+  const rankedSupRows = visSupRows.filter(r => {
+    const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
+    const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
+    return g.tph !== null && g.ahtSecs !== null && g.csat !== null && g.iqa !== null;
+  });
   const supRankMap = compositeRankMap(
-    visSupRows.map(r => {
+    rankedSupRows.map(r => {
       const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
       const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
       return { key: r.sup.email || r.sup.name, tph: g.tph, csat: g.csat, iqa: g.iqa };
     })
   );
+  const rankedSupCount = rankedSupRows.length;
 
   // ── Sort ──
   if (tabSort.supervisor.col) {
@@ -2435,7 +2447,7 @@ function renderSupervisorView() {
   // ── 4. Build table ────────────────────────────────────────────────────────
   let html = `<table class="perf-table"><thead><tr>
     <th class="sticky-col col-agent week-hdr" style="background:#1E293B" rowspan="2">Supervisor</th>
-    <th class="week-hdr" style="background:#1E293B;text-align:center;white-space:nowrap" rowspan="2">#</th>
+    <th class="week-hdr" style="background:#1E293B;text-align:center;white-space:nowrap;line-height:1.3" rowspan="2">#<br><span style="font-size:8px;font-weight:400;opacity:0.7">TPH·40%+CSAT·40%+IQS·20%<br>Requires all 4 KPIs</span></th>
     <th class="week-hdr" style="background:#334155;text-align:center" rowspan="2">Agents</th>`;
   periods.forEach(p => { html += `<th colspan="4" class="week-hdr ${p.wk}">${escHtml(p.label)}</th>`; });
   html += `<th class="week-hdr" style="background:#1E293B" rowspan="2"></th></tr><tr>`;
@@ -2453,7 +2465,7 @@ function renderSupervisorView() {
         <span style="font-weight:700">${escHtml(sup.email || sup.name)}</span>
         ${sup.email ? `<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(sup.name)}</span>` : ''}
       </td>
-      <td style="text-align:center;white-space:nowrap">${supRankVal ? rankBadge(supRankVal, visSupRows.length) : '—'}</td>
+      <td style="text-align:center;white-space:nowrap">${supRankVal ? rankBadge(supRankVal, rankedSupCount) : '—'}</td>
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agentsLatest.length}</td>`;
     // ★ Per-period: each column uses the agents active under this supervisor during that week
     periods.forEach((p, pi) => {
