@@ -4333,8 +4333,10 @@ async function apiPost(body) {
     // GAS returned HTML instead of JSON — almost always means the web app
     // needs to be re-deployed (Extensions > Apps Script > Deploy > Manage Deployments > New version)
     if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-      throw new Error('Server returned an HTML page instead of JSON. This usually means the Apps Script web app needs to be re-deployed. Go to Extensions → Apps Script → Deploy → Manage Deployments → Edit → New version → Deploy.');
+      console.error('GAS HTML response (first 1000 chars):', text.slice(0, 1000));
+      throw new Error('Server returned an HTML page instead of JSON. Check the browser Console (F12) for the full GAS error text.');
     }
+    console.error('GAS non-JSON response:', text.slice(0, 500));
     throw new Error('Invalid server response: ' + text.slice(0, 200));
   }
   if (data.error) throw new Error(data.error);
