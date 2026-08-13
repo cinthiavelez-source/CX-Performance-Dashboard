@@ -1761,7 +1761,8 @@ function getActiveAMs() {
   const latestHier = latestHierRecordByEmail();
   const seen  = {};
   rawHierarchy.forEach(h => {
-    if (normName(h.role) !== 'assistant manager') return;
+    const rn = normName(h.role || '');
+    if (rn !== 'assistant manager' && rn !== 'a.manager' && rn !== 'a. manager' && rn !== 'am') return;
     const key = (h.agent_email || '').toLowerCase().trim() || normName(h.agent_name);
     if (!key) return;
     const e = (h.agent_email || '').toLowerCase().trim();
@@ -1803,7 +1804,7 @@ function getSpecialistsUnderSupervisor(supName, asOfDate) {
 
     // 2. Skip management roles (check on latest record's role)
     const r = normName(latest.role || '');
-    if (r === 'supervisor' || r === 'assistant manager') return;
+    if (r === 'supervisor' || r === 'assistant manager' || r === 'a.manager' || r === 'a. manager' || r === 'am') return;
 
     // 3. Find the record covering asOfDate; fall back to latest if gap in imports
     const rec = hierRecordForDate(e, date) || latest;
@@ -2738,8 +2739,10 @@ function renderGeneralView() {
     const todayD = new Date(today + 'T12:00:00');
     while (cur <= todayD) {
       const sun = cur.toISOString().split('T')[0];
-      if (sun.slice(0,4) !== String(curYear)) { cur = new Date(cur.getTime() + 7*86400000); continue; }
       const sat = getWeekEndOf(sun);
+      // Skip weeks whose Saturday (end) falls entirely before this year.
+      // This correctly includes the Dec 29 – Jan 4 week (sat = Jan 4 ∈ curYear).
+      if (sat < `${curYear}-01-01`) { cur = new Date(cur.getTime() + 7*86400000); continue; }
       const isWTD = sun <= today && sat >= today;
       const end   = isWTD ? today : sat;
       if (sun <= today) {
@@ -3223,8 +3226,11 @@ function renderContactReasonView() {
   const rawPeriods = getTabPeriods('cr');
   // Always use the last 3 periods — getTabPeriods may return 4.
   // months[0]=oldest, months[1]=prior, months[2]=current.
-  const months = rawPeriods.slice(-3).map(p => ({
-    label: p.label,
+  // Pad to 3 if fewer are available (e.g. single-period presets like 1w/1m/lm/q).
+  const rawSlice = rawPeriods.slice(-3);
+  while (rawSlice.length < 3) rawSlice.unshift(rawSlice[0]);
+  const months = rawSlice.map((p, i) => ({
+    label: i < (3 - rawPeriods.slice(-3).length) ? '—' : p.label,
     from:  p.start,
     to:    p.end,
     isCurrent: p === rawPeriods[rawPeriods.length - 1]
@@ -3538,7 +3544,7 @@ function renderCSATDetailView() {
 
     stats.forEach((s, i) => {
       const csatCls = s.pct !== null
-        ? (s.pct >= (thresholds.csat || 85) ? 'cell-good' : s.pct >= (thresholds.csat || 85) - 10 ? 'cell-warn' : 'cell-bad')
+        ? (s.pct >= (thresholds.csat || 85) ? 'good' : s.pct >= (thresholds.csat || 85) - 10 ? 'warn' : 'bad')
         : '';
       html += `
         <td class="cell-kpi ${csatCls}" style="text-align:center;font-weight:700">
@@ -3564,7 +3570,7 @@ function renderCSATDetailView() {
     const total = good + bad;
     const pct   = total > 0 ? (good / total) * 100 : null;
     const csatCls = pct !== null
-      ? (pct >= (thresholds.csat || 85) ? 'cell-good' : pct >= (thresholds.csat || 85) - 10 ? 'cell-warn' : 'cell-bad')
+      ? (pct >= (thresholds.csat || 85) ? 'good' : pct >= (thresholds.csat || 85) - 10 ? 'warn' : 'bad')
       : '';
     html += `
       <td class="cell-kpi ${csatCls}" style="text-align:center;font-weight:700">
