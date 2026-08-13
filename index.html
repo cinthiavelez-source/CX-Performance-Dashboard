@@ -770,9 +770,13 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
     <!-- Refresh Cache -->
     <div class="admin-section" style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1rem">
       <h3 style="margin:0 0 4px;font-size:14px;color:#C2410C">🔄 Refresh Dashboard Data</h3>
-      <p class="desc" style="margin:0 0 10px">If you edited the Google Sheet directly (hierarchy, roles, etc.), the dashboard won't see it until the 1-hour cache expires. Use this to force an immediate refresh.</p>
-      <div style="display:flex;align-items:center;gap:10px">
-        <button class="btn-apply" onclick="clearDashboardCache()" style="padding:6px 16px;font-size:12px;background:#C2410C;border-color:#C2410C">⟳ Refresh Now</button>
+      <p class="desc" style="margin:0 0 10px">
+        <b>Quick Refresh</b> — use after editing hierarchy or roles directly in the sheet.<br>
+        <b>Full Rebuild</b> — use when historical KPI data was corrected (re-uploads old data). Runs in ~60 s in the background.
+      </p>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn-apply" onclick="clearDashboardCache()" style="padding:6px 16px;font-size:12px;background:#C2410C;border-color:#C2410C">⟳ Quick Refresh</button>
+        <button class="btn-apply" onclick="forceFullRebuild()" style="padding:6px 16px;font-size:12px;background:#7C3AED;border-color:#7C3AED">🔁 Full Rebuild</button>
         <span id="clear-cache-status" style="font-size:12px;color:#64748B"></span>
       </div>
     </div>
@@ -4380,10 +4384,12 @@ async function fetchRoles() {
 let loginLogShowAll = false;
 
 async function clearDashboardCache() {
-  const status = document.getElementById('clear-cache-status');
-  const btn    = document.querySelector('[onclick="clearDashboardCache()"]');
+  const status   = document.getElementById('clear-cache-status');
+  const btn      = document.querySelector('[onclick="clearDashboardCache()"]');
+  const fullBtn  = document.querySelector('[onclick="forceFullRebuild()"]');
   if (status) status.textContent = 'Clearing…';
-  if (btn)    btn.disabled = true;
+  if (btn)      btn.disabled = true;
+  if (fullBtn)  fullBtn.disabled = true;
   try {
     const u   = currentUser;
     const url = `${SCRIPT_URL}?action=clearCache&email=${encodeURIComponent(u ? u.email : '')}`;
@@ -4391,17 +4397,55 @@ async function clearDashboardCache() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     if (status) status.textContent = '✅ Cache cleared — reloading data…';
-    // Also clear the client-side localStorage cache so this browser reloads too
     _lsClear();
     renderedTabs.clear();
     setTimeout(async () => {
       await apiFetch(true);
-      if (status) status.textContent = '✅ Done — dashboard updated with latest sheet data.';
-      if (btn)    btn.disabled = false;
+      if (status) status.textContent = '✅ Done — dashboard updated.';
+      if (btn)     btn.disabled = false;
+      if (fullBtn) fullBtn.disabled = false;
     }, 800);
   } catch(e) {
     if (status) status.textContent = '❌ ' + e.message;
-    if (btn)    btn.disabled = false;
+    if (btn)     btn.disabled = false;
+    if (fullBtn) fullBtn.disabled = false;
+  }
+}
+
+// Full rebuild — used when historical KPI data was corrected in the sheet.
+// Schedules a background warmCache trigger (~30 s) then counts down and reloads.
+async function forceFullRebuild() {
+  const status  = document.getElementById('clear-cache-status');
+  const btn     = document.querySelector('[onclick="clearDashboardCache()"]');
+  const fullBtn = document.querySelector('[onclick="forceFullRebuild()"]');
+  if (btn)     btn.disabled = true;
+  if (fullBtn) fullBtn.disabled = true;
+  if (status)  status.textContent = 'Scheduling full rebuild…';
+  try {
+    const u   = currentUser;
+    const url = `${SCRIPT_URL}?action=rebuildCache&email=${encodeURIComponent(u ? u.email : '')}`;
+    const res  = await fetch(url, { redirect: 'follow' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    // Count down 65 s then reload (trigger fires in ~30 s, warmCache needs ~30 s to run)
+    let remaining = 65;
+    const iv = setInterval(async () => {
+      remaining--;
+      if (status) status.textContent = `🔄 Rebuilding all data… reloading in ${remaining}s`;
+      if (remaining <= 0) {
+        clearInterval(iv);
+        _lsClear();
+        renderedTabs.clear();
+        await apiFetch(true);
+        if (status)  status.textContent = '✅ Full rebuild complete — all KPI data refreshed.';
+        if (btn)     btn.disabled = false;
+        if (fullBtn) fullBtn.disabled = false;
+      }
+    }, 1000);
+  } catch(e) {
+    if (status)  status.textContent = '❌ ' + e.message;
+    if (btn)     btn.disabled = false;
+    if (fullBtn) fullBtn.disabled = false;
   }
 }
 
