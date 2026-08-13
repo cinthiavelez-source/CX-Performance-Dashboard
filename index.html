@@ -2075,7 +2075,7 @@ function fmtDelta(curr, prev, lowerIsBetter, unit) {
   const sign = diff > 0 ? '+' : '';
   const label = unit === 'pp' ? `${sign}${diff.toFixed(1)}pp` :
                 unit === 'tph' ? `${sign}${diff.toFixed(1)}` :
-                unit === 'mm' ? (diff > 0 ? '+' : '') + fmtMMSS(Math.abs(diff)) * (diff < 0 ? -1 : 1) :
+                unit === 'mm' ? (diff < 0 ? '-' : '+') + fmtMMSS(Math.abs(diff)) :
                 `${sign}${diff.toFixed(1)}`;
   return `<span style="display:inline-block;background:${bg};color:${col};border-radius:4px;
     padding:1px 6px;font-size:11px;font-weight:700;margin-left:6px">${good ? '▲' : (diff === 0 ? '●' : '▼')} ${label}</span>`;
@@ -2095,8 +2095,11 @@ function toggleFilterBar() {
 //   • First call (no <input> yet): injects full HTML and wires the input
 //   • Subsequent calls (input already exists): only updates the clear button
 //     visibility so the live input element is never destroyed → focus is kept
-function tabSearchBox(tab, placeholder, containerEl) {
-  const renderFn = 'render' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'View';
+function tabSearchBox(tab, placeholder, containerEl, explicitRenderFn) {
+  // explicitRenderFn overrides the default naming convention (needed for tabs
+  // whose key contains a hyphen, like 'csat-detail', where the convention
+  // would produce an invalid identifier like 'renderCsat-detailView').
+  const renderFn = explicitRenderFn || ('render' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'View');
   const val      = tabSearch[tab] || '';
 
   // ── Already initialised — just sync clear-button state ───────
@@ -2722,14 +2725,16 @@ function renderGeneralView() {
     chartMomMonths.push({ label: d.toLocaleDateString('en-US',{month:'short',year:'numeric'}), kpis: computeGroupKPIs(emails, from, to) });
   }
 
-  // ── WoW TABLE: all Sun–Sat weeks whose Sunday falls in 2026 ─────────────────
+  // ── WoW TABLE: all Sun–Sat weeks in the current calendar year up to today ────
   const wowWeeks = [];
   {
-    let cur = new Date('2025-12-28T12:00:00'); // first Sunday on/after Jan 1 2026
+    const curYear = new Date(today).getFullYear();
+    // Start from Dec 28 of prior year to catch the first partial Sunday of Jan
+    let cur = new Date(`${curYear - 1}-12-28T12:00:00`);
     const todayD = new Date(today + 'T12:00:00');
     while (cur <= todayD) {
       const sun = cur.toISOString().split('T')[0];
-      if (sun.slice(0,4) !== '2026') { cur = new Date(cur.getTime() + 7*86400000); continue; }
+      if (sun.slice(0,4) !== String(curYear)) { cur = new Date(cur.getTime() + 7*86400000); continue; }
       const sat = getWeekEndOf(sun);
       const isWTD = sun <= today && sat >= today;
       const end   = isWTD ? today : sat;
@@ -2741,16 +2746,19 @@ function renderGeneralView() {
     }
   }
 
-  // ── MoM TABLE: all months of 2026 up to today ───────────────────────────────
+  // ── MoM TABLE: all months of the current calendar year up to today ───────────
   const momMonths = [];
-  for (let m = 0; m < 12; m++) {
-    const from  = `2026-${String(m+1).padStart(2,'0')}-01`;
-    const lastD = new Date(2026, m+1, 0);
-    const last  = `2026-${String(m+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
-    const to    = last > today ? today : last;
-    if (from > today) break;
-    momMonths.push({ label: new Date(2026, m, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'}),
-      from, to, kpis: computeGroupKPIs(emails, from, to) });
+  {
+    const curYear = new Date(today).getFullYear();
+    for (let m = 0; m < 12; m++) {
+      const from  = `${curYear}-${String(m+1).padStart(2,'0')}-01`;
+      const lastD = new Date(curYear, m+1, 0);
+      const last  = `${curYear}-${String(m+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
+      const to    = last > today ? today : last;
+      if (from > today) break;
+      momMonths.push({ label: new Date(curYear, m, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'}),
+        from, to, kpis: computeGroupKPIs(emails, from, to) });
+    }
   }
 
   // Pre-extract all values for quartile coloring across the full trend series
@@ -3209,7 +3217,9 @@ function renderContactReasonView() {
   // getTabPeriods returns {label, start, end, wk} — CR view maps start→from, end→to
   const crMode  = tabPeriodMode.cr || 'wow';
   const rawPeriods = getTabPeriods('cr');
-  const months = rawPeriods.map(p => ({
+  // Always use the last 3 periods — getTabPeriods may return 4.
+  // months[0]=oldest, months[1]=prior, months[2]=current.
+  const months = rawPeriods.slice(-3).map(p => ({
     label: p.label,
     from:  p.start,
     to:    p.end,
@@ -3569,7 +3579,7 @@ function renderCSATDetailView() {
   // ── Search box ─────────────────────────────────────────────
   const searchBox = document.getElementById('csat-detail-search-box');
   if (searchBox) {
-    const boxHtml = buildSearchBox('csat-detail', 'Search agent…', 'renderCSATDetailView');
+    const boxHtml = tabSearchBox('csat-detail', 'Search agent…', searchBox, 'renderCSATDetailView');
     if (boxHtml) searchBox.innerHTML = boxHtml;
   }
 
