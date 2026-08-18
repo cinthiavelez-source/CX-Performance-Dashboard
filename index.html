@@ -54,6 +54,29 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   border: 1px solid #CBD5E1; border-radius: 6px; padding: 5px 10px;
   color: #1E293B; background: #F8FAFC; min-width: 140px; height: 32px; }
 .filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: #AA0061; }
+
+/* ─── SEARCHABLE SELECT ───────────────────────────────────── */
+.ss-wrap { position: relative; min-width: 140px; display: inline-block; }
+.ss-input {
+  width: 100%; height: 32px; border: 1px solid #CBD5E1; border-radius: 6px;
+  padding: 5px 26px 5px 10px; color: #1E293B; background: #F8FAFC;
+  font-size: 13px; font-family: inherit; box-sizing: border-box;
+  cursor: text; outline: none; }
+.ss-input:focus { border-color: #AA0061; }
+.ss-wrap::after {
+  content: '▾'; position: absolute; right: 9px; top: 50%;
+  transform: translateY(-50%); pointer-events: none;
+  color: #94A3B8; font-size: 12px; }
+.ss-list {
+  display: none; position: absolute; top: 35px; left: 0; min-width: 100%;
+  background: #fff; border: 1px solid #CBD5E1; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); max-height: 240px; overflow-y: auto;
+  z-index: 4000; list-style: none; padding: 4px 0; margin: 0; white-space: nowrap; }
+.ss-list.open { display: block; }
+.ss-item {
+  padding: 7px 14px; cursor: pointer; font-size: 13px; color: #1E293B; }
+.ss-item:hover { background: #FFF0F7; color: #AA0061; }
+.ss-all { color: #94A3B8; font-style: italic; border-bottom: 1px solid #F1F5F9; margin-bottom: 2px; }
 .filter-sep { width: 1px; background: #E2E8F0; height: 30px; margin: 0 4px; }
 .btn-apply { background: #AA0061; color: #fff; border-radius: 6px;
   padding: 6px 16px; font-weight: 600; height: 32px; transition: background .2s; }
@@ -477,16 +500,20 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 <div id="filter-bar-wrapper">
   <div class="filter-bar" id="filter-bar-inner">
     <label>Agent
-      <select id="f-agent"><option value="">All Agents</option></select>
+      <input type="hidden" id="f-agent" value="">
+      <div id="ss-f-agent"></div>
     </label>
     <label>Supervisor
-      <select id="f-supervisor"><option value="">All Supervisors</option></select>
+      <input type="hidden" id="f-supervisor" value="">
+      <div id="ss-f-supervisor"></div>
     </label>
     <label>Asst. Manager
-      <select id="f-am"><option value="">All A.Managers</option></select>
+      <input type="hidden" id="f-am" value="">
+      <div id="ss-f-am"></div>
     </label>
     <label>Team
-      <select id="f-team"><option value="">All Teams</option></select>
+      <input type="hidden" id="f-team" value="">
+      <div id="ss-f-team"></div>
     </label>
     <div class="filter-sep"></div>
     <label>Period
@@ -1919,37 +1946,108 @@ function populateFilters() {
   fillSel('f-team', teams, 'All Teams', activeFilters.team);
 }
 
-// Agent dropdown — value=email, display=email (name on hover via title)
+// ─── SEARCHABLE SELECT ────────────────────────────────────────────────────────
+// Lightweight typeahead widget. Replaces <select> elements in the filter bar
+// with a text input that filters the option list as you type.
+// Each widget is backed by a hidden <input type="hidden"> that applyFilters()
+// and resetFilters() read/write exactly as they did with the original <select>.
+// ─────────────────────────────────────────────────────────────────────────────
+var _ssRegistry = {};  // id → SearchableSelect instance
+
+function SearchableSelect(hiddenId, placeholder) {
+  this.hiddenId    = hiddenId;
+  this.placeholder = placeholder;
+  this.options     = [];  // [{value, label}]
+
+  var wrap = document.getElementById('ss-' + hiddenId);
+  if (!wrap) return;
+  wrap.className = 'ss-wrap';
+  wrap.innerHTML =
+    '<input type="text" class="ss-input" autocomplete="off" spellcheck="false" placeholder="' + escHtml(placeholder) + '">' +
+    '<ul class="ss-list"></ul>';
+
+  this.wrap  = wrap;
+  this.input = wrap.querySelector('.ss-input');
+  this.list  = wrap.querySelector('.ss-list');
+
+  var self = this;
+  this.input.addEventListener('input',  function() { self._render(self.input.value); self.list.classList.add('open'); });
+  this.input.addEventListener('focus',  function() { self._render(self.input.value); self.list.classList.add('open'); });
+  this.input.addEventListener('blur',   function() { setTimeout(function() { self._close(); }, 160); });
+  this.input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { self.reset(); self.list.classList.remove('open'); }
+  });
+
+  _ssRegistry[hiddenId] = this;
+}
+
+SearchableSelect.prototype._eh = function(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+};
+
+SearchableSelect.prototype._render = function(filter) {
+  var q = (filter||'').toLowerCase().trim();
+  var matches = q ? this.options.filter(function(o) { return o.label.toLowerCase().indexOf(q) !== -1; }) : this.options;
+  var self = this;
+  this.list.innerHTML =
+    '<li class="ss-item ss-all" data-val="">' + this._eh(this.placeholder) + '</li>' +
+    matches.map(function(o) { return '<li class="ss-item" data-val="' + self._eh(o.value) + '">' + self._eh(o.label) + '</li>'; }).join('');
+  this.list.querySelectorAll('.ss-item').forEach(function(li) {
+    li.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      self.setValue(li.dataset.val);
+      self.list.classList.remove('open');
+    });
+  });
+};
+
+SearchableSelect.prototype.setValue = function(value) {
+  var hidden = document.getElementById(this.hiddenId);
+  if (hidden) hidden.value = value;
+  var found = this.options.find(function(o) { return o.value === value; });
+  this.input.value = found ? found.label : '';
+};
+
+SearchableSelect.prototype.setOptions = function(opts, current) {
+  this.options = opts;
+  this.setValue(current || document.getElementById(this.hiddenId).value || '');
+};
+
+SearchableSelect.prototype.reset = function() {
+  this.setValue('');
+};
+
+SearchableSelect.prototype._close = function() {
+  this.list.classList.remove('open');
+  // Restore display label for whatever value is currently selected
+  var val = document.getElementById(this.hiddenId) ? document.getElementById(this.hiddenId).value : '';
+  var found = this.options.find(function(o) { return o.value === val; });
+  this.input.value = found ? found.label : '';
+};
+
+// ─── FILTER DROPDOWNS ─────────────────────────────────────────────────────────
+
+// Agent dropdown — value=email, label=name (or email if no name)
 function fillAgentSel(id, agents, currentEmail) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.innerHTML = `<option value="">All Agents</option>` +
-    agents.map(a =>
-      `<option value="${escHtml(a.email)}"${a.email === currentEmail ? ' selected' : ''} title="${escHtml(a.name)}">${escHtml(a.name || a.email)}</option>`
-    ).join('');
+  var ss = _ssRegistry[id] || new SearchableSelect(id, 'All Agents');
+  var opts = agents.map(function(a) { return { value: a.email, label: a.name || a.email }; });
+  ss.setOptions(opts, currentEmail || '');
 }
 
-// Supervisor/AM dropdown — value=email (or name if no email), display=email (or name)
-// Accepts array of {name, email} objects returned by getAllSupervisors/getAllAMs.
+// Supervisor/AM dropdown — value=email (or name), label=name
 function fillPersonSel(id, people, placeholder, current) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.innerHTML = `<option value="">${escHtml(placeholder)}</option>` +
-    people.map(p => {
-      const val     = p.email || p.name; // prefer email as the filter value
-      const display = p.name || p.email;
-      const title   = p.email ? p.name : '';
-      const sel     = val === current || normName(p.name) === normName(current) ? ' selected' : '';
-      return `<option value="${escHtml(val)}"${sel} title="${escHtml(title)}">${escHtml(display)}</option>`;
-    }).join('');
+  var ss = _ssRegistry[id] || new SearchableSelect(id, placeholder);
+  var opts = people.map(function(p) {
+    return { value: p.email || p.name, label: p.name || p.email };
+  });
+  ss.setOptions(opts, current || '');
 }
 
-// Generic select — value and display are the same string (kept for any remaining uses)
+// Generic dropdown — value and label are the same string (used for Team)
 function fillSel(id, values, placeholder, current) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.innerHTML = `<option value="">${escHtml(placeholder)}</option>` +
-    values.map(v => `<option value="${escHtml(v)}"${normName(v)===normName(current)?'selected':''}>${escHtml(v)}</option>`).join('');
+  var ss = _ssRegistry[id] || new SearchableSelect(id, placeholder);
+  var opts = values.map(function(v) { return { value: v, label: v }; });
+  ss.setOptions(opts, current || '');
 }
 
 function escHtml(s) {
@@ -4141,6 +4239,11 @@ function resetFilters() {
   document.getElementById('f-supervisor').value = '';
   document.getElementById('f-am').value         = '';
   document.getElementById('f-team').value       = '';
+  // Clear the searchable select display inputs
+  if (_ssRegistry['f-agent'])      _ssRegistry['f-agent'].reset();
+  if (_ssRegistry['f-supervisor']) _ssRegistry['f-supervisor'].reset();
+  if (_ssRegistry['f-am'])         _ssRegistry['f-am'].reset();
+  if (_ssRegistry['f-team'])       _ssRegistry['f-team'].reset();
   document.getElementById('f-period').value     = '4w';
   document.getElementById('f-date-from').value  = '';
   document.getElementById('f-date-to').value    = '';
