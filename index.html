@@ -3740,7 +3740,11 @@ function mapHierRows() {
     }))
     .filter(r => {
       if (!r.agent_email || !r.supervisor_name || !r.am_name) return false;
-      if (activeOnly && r.status && r.status.toLowerCase() !== 'active') return false;
+      if (activeOnly && r.status) {
+        const sv = r.status.toLowerCase().trim();
+        const isActive = sv === 'active' || sv === 'true' || sv === '1' || sv === 'yes' || sv === 'si';
+        if (!isActive) return false;
+      }
       return true;
     });
 }
