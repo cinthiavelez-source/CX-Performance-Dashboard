@@ -1820,24 +1820,41 @@ function getActiveAMs() {
  * (supervisor records expiring May 30 but still active on June 3).
  */
 function getSpecialistsUnderSupervisor(supName, asOfDate) {
-  const key        = normName(supName);
-  const date       = asOfDate || todayStr();
-  const latestHier = latestHierRecordByEmail();
-  const seen       = {};
+  const key          = normName(supName);
+  const date         = asOfDate || todayStr();
+  const today        = todayStr();
+  const isHistorical = date < today;
+  const latestHier   = latestHierRecordByEmail();
+  const seen         = {};
 
   Object.entries(latestHier).forEach(([e, latest]) => {
-    // 1. Active check via latest record
-    if (!hierIsActive(latest)) return;
-
-    // 2. Skip management roles (check on latest record's role)
+    // Always skip management roles (based on latest record)
     const r = normName(latest.role || '');
     if (r === 'supervisor' || r === 'assistant manager' || r === 'a.manager' || r === 'a. manager' || r === 'am') return;
 
-    // 3. Find the record covering asOfDate; fall back to latest if gap in imports
-    const rec = hierRecordForDate(e, date) || latest;
-    if (normName(rec.supervisor_name) !== key) return;
+    // For current/future dates: require is_active on the latest record.
+    // For historical dates: skip this check — a departed agent should still
+    // appear in the months they were actually active.
+    if (!isHistorical && !hierIsActive(latest)) return;
 
-    if (!seen[e]) seen[e] = { email: e, name: rec.agent_name || latest.agent_name || '' };
+    // Find the record that covers asOfDate via effective_from / effective_to.
+    const rec = hierRecordForDate(e, date);
+
+    if (rec) {
+      // A record covers this specific date — include if supervisor matches.
+      if (normName(rec.supervisor_name) !== key) return;
+      if (!seen[e]) seen[e] = { email: e, name: rec.agent_name || latest.agent_name || '' };
+    } else if (!isHistorical) {
+      // No covering record for today/future → fall back to latest record.
+      // This handles data gaps where effective_to has just expired but the
+      // agent hasn't been re-imported yet.
+      if (!hierIsActive(latest)) return;
+      if (normName(latest.supervisor_name) !== key) return;
+      if (!seen[e]) seen[e] = { email: e, name: latest.agent_name || '' };
+    }
+    // Historical date + no covering record → agent was not in this team at
+    // that time, so skip. Do NOT fall back to latest for historical dates
+    // (would incorrectly show departed agents in months after they left).
   });
 
   return Object.values(seen).sort((a, b) => a.email.localeCompare(b.email));
@@ -1850,16 +1867,19 @@ function getSpecialistsUnderSupervisor(supName, asOfDate) {
  * fallback to latest — so expired effective_to dates don't hide active supervisors.
  */
 function getSupervisorsUnderAM(amName, asOfDate) {
-  const key        = normName(amName);
-  const date       = asOfDate || todayStr();
-  const latestHier = latestHierRecordByEmail();
-  const seen       = {};
+  const key          = normName(amName);
+  const date         = asOfDate || todayStr();
+  const today        = todayStr();
+  const isHistorical = date < today;
+  const latestHier   = latestHierRecordByEmail();
+  const seen         = {};
 
   // ── Source 1: explicit role="Supervisor" rows (per-period accurate) ─────────
   Object.entries(latestHier).forEach(([e, latest]) => {
-    if (!hierIsActive(latest)) return;
+    if (!isHistorical && !hierIsActive(latest)) return;  // historical: bypass active check
     if (normName(latest.role || '') !== 'supervisor') return;
-    const rec = hierRecordForDate(e, date) || latest;
+    const rec = isHistorical ? hierRecordForDate(e, date) : (hierRecordForDate(e, date) || latest);
+    if (!rec) return;  // historical: no covering record → skip
     if (normName(rec.am_name) !== key) return;
     if (!seen[e]) seen[e] = { name: rec.agent_name || latest.agent_name || '', email: e };
   });
