@@ -348,6 +348,36 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 .btn-expand:hover { background: #3A4FA8; }
 .drill-row td { background: #F8FAFC; border-left: 3px solid #475CC7; }
 .drill-row:hover td { background: #EEF4FF !important; }
+
+/* ─── DSAT PIVOT TABLE ───────────────────────────────────── */
+.dsat-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.dsat-table thead tr { background: #1E293B; color: #fff; }
+.dsat-table thead th { padding: 8px 10px; text-align: center; font-weight: 600;
+  white-space: nowrap; border: 1px solid #334155; position: sticky; top: 0; z-index: 2; }
+.dsat-table thead th:first-child,
+.dsat-table thead th:nth-child(2) { text-align: left; }
+.dsat-agent-col { min-width: 180px; max-width: 220px; }
+.dsat-reason-col { min-width: 160px; max-width: 220px; }
+.dsat-num-col { text-align: center !important; min-width: 68px; }
+.dsat-total-col { background: #EFF6FF !important; font-weight: 700; }
+thead .dsat-total-col { background: #1D4ED8 !important; }
+/* Agent group header */
+.dsat-agent-row td { background: #F1F5F9; border-top: 2px solid #CBD5E1;
+  padding: 7px 10px; }
+.dsat-agent-row:first-child td { border-top: none; }
+.dsat-agent-row td.dsat-total-col { background: #DBEAFE !important; }
+/* Contact reason detail rows */
+.dsat-reason-row td { background: #fff; padding: 5px 10px 5px 20px;
+  border-bottom: 1px solid #F1F5F9; color: #374151; }
+.dsat-reason-row:hover td { background: #FFF7ED !important; }
+.dsat-reason-row td.dsat-num-col { padding-left: 10px; }
+/* Grand total */
+.dsat-grand-row td { background: #1E293B; color: #fff; font-weight: 700;
+  padding: 8px 10px; border-top: 2px solid #334155; }
+.dsat-grand-row td.dsat-total-col { background: #1D4ED8 !important; }
+/* Delta badge colors are inline; just ensure sizing */
+.dsat-table td { border-right: 1px solid #F1F5F9; vertical-align: middle; }
+.dsat-table td:last-child { border-right: none; }
 </style>
 </head>
 <body>
@@ -492,6 +522,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
   <button data-page="am" onclick="navTo('am')">🏢 A.Manager View</button>
   <button data-page="contact-reason" onclick="navTo('contact-reason')">📋 Contact Reasons</button>
   <button data-page="csat-detail" onclick="navTo('csat-detail')">😊 CSAT Detail</button>
+  <button data-page="dsat" onclick="navTo('dsat')">😠 DSAT Breakdown</button>
   <button data-page="upload" onclick="navTo('upload')" id="btn-upload-tab">⬆️ Upload Data</button>
   <button data-page="admin" onclick="navTo('admin')" id="btn-admin-tab" style="display:none">⚙️ Admin</button>
 </div>
@@ -664,6 +695,26 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
         </div>
       </div>
       <div class="table-wrap"><div id="csat-detail-table-wrap"></div></div>
+    </div>
+  </div>
+
+  <!-- DSAT BREAKDOWN TAB -->
+  <div class="page" id="page-dsat">
+    <div class="table-card">
+      <div class="table-card-header">
+        <div>
+          <h3>😠 DSAT Breakdown — Bad CSAT by Agent &amp; Contact Reason</h3>
+          <p id="dsat-subtitle">Last 4 weeks · bad tickets per agent &amp; contact reason</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="dsat-mode-pills"></div>
+          <button onclick="exportTableBySelector('#dsat-table-wrap table')"
+            style="background:#F1F5F9;color:#64748B;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;border:1px solid #E2E8F0">
+            ⬇ Export
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap"><div id="dsat-table-wrap" style="overflow-x:auto"></div></div>
     </div>
   </div>
 
@@ -1020,7 +1071,7 @@ let activeFilters = { agent:'', supervisor:'', am:'', team:'', group:'', dateFro
 let activePeriod  = '4w';
 
 // ─── PER-TAB WoW/MoM TOGGLE STATE ───────────────────────────
-let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow', 'csat-detail': 'wow' };
+let tabPeriodMode = { agent: 'wow', supervisor: 'wow', am: 'wow', cr: 'wow', 'csat-detail': 'wow', dsat: 'wow' };
 
 // ─── PER-TAB SEARCH STATE ────────────────────────────────────
 let tabSearch = { agent: '', supervisor: '', am: '', 'csat-detail': '' };
@@ -1384,6 +1435,7 @@ function setTabMode(tab, mode) {
   if (tab === 'am')          renderAMView();
   if (tab === 'cr')          renderContactReasonView();
   if (tab === 'csat-detail') renderCSATDetailView();
+  if (tab === 'dsat')        renderDSATView();
 }
 
 // Renders the WoW/MoM pill-toggle HTML (used inside each tab's table-card-header).
@@ -4224,9 +4276,198 @@ function renderRolesTable(roles) {
 // NAVIGATION
 // ═══════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// DSAT BREAKDOWN VIEW
+// Pivot: bad CSAT rows → grouped by agent → contact reason × period columns
+// Supports WoW (last 4 weeks) and MoM (last 4 months) with heat-map coloring
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderDSATView() {
+  const periods = getTabPeriods('dsat');
+  const mode    = tabPeriodMode['dsat'] || 'wow';
+
+  // Mode pills
+  const pillsEl = document.getElementById('dsat-mode-pills');
+  if (pillsEl) pillsEl.innerHTML = tabModePills('dsat');
+
+  // Subtitle
+  const sub = document.getElementById('dsat-subtitle');
+  if (sub) sub.textContent = `Last 4 ${mode === 'wow' ? 'weeks' : 'months'} · bad tickets per agent & contact reason`;
+
+  const wrap = document.getElementById('dsat-table-wrap');
+  if (!wrap) return;
+
+  // ── 1. Build allowed agent email set from hierarchy filters ─────────────────
+  const allAgents  = filteredAgents(getAllAgents());
+  const agentEmails = new Set(allAgents.map(a => a.email.toLowerCase().trim()));
+
+  // ── 2. Collect bad CSAT rows, resolve email, map to period ──────────────────
+  const minDate = periods[0]?.start || '';
+  const maxDate = periods[periods.length - 1]?.end || todayStr();
+
+  // email → reason → periodIdx → count
+  const pivot = {};
+  // email → display name
+  const emailName = {};
+
+  rawCSAT.forEach(r => {
+    // satisfaction must be 'bad'
+    const sat = (r.satisfaction || '').toLowerCase().trim();
+    if (sat !== 'bad') return;
+
+    // date guard
+    const d = r.date || '';
+    if (d < minDate || d > maxDate) return;
+
+    // resolve agent email
+    let email = (r.agent_email || '').toLowerCase().trim();
+    if (!email && r.agent_name) {
+      email = nameToEmail[normName(r.agent_name)] || '';
+    }
+    if (!email) return;
+
+    // hierarchy filter gate
+    if (!agentEmails.has(email)) return;
+
+    // period index
+    const pIdx = periods.findIndex(p => d >= p.start && d <= p.end);
+    if (pIdx < 0) return;
+
+    const reason = (r.contact_reason || 'Unknown').trim();
+
+    if (!pivot[email]) pivot[email] = {};
+    if (!pivot[email][reason]) pivot[email][reason] = {};
+    pivot[email][reason][pIdx] = (pivot[email][reason][pIdx] || 0) + 1;
+
+    if (!emailName[email]) emailName[email] = r.agent_name || emailToName[email] || email;
+  });
+
+  const sortedEmails = Object.keys(pivot).sort((a, b) => {
+    const ta = Object.values(pivot[a]).flatMap(pm => Object.values(pm)).reduce((s, c) => s + c, 0);
+    const tb = Object.values(pivot[b]).flatMap(pm => Object.values(pm)).reduce((s, c) => s + c, 0);
+    return tb - ta;
+  });
+
+  // ── 3. Empty state ──────────────────────────────────────────────────────────
+  if (!sortedEmails.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="emoji">✅</div>
+      <p>No bad CSAT tickets found for the selected filters and period.</p></div>`;
+    return;
+  }
+
+  // ── 4. Max cell value for heat-map scaling ───────────────────────────────────
+  let maxCell = 0;
+  Object.values(pivot).forEach(reasons =>
+    Object.values(reasons).forEach(pm =>
+      Object.values(pm).forEach(c => { if (c > maxCell) maxCell = c; })));
+
+  function heatStyle(n) {
+    if (!n || maxCell === 0) return 'background:#fff';
+    const t = Math.min(n / maxCell, 1);
+    // white → light orange → orange → red
+    const r = 255;
+    const g = Math.round(255 - t * 180);
+    const b = Math.round(255 - t * 220);
+    return `background:rgb(${r},${g},${b});color:${t > 0.6 ? '#fff' : '#1E293B'}`;
+  }
+
+  function delta(cur, prev) {
+    if (prev === undefined) return '<span style="color:#94A3B8;font-size:10px">—</span>';
+    const diff = (cur || 0) - (prev || 0);
+    if (diff === 0) return '<span style="color:#94A3B8;font-size:10px">—</span>';
+    const col = diff > 0 ? '#DC2626' : '#16A34A';
+    return `<span style="color:${col};font-size:10px;font-weight:700">${diff > 0 ? '↑' : '↓'}${Math.abs(diff)}</span>`;
+  }
+
+  const lastIdx = periods.length - 1;
+  const prevIdx = lastIdx >= 1 ? lastIdx - 1 : undefined;
+
+  // ── 5. Grand totals by period ───────────────────────────────────────────────
+  const grandPT = periods.map((_, i) => {
+    let t = 0;
+    Object.values(pivot).forEach(reasons =>
+      Object.values(reasons).forEach(pm => { t += (pm[i] || 0); }));
+    return t;
+  });
+  const grandTotal = grandPT.reduce((s, c) => s + c, 0);
+
+  // ── 6. Build table HTML ─────────────────────────────────────────────────────
+  const colCount = 2 + periods.length + 2; // agent | reason | periods | total | delta
+  let html = `<table class="dsat-table">
+  <thead>
+    <tr>
+      <th class="dsat-agent-col">Agent</th>
+      <th class="dsat-reason-col">Contact Reason</th>
+      ${periods.map((p, i) => `<th class="dsat-num-col"${i === lastIdx ? ' style="border-left:2px solid #475CC7"' : ''}>${escHtml(p.label)}</th>`).join('')}
+      <th class="dsat-num-col dsat-total-col">Total</th>
+      <th class="dsat-num-col" style="min-width:52px">Δ Prev</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+  sortedEmails.forEach(email => {
+    const displayName = emailName[email] || emailToName[email] || email;
+    const reasons     = pivot[email];
+
+    // Sort reasons by total desc
+    const sortedReasons = Object.entries(reasons).sort((a, b) => {
+      const ta = Object.values(a[1]).reduce((s, c) => s + c, 0);
+      const tb = Object.values(b[1]).reduce((s, c) => s + c, 0);
+      return tb - ta;
+    });
+
+    // Agent row subtotals per period
+    const agentPT = periods.map((_, i) =>
+      Object.values(reasons).reduce((s, pm) => s + (pm[i] || 0), 0));
+    const agentTotal = agentPT.reduce((s, c) => s + c, 0);
+
+    // Agent header row
+    html += `<tr class="dsat-agent-row">
+      <td class="dsat-agent-col">
+        <strong>${escHtml(displayName)}</strong>
+        <br><span style="font-size:10px;color:#64748B">${escHtml(email)}</span>
+      </td>
+      <td class="dsat-reason-col" style="color:#94A3B8;font-style:italic;font-size:11px">All reasons</td>
+      ${agentPT.map((c, i) => `<td class="dsat-num-col" style="${heatStyle(c)}${i === lastIdx ? ';border-left:2px solid #475CC7' : ''}">
+        <strong>${c || '—'}</strong></td>`).join('')}
+      <td class="dsat-num-col dsat-total-col"><strong>${agentTotal}</strong></td>
+      <td class="dsat-num-col">${delta(agentPT[lastIdx], prevIdx !== undefined ? agentPT[prevIdx] : undefined)}</td>
+    </tr>`;
+
+    // Reason detail rows
+    sortedReasons.forEach(([reason, pm]) => {
+      const reasonTotal = Object.values(pm).reduce((s, c) => s + c, 0);
+      html += `<tr class="dsat-reason-row">
+        <td></td>
+        <td class="dsat-reason-col">${escHtml(reason)}</td>
+        ${periods.map((_, i) => {
+          const c = pm[i] || 0;
+          return `<td class="dsat-num-col" style="${c ? heatStyle(c) : 'background:#fff;color:#D1D5DB'}${i === lastIdx ? ';border-left:2px solid #E2E8F0' : ''}">
+            ${c || ''}</td>`;
+        }).join('')}
+        <td class="dsat-num-col dsat-total-col">${reasonTotal}</td>
+        <td class="dsat-num-col">${delta(pm[lastIdx] || 0, prevIdx !== undefined ? (pm[prevIdx] || 0) : undefined)}</td>
+      </tr>`;
+    });
+  });
+
+  // Grand total row
+  html += `<tr class="dsat-grand-row">
+    <td class="dsat-agent-col">Grand Total</td>
+    <td class="dsat-reason-col"></td>
+    ${grandPT.map((c, i) => `<td class="dsat-num-col" style="text-align:center${i === lastIdx ? ';border-left:2px solid #475CC7' : ''}">${c || '—'}</td>`).join('')}
+    <td class="dsat-num-col dsat-total-col">${grandTotal}</td>
+    <td class="dsat-num-col">${delta(grandPT[lastIdx], prevIdx !== undefined ? grandPT[prevIdx] : undefined)}</td>
+  </tr>`;
+
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function navTo(page) {
   currentPage = page;
-  ['agent','supervisor','am','general','contact-reason','csat-detail','upload','admin'].forEach(p => {
+  ['agent','supervisor','am','general','contact-reason','csat-detail','dsat','upload','admin'].forEach(p => {
     const el = document.getElementById('page-'+p);
     if (el) el.classList.toggle('active', p === page);
   });
@@ -4256,6 +4497,7 @@ function navTo(page) {
     if (page === 'general')        renderGeneralView();
     if (page === 'contact-reason') { crSortBy = 'vol'; renderContactReasonView(); }
     if (page === 'csat-detail')    renderCSATDetailView();
+    if (page === 'dsat')           renderDSATView();
     if (page === 'admin')          { renderHierarchyTable(); fetchRoles(); fetchEmailRecipients(); fetchLoginLog(); }
     renderedTabs.add(page);
   }
