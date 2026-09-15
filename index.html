@@ -364,8 +364,12 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 .dsat-sup-row:first-child td { border-top: none; }
 .dsat-sup-row:hover td { background: #E2E8F0 !important; cursor: pointer; }
 /* Specialist rows */
-.dsat-spec-row td { background: #fff; padding: 5px 10px; border-bottom: 1px solid #F1F5F9; color: #374151; }
-.dsat-spec-row:hover td { background: #F8FAFC !important; }
+.dsat-spec-row td { background: #fff; padding: 5px 10px; border-bottom: 1px solid #F1F5F9; color: #374151; cursor: pointer; }
+.dsat-spec-row:hover td { background: #EFF6FF !important; }
+/* Specialist → contact reason drilldown rows */
+.dsat-spec-reason-row td { background: #F8FAFC; padding: 4px 10px 4px 44px; border-bottom: 1px solid #F1F5F9;
+  font-size: 11px; color: #64748B; }
+.dsat-spec-reason-row:hover td { background: #EFF6FF !important; }
 /* Contact reason rows */
 .dsat-cr-row td { background: #fff; padding: 7px 10px; border-bottom: 1px solid #F1F5F9; color: #374151; }
 .dsat-cr-row:hover td { background: #F8FAFC !important; }
@@ -4295,6 +4299,7 @@ function renderRolesTable(roles) {
 
 // ── CSAT Breakdown state ────────────────────────────────────────────────────
 let dsatOpenSups         = new Set();   // which supervisor rows are expanded
+let dsatOpenSpecs        = new Set();   // which specialist rows are expanded (shows reason drilldown)
 let dsatSelectedPeriodIdx = -1;         // -1 = most recent period
 let dsatView             = 'specialist'; // 'specialist' | 'reason'
 
@@ -4302,6 +4307,11 @@ let dsatView             = 'specialist'; // 'specialist' | 'reason'
 function dsatToggleSup(supKey) {
   if (dsatOpenSups.has(supKey)) dsatOpenSups.delete(supKey);
   else dsatOpenSups.add(supKey);
+  renderDSATView();
+}
+function dsatToggleSpec(specKey) {
+  if (dsatOpenSpecs.has(specKey)) dsatOpenSpecs.delete(specKey);
+  else dsatOpenSpecs.add(specKey);
   renderDSATView();
 }
 function dsatSelectPeriod(idx) {
@@ -4391,7 +4401,7 @@ function renderDSATView() {
 
   // ── 3. Scan CSAT rows for the selected period ──────────────────────────────
   // Build two structures in one pass:
-  //   supData[supKey].agents[email] = { good, bad, chGood:{}, chBad:{}, badReasons:{} }
+  //   supData[supKey].agents[email] = { good, bad, chGood:{}, chBad:{}, goodReasons:{}, badReasons:{} }
   //   reasonData[reason]            = { good, bad, chGood:{}, chBad:{} }
   const supData    = {};
   const reasonData = {};
@@ -4416,7 +4426,7 @@ function renderDSATView() {
     const supDisp = supLabelMap[supKey] || 'No Supervisor';
     if (!supData[supKey]) supData[supKey] = { label: supDisp, agents: {} };
     if (!supData[supKey].agents[email]) {
-      supData[supKey].agents[email] = { good:0, bad:0, chGood:{}, chBad:{}, badReasons:{} };
+      supData[supKey].agents[email] = { good:0, bad:0, chGood:{}, chBad:{}, goodReasons:{}, badReasons:{} };
     }
     const ag = supData[supKey].agents[email];
 
@@ -4434,6 +4444,7 @@ function renderDSATView() {
     if (sat === 'good') {
       ag.good++;  rd.good++;
       if (chNorm) { ag.chGood[chNorm] = (ag.chGood[chNorm]||0)+1; rd.chGood[chNorm] = (rd.chGood[chNorm]||0)+1; }
+      ag.goodReasons[reason] = (ag.goodReasons[reason]||0)+1;
     } else {
       ag.bad++;   rd.bad++;
       if (chNorm) { ag.chBad[chNorm]  = (ag.chBad[chNorm] ||0)+1; rd.chBad[chNorm]  = (rd.chBad[chNorm] ||0)+1; }
@@ -4550,11 +4561,16 @@ function renderDSATView() {
 
       if (isOpen) {
         sortedSpecs.forEach(([em, ag]) => {
-          const nm  = agentName[em] || emailToName[em] || em;
-          const pct = csatPct(ag.good, ag.bad);
-          html += `<tr class="dsat-spec-row">
+          const nm      = agentName[em] || emailToName[em] || em;
+          const pct     = csatPct(ag.good, ag.bad);
+          const specKey = encodeURIComponent(supKey + '||' + em);
+          const specOpen = dsatOpenSpecs.has(supKey + '||' + em);
+
+          // Specialist row — clickable to expand reason drilldown
+          html += `<tr class="dsat-spec-row" onclick="dsatToggleSpec(decodeURIComponent('${specKey}'))">
             <td class="dsat-agent-col" style="padding-left:26px">
-              <span style="color:#94A3B8;margin-right:4px">↳</span>${escHtml(nm)}
+              <span style="font-size:9px;margin-right:5px;color:#94A3B8">${specOpen ? '▼' : '▶'}</span>
+              <span style="color:#94A3B8;margin-right:3px">↳</span>${escHtml(nm)}
               ${topReasonHint(ag.badReasons)}
             </td>
             <td class="dsat-num-col">${ag.good || '—'}</td>
@@ -4562,6 +4578,40 @@ function renderDSATView() {
             <td class="dsat-num-col">${csatBadge(pct)}</td>
             ${chCells(ag.chGood, ag.chBad)}
           </tr>`;
+
+          // Contact reason drilldown rows for this specialist
+          if (specOpen) {
+            // Merge good + bad reasons into one list
+            const allReasons = new Set([
+              ...Object.keys(ag.goodReasons),
+              ...Object.keys(ag.badReasons)
+            ]);
+            const reasonRows = [...allReasons].map(rsn => ({
+              reason: rsn,
+              good:   ag.goodReasons[rsn] || 0,
+              bad:    ag.badReasons[rsn]  || 0
+            })).sort((a, b) => (b.good + b.bad) - (a.good + a.bad));
+
+            const maxBadSpec = Math.max(...reasonRows.map(rr => rr.bad), 1);
+
+            reasonRows.forEach(rr => {
+              const rPct    = csatPct(rr.good, rr.bad);
+              const heatT   = rr.bad / maxBadSpec;
+              const badStyle = heatT > 0.15
+                ? `background:rgba(220,38,38,${(heatT*0.15).toFixed(2)});color:#991B1B;font-weight:600`
+                : 'color:#DC2626';
+              // Channel data for this reason is not tracked per-spec (would require 4D pivot)
+              // Show — for channel cells at drilldown level
+              const emptyChCells = allChannels.map(() => `<td class="dsat-ch-col" style="color:#D1D5DB">—</td>`).join('');
+              html += `<tr class="dsat-spec-reason-row">
+                <td class="dsat-agent-col">${escHtml(rr.reason)}</td>
+                <td class="dsat-num-col">${rr.good || '—'}</td>
+                <td class="dsat-num-col" style="${badStyle}">${rr.bad || '—'}</td>
+                <td class="dsat-num-col">${csatBadge(rPct)}</td>
+                ${emptyChCells}
+              </tr>`;
+            });
+          }
         });
       }
     });
