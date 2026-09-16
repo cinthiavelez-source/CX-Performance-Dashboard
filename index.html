@@ -5432,17 +5432,20 @@ async function submitUpload(type) {
 
   try {
     // Optional: clear existing data for the date range
-    if (document.getElementById(`clear-${type}`)?.checked) {
+    const didClear = document.getElementById(`clear-${type}`)?.checked || false;
+    if (didClear) {
       const dates = rows.map(r=>r.date).sort();
       await apiPost({ action:'clearDateRange', sheetKey: type.toUpperCase(), dateFrom: dates[0], dateTo: dates[dates.length-1] });
     }
 
-    // Upload in batches of 200 rows — upsert: server deduplicates
+    // Upload in batches of 200 rows — upsert: server deduplicates.
+    // When the user cleared the date range first, tell the server so it can
+    // skip the expensive dedup scan (rows were already deleted above).
     const BATCH = 200;
     let totalInserted = 0, totalUpdated = 0, totalUnchanged = 0;
     for (let i = 0; i < rows.length; i += BATCH) {
       const batch  = rows.slice(i, i + BATCH);
-      const result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
+      const result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch, clearFirst: didClear });
       totalInserted  += result.inserted  || 0;
       totalUpdated   += result.updated   || 0;
       totalUnchanged += result.unchanged || 0;
