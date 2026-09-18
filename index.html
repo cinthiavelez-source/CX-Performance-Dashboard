@@ -5447,24 +5447,43 @@ async function submitUpload(type) {
       await apiPost({ action:'clearDateRange', sheetKey: type.toUpperCase(), dateFrom: dates[0], dateTo: dates[dates.length-1] });
     }
 
-    // Upload in batches of 200 rows — upsert: server deduplicates.
-    // When the user cleared the date range first, tell the server so it can
-    // skip the expensive dedup scan (rows were already deleted above).
+    // ── Client-side dedup ────────────────────────────────────────────────────
+    // The server is now append-only (no sheet scan). We deduplicate here instead,
+    // using rawCSAT / rawTPH / rawIQA already loaded in memory — instant lookup,
+    // no network round-trip, no timeout possible regardless of sheet size.
+    // When the user cleared the date range first, skip dedup (cleared rows are gone).
+    let uploadRows = rows;
+    let clientSkipped = 0;
+    if (!didClear) {
+      if (type === 'csat') {
+        const existing = new Set(rawCSAT.map(r => String(r.ticket_id||'')).filter(Boolean));
+        uploadRows = rows.filter(r => !existing.has(String(r.ticket_id||'')));
+      } else if (type === 'tph') {
+        const existing = new Set(rawTPH.map(r => r.date + '||' + (r.agent_email||'').toLowerCase()).filter(Boolean));
+        uploadRows = rows.filter(r => !existing.has(r.date + '||' + (r.agent_email||'').toLowerCase()));
+      } else if (type === 'iqa') {
+        const existing = new Set(rawIQA.map(r => String(r.review_id||'')).filter(Boolean));
+        uploadRows = rows.filter(r => !existing.has(String(r.review_id||'')));
+      }
+      clientSkipped = rows.length - uploadRows.length;
+    }
+
     const BATCH = 200;
     let totalInserted = 0, totalUpdated = 0, totalUnchanged = 0;
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const batch  = rows.slice(i, i + BATCH);
-      const result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch, clearFirst: didClear });
+    for (let i = 0; i < uploadRows.length; i += BATCH) {
+      const batch  = uploadRows.slice(i, i + BATCH);
+      const result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
       totalInserted  += result.inserted  || 0;
       totalUpdated   += result.updated   || 0;
       totalUnchanged += result.unchanged || 0;
-      const done = Math.min(i + BATCH, rows.length);
-      st.textContent = `Processing… ${done}/${rows.length}`;
+      const done = Math.min(i + BATCH, uploadRows.length);
+      st.textContent = `Processing… ${done}/${uploadRows.length}`;
     }
 
     const parts = [];
     if (totalInserted)  parts.push(`${totalInserted} new`);
     if (totalUpdated)   parts.push(`${totalUpdated} updated`);
+    if (clientSkipped)  parts.push(`${clientSkipped} already exist`);
     if (totalUnchanged) parts.push(`${totalUnchanged} unchanged`);
     const summary = parts.join(' · ') || '0 rows';
     st.textContent = `✅ ${summary}`;
