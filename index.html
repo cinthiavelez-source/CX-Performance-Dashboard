@@ -4911,10 +4911,19 @@ async function _fetchFromNetwork() {
     _applyRawData(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role);
     _lsSave(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role||'viewer');
     lastSyncTime = Date.now();
-    updateSyncLabel();
     updateRoleUI();
     populateFilters();
-    setSyncStatus('ok');
+    if (data._stale) {
+      // Server cache is being rebuilt in background — show data but indicate refresh pending.
+      // Auto-retry in 35 s (enough time for the background rebuildCacheNow trigger to finish).
+      const label = document.getElementById('sync-label');
+      if (label) label.textContent = '🔄 Refreshing…';
+      setSyncStatus('ok');
+      setTimeout(() => { _fetchFromNetwork().catch(() => {}); }, 35000);
+    } else {
+      updateSyncLabel();
+      setSyncStatus('ok');
+    }
     return data;
   } catch(err) {
     clearInterval(_timer);
