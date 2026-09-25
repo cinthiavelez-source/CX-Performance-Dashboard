@@ -38,7 +38,8 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 
 /* ─── TAB NAV ─────────────────────────────────────────────── */
 .tabnav { background: #fff; border-bottom: 2px solid #E2E8F0;
-  display: flex; align-items: center; padding: 0 1.5rem; gap: 2px; overflow-x: auto; }
+  display: flex; align-items: center; padding: 0 1.5rem; gap: 2px; overflow-x: auto;
+  position: sticky; top: 56px; z-index: 150; box-shadow: 0 2px 6px rgba(0,0,0,.06); }
 .tabnav button { padding: 0 18px; height: 46px; background: none; color: #64748B;
   font-weight: 500; border-bottom: 3px solid transparent; margin-bottom: -2px;
   white-space: nowrap; transition: all .2s; border-radius: 6px 6px 0 0; }
@@ -46,6 +47,7 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
 .tabnav button.active { color: #AA0061; border-bottom-color: #AA0061; font-weight: 700; }
 
 /* ─── FILTER BAR ──────────────────────────────────────────── */
+#filter-bar-wrapper { position: sticky; top: 102px; z-index: 100; }
 .filter-bar { background: #fff; border-bottom: 1px solid #E2E8F0;
   padding: 10px 1.5rem; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .filter-bar label { font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase;
@@ -113,10 +115,14 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .table-card-header h3 { font-weight: 700; font-size: 15px; color: #1E293B; }
 .table-card-header p { font-size: 12px; color: #94A3B8; }
-.table-wrap { overflow-x: auto; max-height: calc(100vh - 320px); min-height: 300px; }
+/* --sticky-offset = navbar + tabnav + filter-bar heights; updated by JS */
+:root { --sticky-offset: 160px; }
+/* overflow-y: clip lets horizontal scroll work without creating a vertical scroll
+   container — so position:sticky on thead is relative to the viewport, not this div */
+.table-wrap { overflow-x: auto; overflow-y: clip; min-height: 300px; }
 .perf-table { border-collapse: collapse; width: 100%; min-width: 900px; }
-/* Freeze the entire thead as one unit — both rows lock together, no gap */
-.perf-table thead { position: sticky; top: 0; z-index: 15; }
+/* Freeze the entire thead; top = sticky nav stack height (recalculated by JS) */
+.perf-table thead { position: sticky; top: var(--sticky-offset); z-index: 15; }
 .perf-table th { background: #F8FAFC; font-weight: 700; font-size: 11px;
   text-transform: uppercase; letter-spacing: .05em; color: #64748B;
   padding: 6px 8px; border-bottom: 2px solid #E2E8F0; white-space: nowrap; }
@@ -351,7 +357,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 
 /* ─── CSAT BREAKDOWN TABLE ───────────────────────────────── */
 .dsat-table { border-collapse: collapse; width: 100%; font-size: 12px; }
-.dsat-table thead { position: sticky; top: 0; z-index: 4; }
+.dsat-table thead { position: sticky; top: var(--sticky-offset); z-index: 4; }
 .dsat-table thead tr { background: #1E293B; color: #fff; }
 .dsat-table thead th { padding: 8px 10px; text-align: center; font-weight: 600;
   white-space: nowrap; border: 1px solid #334155; background: #1E293B; }
@@ -2302,12 +2308,27 @@ function fmtDelta(curr, prev, lowerIsBetter, unit) {
 }
 
 // ─── COLLAPSIBLE FILTER BAR ──────────────────────────────────
+// Recalculates --sticky-offset = sum of all sticky nav elements above the tables.
+// Called on load, resize, and whenever the filter bar is toggled.
+function updateStickyOffset() {
+  const navbar  = document.querySelector('.navbar');
+  const tabnav  = document.querySelector('.tabnav');
+  const filterW = document.getElementById('filter-bar-wrapper');
+  const h = (navbar  ? navbar.offsetHeight  : 0)
+          + (tabnav  ? tabnav.offsetHeight  : 0)
+          + (filterW ? filterW.offsetHeight : 0);
+  document.documentElement.style.setProperty('--sticky-offset', h + 'px');
+}
+window.addEventListener('resize', updateStickyOffset);
+
 function toggleFilterBar() {
   const inner     = document.getElementById('filter-bar-inner');
   const collapsed = document.getElementById('filter-bar-collapsed');
   const hidden    = inner.style.display === 'none';
   inner.style.display     = hidden ? '' : 'none';
   collapsed.style.display = hidden ? 'none' : 'flex';
+  // Offset changes when filter bar collapses/expands
+  requestAnimationFrame(updateStickyOffset);
 }
 
 // ─── TAB SEARCH HELPER ───────────────────────────────────────
@@ -5943,6 +5964,9 @@ async function initApp() {
 
   // No auto-refresh needed — data updates once per day in the morning.
   // Users can hit 🔄 to force-fetch fresh data at any time.
+
+  // Set initial sticky offset now that the full nav is rendered.
+  requestAnimationFrame(updateStickyOffset);
 }
 
 (function boot() {
