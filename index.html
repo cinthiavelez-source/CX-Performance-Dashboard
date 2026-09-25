@@ -115,14 +115,19 @@ select, input { font-family: Arial, Helvetica, sans-serif; font-size: 13px; }
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .table-card-header h3 { font-weight: 700; font-size: 15px; color: #1E293B; }
 .table-card-header p { font-size: 12px; color: #94A3B8; }
-/* --sticky-offset = navbar + tabnav + filter-bar heights; updated by JS */
+/* --sticky-offset = navbar + tabnav + filter-bar heights; updated by JS.
+   Table-wrap max-height fills the viewport below the sticky nav stack and
+   the ~180px of KPI cards + section header that sit above every table. */
 :root { --sticky-offset: 160px; }
-/* overflow-y: clip lets horizontal scroll work without creating a vertical scroll
-   container — so position:sticky on thead is relative to the viewport, not this div */
-.table-wrap { overflow-x: auto; overflow-y: clip; min-height: 300px; }
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - var(--sticky-offset) - 180px);
+  min-height: 300px;
+}
 .perf-table { border-collapse: collapse; width: 100%; min-width: 900px; }
-/* Freeze the entire thead; top = sticky nav stack height (recalculated by JS) */
-.perf-table thead { position: sticky; top: var(--sticky-offset); z-index: 15; }
+/* thead sticks at top: 0 of the table-wrap scroll container */
+.perf-table thead { position: sticky; top: 0; z-index: 15; }
 .perf-table th { background: #F8FAFC; font-weight: 700; font-size: 11px;
   text-transform: uppercase; letter-spacing: .05em; color: #64748B;
   padding: 6px 8px; border-bottom: 2px solid #E2E8F0; white-space: nowrap; }
@@ -357,7 +362,7 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
 
 /* ─── CSAT BREAKDOWN TABLE ───────────────────────────────── */
 .dsat-table { border-collapse: collapse; width: 100%; font-size: 12px; }
-.dsat-table thead { position: sticky; top: var(--sticky-offset); z-index: 4; }
+.dsat-table thead { position: sticky; top: 0; z-index: 4; }
 .dsat-table thead tr { background: #1E293B; color: #fff; }
 .dsat-table thead th { padding: 8px 10px; text-align: center; font-weight: 600;
   white-space: nowrap; border: 1px solid #334155; background: #1E293B; }
@@ -2308,8 +2313,10 @@ function fmtDelta(curr, prev, lowerIsBetter, unit) {
 }
 
 // ─── COLLAPSIBLE FILTER BAR ──────────────────────────────────
-// Recalculates --sticky-offset = sum of all sticky nav elements above the tables.
-// Called on load, resize, and whenever the filter bar is toggled.
+// Recalculates --sticky-offset = combined height of all sticky nav elements.
+// The CSS rule `max-height: calc(100vh - var(--sticky-offset) - 180px)` on
+// .table-wrap picks this up automatically, so table containers always fill
+// the available viewport and thead sticks at top: 0 within the container.
 function updateStickyOffset() {
   const navbar  = document.querySelector('.navbar');
   const tabnav  = document.querySelector('.tabnav');
