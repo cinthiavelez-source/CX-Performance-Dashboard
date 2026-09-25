@@ -1059,8 +1059,10 @@ let iqaIndex  = {}; // email → [rows]
 let csatNameIndex = {}; // normName → [rows]  (CSAT name fallback)
 
 // ─── KPI MEMOIZATION CACHE ────────────────────────────────────
-// Key: "email|start|end". Cleared whenever new data is loaded.
+// kpiCache key: "email|start|end" (individual agents, cleared on data load)
+// groupKpiCache key: "email1,email2,...|start|end" (group aggregates, same lifecycle)
 let kpiCache = {};
+let groupKpiCache = {};
 
 // ─── TAB RENDER CACHE ─────────────────────────────────────────
 // Tracks which tab pages have already been rendered in the current
@@ -1193,7 +1195,7 @@ function buildAgentMaps() {
 // Called once after every apiFetch().
 function buildIndexes() {
   tphIndex = {}; csatIndex = {}; iqaIndex = {}; csatNameIndex = {};
-  kpiCache = {}; // clear memo cache whenever source data changes
+  kpiCache = {}; groupKpiCache = {}; // clear memo caches whenever source data changes
 
   rawTPH.forEach(r => {
     const e = (r.agent_email||'').toLowerCase().trim();
@@ -1599,9 +1601,13 @@ function computeKPIs(agentEmail, weekStart, weekEnd) {
   return result;
 }
 
-// Aggregate KPIs for a group — sum individual computeKPIs results (each already memoized)
+// Aggregate KPIs for a group — memoized by sorted email list + date range.
+// On a typical weekly table with 10 weeks × 5 groups, this avoids ~49 redundant
+// recomputes (each recompute scans O(agents × rows_per_agent) indexes).
 function computeGroupKPIs(agentEmails, weekStart, weekEnd) {
   const emails = agentEmails.map(e => (e||'').toLowerCase().trim()).filter(Boolean);
+  const cacheKey = [...emails].sort().join(',') + '|' + weekStart + '|' + weekEnd;
+  if (groupKpiCache[cacheKey]) return groupKpiCache[cacheKey];
   let totalTickets = 0, totalTimeSecs = 0, totalHandSecs = 0;
   let goodCount = 0, badCount = 0;
   let iqaSum = 0, iqaN = 0;
@@ -1628,13 +1634,15 @@ function computeGroupKPIs(agentEmails, weekStart, weekEnd) {
     });
   });
 
-  return {
+  const result = {
     tph:        totalTimeSecs > 0 ? totalTickets / (totalTimeSecs / 3600) : null,
     ahtSecs:    totalTickets  > 0 ? totalHandSecs / totalTickets          : null,
     csat:       goodCount + badCount > 0 ? (goodCount / (goodCount + badCount)) * 100 : null,
     iqa:        iqaN > 0 ? iqaSum / iqaN : null,
     totalTickets
   };
+  groupKpiCache[cacheKey] = result;
+  return result;
 }
 
 // ─── COLOR CODING ─────────────────────────────────────────
@@ -3466,11 +3474,21 @@ function renderContactReasonView() {
     return { good, bad, total, csat: good + bad > 0 ? (good / (good + bad)) * 100 : null };
   }
 
-  // ── Filter CSAT rows to current agents (all 3 months combined) ───────────────
-  const agentRows = rawCSAT.filter(r => {
-    const re = (r.agent_email || '').toLowerCase().trim();
-    if (re) return emails.has(re);
-    return nameKeys.has(normName(r.agent_name));
+  // ── Filter CSAT rows to current agents using pre-built indexes ───────────────
+  // csatIndex[email] → rows; csatNameIndex[normName] → rows (email-less rows only)
+  // This is O(agents) instead of O(70K rawCSAT rows).
+  const agentRows = [];
+  const _crSeen = new Set();
+  emails.forEach(email => {
+    (csatIndex[email] || []).forEach(r => {
+      if (!_crSeen.has(r)) { _crSeen.add(r); agentRows.push(r); }
+    });
+  });
+  nameKeys.forEach(nameKey => {
+    (csatNameIndex[nameKey] || []).forEach(r => {
+      const re = (r.agent_email || '').toLowerCase().trim();
+      if (!re && !_crSeen.has(r)) { _crSeen.add(r); agentRows.push(r); }
+    });
   });
 
   if (!agentRows.length) {
@@ -4410,46 +4428,53 @@ function renderDSATView() {
   const CHANNEL_NORM = { 'Messaging + SMS': 'Messaging+SMS', 'messaging + sms': 'Messaging+SMS',
                           'email': 'Email', 'api': 'Api' };
 
-  rawCSAT.forEach(r => {
-    const d = r.date || '';
-    if (d < period.start || d > period.end) return;
+  // Fix 5b: use index-based lookup instead of O(70K rawCSAT) full scan.
+  // Iterate allowedEmails, pull pre-grouped rows from csatIndex (email rows)
+  // and csatNameIndex (email-less rows matched by normName).
+  allowedEmails.forEach(email => {
+    const emailRows = csatIndex[email] || [];
+    const nameKey   = normName(emailToName[email] || '');
+    const nameRows  = nameKey
+      ? (csatNameIndex[nameKey] || []).filter(r => !(r.agent_email || '').toLowerCase().trim())
+      : [];
 
-    const sat = (r.satisfaction || '').toLowerCase().trim();
-    if (!['good', 'bad'].includes(sat)) return;   // skip 'offered' — no rating
+    emailRows.concat(nameRows).forEach(r => {
+      const d = r.date || '';
+      if (d < period.start || d > period.end) return;
 
-    let email = (r.agent_email || '').toLowerCase().trim();
-    if (!email && r.agent_name) email = nameToEmail[normName(r.agent_name)] || '';
-    if (!email || !allowedEmails.has(email)) return;
+      const sat = (r.satisfaction || '').toLowerCase().trim();
+      if (!['good', 'bad'].includes(sat)) return;
 
-    // ── supervisor bucket ──
-    const supKey  = agentToSup[email] || '_no_sup_';
-    const supDisp = supLabelMap[supKey] || 'No Supervisor';
-    if (!supData[supKey]) supData[supKey] = { label: supDisp, agents: {} };
-    if (!supData[supKey].agents[email]) {
-      supData[supKey].agents[email] = { good:0, bad:0, chGood:{}, chBad:{}, goodReasons:{}, badReasons:{} };
-    }
-    const ag = supData[supKey].agents[email];
+      // ── supervisor bucket ──
+      const supKey  = agentToSup[email] || '_no_sup_';
+      const supDisp = supLabelMap[supKey] || 'No Supervisor';
+      if (!supData[supKey]) supData[supKey] = { label: supDisp, agents: {} };
+      if (!supData[supKey].agents[email]) {
+        supData[supKey].agents[email] = { good:0, bad:0, chGood:{}, chBad:{}, goodReasons:{}, badReasons:{} };
+      }
+      const ag = supData[supKey].agents[email];
 
-    // ── channel normalisation ──
-    const rawCh  = (r.channel || '').trim();
-    const chNorm = CHANNEL_NORM[rawCh] || CHANNEL_NORM[rawCh.toLowerCase()] || rawCh || '';
-    if (chNorm) channelSet.add(chNorm);
+      // ── channel normalisation ──
+      const rawCh  = (r.channel || '').trim();
+      const chNorm = CHANNEL_NORM[rawCh] || CHANNEL_NORM[rawCh.toLowerCase()] || rawCh || '';
+      if (chNorm) channelSet.add(chNorm);
 
-    // ── reason bucket ──
-    const reason = (r.contact_reason || 'Unknown').trim();
-    if (!reasonData[reason]) reasonData[reason] = { good:0, bad:0, chGood:{}, chBad:{} };
-    const rd = reasonData[reason];
+      // ── reason bucket ──
+      const reason = (r.contact_reason || 'Unknown').trim();
+      if (!reasonData[reason]) reasonData[reason] = { good:0, bad:0, chGood:{}, chBad:{} };
+      const rd = reasonData[reason];
 
-    // ── tally ──
-    if (sat === 'good') {
-      ag.good++;  rd.good++;
-      if (chNorm) { ag.chGood[chNorm] = (ag.chGood[chNorm]||0)+1; rd.chGood[chNorm] = (rd.chGood[chNorm]||0)+1; }
-      ag.goodReasons[reason] = (ag.goodReasons[reason]||0)+1;
-    } else {
-      ag.bad++;   rd.bad++;
-      if (chNorm) { ag.chBad[chNorm]  = (ag.chBad[chNorm] ||0)+1; rd.chBad[chNorm]  = (rd.chBad[chNorm] ||0)+1; }
-      ag.badReasons[reason] = (ag.badReasons[reason]||0)+1;
-    }
+      // ── tally ──
+      if (sat === 'good') {
+        ag.good++;  rd.good++;
+        if (chNorm) { ag.chGood[chNorm] = (ag.chGood[chNorm]||0)+1; rd.chGood[chNorm] = (rd.chGood[chNorm]||0)+1; }
+        ag.goodReasons[reason] = (ag.goodReasons[reason]||0)+1;
+      } else {
+        ag.bad++;   rd.bad++;
+        if (chNorm) { ag.chBad[chNorm]  = (ag.chBad[chNorm] ||0)+1; rd.chBad[chNorm]  = (rd.chBad[chNorm] ||0)+1; }
+        ag.badReasons[reason] = (ag.badReasons[reason]||0)+1;
+      }
+    });
   });
 
   // ── 4. Channel order ───────────────────────────────────────────────────────
@@ -4810,7 +4835,7 @@ function updateSyncLabel() {
 
 async function manualRefresh() {
   _lsClear();           // force a real network call
-  kpiCache = {};
+  kpiCache = {}; groupKpiCache = {};
   renderedTabs.clear(); // all tabs must re-render with fresh data
   await apiFetch(true); // forceNetwork = true
   navTo(currentPage);
