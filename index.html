@@ -5112,7 +5112,9 @@ async function _fetchFromNetwork() {
     }
     if (data.error) throw new Error(data.error);
     _applyRawData(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role, data.rawFrom, data.agg);
-    _lsSave(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role||'viewer');
+    // Never persist a cold-cache payload (IQA is intentionally empty while the server rebuilds):
+    // it would be treated as "fresh" for 2 h and IQS would stay blank until it expires.
+    if (!data._stale) _lsSave(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role||'viewer');
     lastSyncTime = Date.now();
     updateRoleUI();
     populateFilters();
