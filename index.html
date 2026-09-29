@@ -573,8 +573,9 @@ tr[style*="border-left:3px solid #EF4444"] td.col-agent { background: #FFF0F0 !i
       </select>
     </label>
     <div id="f-custom-range" style="display:none;gap:8px;align-items:center;">
-      <label>From <input type="date" id="f-date-from" onchange="onDateInput()"></label>
-      <label>To <input type="date" id="f-date-to" onchange="onDateInput()"></label>
+      <label>From (Sun) <input type="date" id="f-date-from" onchange="onDateInput('from')"></label>
+      <label>To (Sat) <input type="date" id="f-date-to" onchange="onDateInput('to')"></label>
+      <span style="font-size:10px;color:#94A3B8;white-space:nowrap">Snaps to full Sun–Sat weeks</span>
     </div>
     <button class="btn-apply" onclick="applyFilters()">Apply</button>
     <button class="btn-reset" onclick="resetFilters()">Reset</button>
@@ -1084,7 +1085,17 @@ let renderedTabs = new Set();
 // ─── LOCALSTORAGE DATA CACHE ──────────────────────────────────
 // Cache key for daily data persistence. Data is only refreshed once
 // per calendar day (matches the morning update cadence).
-const LS_CACHE_KEY = 'cx_dash_data_v1';
+const LS_CACHE_KEY = 'cx_dash_data_v2'; // v2: payload now carries rawFrom + agg (old v1 caches are ignored)
+
+// ─── HISTORY STATE ────────────────────────────────────────────
+// The server sends only a recent raw window (rawFrom → today, ≈ 3 months / 12 weeks)
+// plus `agg`: pre-aggregated weekly/monthly sums per agent for the rest of the year
+// (used only by General Performance). Older raw rows are fetched on demand.
+let rawFrom   = '';   // first date covered by raw rows ('' = unknown / legacy → assume everything is loaded)
+let aggRowsSrc = [];  // agg rows exactly as received (kept for the localStorage cache)
+let aggW = {}, aggM = {};      // period(start date) → { agentKey → [tk, ts, hs, good, bad, iqaSum, iqaN] }
+let histTPH = [], histCSAT = [], histIQA = [];  // older raw rows fetched on demand (memory only)
+let histRanges = [];           // [[from,to], …] older intervals already fetched (sorted, merged)
 
 // ─── PERFORMANCE THRESHOLDS (editable via Admin tab) ──────────
 let thresholds = { tph: null, ahtSecs: null, csat: 85, iqa: 90 };
@@ -1654,6 +1665,129 @@ function computeGroupKPIs(agentEmails, weekStart, weekEnd) {
   };
   groupKpiCache[cacheKey] = result;
   return result;
+}
+
+// ─── HISTORY: aggregates + on-demand older rows ───────────────
+function setAggRows(rows) {
+  aggRowsSrc = rows || [];
+  aggW = {}; aggM = {};
+  aggRowsSrc.forEach(r => {
+    const tgt = r[0] === 'W' ? aggW : aggM;
+    (tgt[r[1]] = tgt[r[1]] || {})[r[2]] = [r[3], r[4], r[5], r[6], r[7], r[8], r[9]];
+  });
+}
+
+// Exact KPIs for a group from the pre-aggregated sums (same formulas as computeGroupKPIs).
+function aggGroupKPIs(emails, type, period) {
+  const src = (type === 'W' ? aggW : aggM)[period];
+  if (!src) return null;
+  let tk = 0, ts = 0, hs = 0, good = 0, bad = 0, isum = 0, n = 0;
+  emails.forEach(email => {
+    const e = src[email];
+    if (e) { tk += e[0]; ts += e[1]; hs += e[2]; isum += e[5]; n += e[6]; }
+    if (e && (e[3] + e[4]) > 0) { good += e[3]; bad += e[4]; }
+    else {
+      // CSAT rows without an agent email are keyed by normalised name
+      const ne = src['name:' + normName(emailToName[email] || '')];
+      if (ne) { good += ne[3]; bad += ne[4]; }
+    }
+  });
+  return {
+    tph:     ts > 0 ? tk / (ts / 3600) : null,
+    ahtSecs: tk > 0 ? hs / tk : null,
+    csat:    good + bad > 0 ? (good / (good + bad)) * 100 : null,
+    iqa:     n > 0 ? isum / n : null,
+    totalTickets: tk
+  };
+}
+
+// KPIs for a trend period (week starting `start` = Sunday, or month starting `start` = 1st).
+// Periods that begin before the raw window come from the aggregates; the rest from raw rows.
+function trendKPIs(emails, type, start, end) {
+  if (rawFrom && start < rawFrom) {
+    return aggGroupKPIs(emails, type, start) ||
+           { tph: null, ahtSecs: null, csat: null, iqa: null, totalTickets: 0 };
+  }
+  return computeGroupKPIs(emails, start, end);
+}
+
+// Sub-ranges of [from,to] not yet fetched.
+function _histGaps(from, to) {
+  let gaps = [[from, to]];
+  histRanges.forEach(([a, b]) => {
+    const next = [];
+    gaps.forEach(([g0, g1]) => {
+      if (b < g0 || a > g1) { next.push([g0, g1]); return; }
+      if (a > g0) next.push([g0, addDays(a, -1)]);
+      if (b < g1) next.push([addDays(b, 1), g1]);
+    });
+    gaps = next;
+  });
+  return gaps;
+}
+function _histAddRange(from, to) {
+  histRanges.push([from, to]);
+  histRanges.sort((x, y) => x[0].localeCompare(y[0]));
+  const merged = [];
+  histRanges.forEach(r => {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= addDays(last[1], 1)) { if (r[1] > last[1]) last[1] = r[1]; }
+    else merged.push([r[0], r[1]]);
+  });
+  histRanges = merged;
+}
+
+async function _fetchRangeSheet(sheet, from, to) {
+  const u   = currentUser;
+  const url = `${SCRIPT_URL}?action=range&sheet=${sheet}&from=${from}&to=${to}&email=${encodeURIComponent(u ? u.email : '')}`;
+  const res  = await fetch(url, { redirect: 'follow' });
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { throw new Error(`Server did not answer for ${sheet.toUpperCase()} ${from} → ${to} (timeout or not deployed). Try a shorter range.`); }
+  if (data.error) throw new Error(data.error);
+  return (data.rows || []).map(r => ({ ...r, date: isoDate(String(r.date || '')) }));
+}
+
+// Make sure raw rows exist for [from,to]. Only fetches the part older than the raw window,
+// in ≤45-day slices (3 sheets in parallel per slice), then rebuilds indexes.
+// Returns true when new rows were merged.
+async function ensureHistory(from, to) {
+  if (!rawFrom || !from || from >= rawFrom) return false;
+  const hi = (to && to < rawFrom) ? to : addDays(rawFrom, -1);
+  if (from > hi) return false;
+  const gaps = _histGaps(from, hi);
+  if (!gaps.length) return false;
+
+  let merged = false;
+  try {
+    for (const [g0, g1] of gaps) {
+      let a = g0;
+      while (a <= g1) {
+        const b = addDays(a, 44) < g1 ? addDays(a, 44) : g1;
+        showLoading(true, `Loading older data… ${a} → ${b}`);
+        const [t, c, q] = await Promise.all([
+          _fetchRangeSheet('tph', a, b), _fetchRangeSheet('csat', a, b), _fetchRangeSheet('iqa', a, b)
+        ]);
+        histTPH  = histTPH.concat(t);
+        histCSAT = histCSAT.concat(c);
+        histIQA  = histIQA.concat(q);
+        rawTPH   = rawTPH.concat(t);
+        rawCSAT  = rawCSAT.concat(c);
+        rawIQA   = rawIQA.concat(q);
+        _histAddRange(a, b);
+        merged = true;
+        a = addDays(b, 1);
+      }
+    }
+  } catch (err) {
+    console.error('ensureHistory failed:', err);
+    showToast('⚠️ Could not load older data: ' + err.message, '#EF4444');
+  } finally {
+    if (merged) { cachedData = rawTPH; buildAgentMaps(); buildIndexes(); renderedTabs.clear(); }
+    showLoading(false);
+  }
+  return merged;
 }
 
 // ─── COLOR CODING ─────────────────────────────────────────
@@ -2970,7 +3104,7 @@ function renderGeneralView() {
     const ref = addDays(today, -i * 7);
     const sun = getWeekStartOf(ref), sat = getWeekEndOf(sun);
     const end = (i === 0) ? today : sat;
-    chartWowWeeks.push({ label: fmtWowLabel(sun, sat, i === 0), kpis: computeGroupKPIs(emails, sun, end) });
+    chartWowWeeks.push({ label: fmtWowLabel(sun, sat, i === 0), kpis: trendKPIs(emails, 'W', sun, end) });
   }
   const chartMomMonths = [];
   const _now = new Date(today + 'T12:00:00');
@@ -2980,7 +3114,7 @@ function renderGeneralView() {
     const from = `${y}-${String(mo+1).padStart(2,'0')}-01`;
     const lastD = new Date(y, mo+1, 0);
     const to = (i === 0) ? today : `${y}-${String(mo+1).padStart(2,'0')}-${String(lastD.getDate()).padStart(2,'0')}`;
-    chartMomMonths.push({ label: d.toLocaleDateString('en-US',{month:'short',year:'numeric'}), kpis: computeGroupKPIs(emails, from, to) });
+    chartMomMonths.push({ label: d.toLocaleDateString('en-US',{month:'short',year:'numeric'}), kpis: trendKPIs(emails, 'M', from, to) });
   }
 
   // ── WoW TABLE: all Sun–Sat weeks in the current calendar year up to today ────
@@ -3000,7 +3134,7 @@ function renderGeneralView() {
       const end   = isWTD ? today : sat;
       if (sun <= today) {
         wowWeeks.push({ label: fmtWowLabel(sun, sat, isWTD), start: sun, end,
-          kpis: computeGroupKPIs(emails, sun, end) });
+          kpis: trendKPIs(emails, 'W', sun, end) });
       }
       cur = new Date(cur.getTime() + 7*86400000);
     }
@@ -3017,7 +3151,7 @@ function renderGeneralView() {
       const to    = last > today ? today : last;
       if (from > today) break;
       momMonths.push({ label: new Date(curYear, m, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'}),
-        from, to, kpis: computeGroupKPIs(emails, from, to) });
+        from, to, kpis: trendKPIs(emails, 'M', from, to) });
     }
   }
 
@@ -4774,15 +4908,19 @@ function navTo(page) {
 
 // ─── FILTER ACTIONS ───────────────────────────────────────
 
-function applyFilters() {
+async function applyFilters() {
   activeFilters.agent      = document.getElementById('f-agent').value;
   activeFilters.supervisor = document.getElementById('f-supervisor').value;
   activeFilters.am         = document.getElementById('f-am').value;
   activeFilters.team       = document.getElementById('f-team').value;
   activeFilters.group      = document.getElementById('f-group').value;
 
-  const fromVal = document.getElementById('f-date-from').value;
-  const toVal   = document.getElementById('f-date-to').value;
+  // Enforce Sun–Sat weeks even if a value was typed/pasted without triggering onchange.
+  const _fEl = document.getElementById('f-date-from'), _tEl = document.getElementById('f-date-to');
+  if (_fEl.value) _fEl.value = getWeekStartOf(_fEl.value);
+  if (_tEl.value) _tEl.value = getWeekEndOf(getWeekStartOf(_tEl.value));
+  const fromVal = _fEl.value;
+  const toVal   = _tEl.value;
 
   // If dates are filled, force custom mode regardless of dropdown state
   if (fromVal || toVal) {
@@ -4795,6 +4933,11 @@ function applyFilters() {
 
   activeFilters.dateFrom = fromVal;
   activeFilters.dateTo   = toVal;
+
+  // Custom range older than the loaded raw window → fetch just those rows on demand.
+  if (activePeriod === 'custom' && fromVal) {
+    await ensureHistory(fromVal, toVal || todayStr());
+  }
 
   updatePeriodBadge();
   renderedTabs.clear(); // filters changed — all tabs must re-render
@@ -4830,7 +4973,14 @@ function onPeriodChange() {
 }
 
 // Auto-switch to "Custom Range" as soon as the user edits either date field
-function onDateInput() {
+function onDateInput(which) {
+  // Snap to US calendar weeks: From → Sunday of its week, To → Saturday of its week.
+  const fEl = document.getElementById('f-date-from'), tEl = document.getElementById('f-date-to');
+  if (which === 'from' && fEl.value) fEl.value = getWeekStartOf(fEl.value);
+  if (which === 'to'   && tEl.value) tEl.value = getWeekEndOf(getWeekStartOf(tEl.value));
+  if (fEl.value && tEl.value && fEl.value > tEl.value) {
+    if (which === 'from') tEl.value = getWeekEndOf(fEl.value); else fEl.value = getWeekStartOf(tEl.value);
+  }
   const sel = document.getElementById('f-period');
   if (sel.value !== 'custom') {
     sel.value = 'custom';
@@ -4879,7 +5029,7 @@ const LS_STALE_MS = 2 * 60 * 60 * 1000; // treat as stale after 2 hours
 
 function _lsSave(tph, csat, iqa, hierarchy, role) {
   try {
-    const payload = JSON.stringify({ date: todayStr(), savedAt: Date.now(), tph, csat, iqa, hierarchy, role });
+    const payload = JSON.stringify({ date: todayStr(), savedAt: Date.now(), tph, csat, iqa, hierarchy, role, rawFrom, agg: aggRowsSrc });
     localStorage.setItem(LS_CACHE_KEY, payload);
   } catch(e) { /* storage quota — ignore */ }
 }
@@ -4933,7 +5083,7 @@ async function _fetchFromNetwork() {
   setSyncStatus('syncing');
   const _loadSub = document.getElementById('loading-sub');
   const _loadMsgs = [
-    'Reading 12 months of performance data…',
+    'Reading recent performance data…',
     'Processing TPH & AHT records…',
     'Aggregating CSAT data…',
     'Loading IQS quality scores…',
@@ -4961,7 +5111,7 @@ async function _fetchFromNetwork() {
       throw new Error('Invalid server response: ' + text.slice(0, 200));
     }
     if (data.error) throw new Error(data.error);
-    _applyRawData(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role);
+    _applyRawData(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role, data.rawFrom, data.agg);
     _lsSave(data.tph||[], data.csat||[], data.iqa||[], data.hierarchy||[], data.role||'viewer');
     lastSyncTime = Date.now();
     updateRoleUI();
@@ -4989,10 +5139,19 @@ async function _fetchFromNetwork() {
 }
 // ─────────────────────────────────────────────────────────────
 
-function _applyRawData(tph, csat, iqa, hierarchy, role) {
-  rawTPH       = tph.map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
-  rawCSAT      = csat.map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
-  rawIQA       = iqa.map(r => ({ ...r, date: isoDate(String(r.date||'')) }));
+function _applyRawData(tph, csat, iqa, hierarchy, role, rawFromArg, aggArg) {
+  rawFrom      = rawFromArg || '';
+  setAggRows(aggArg || []);
+  // Older rows fetched on demand survive a background refresh (they lie before rawFrom, so no overlap).
+  // If the raw window moved (new week/month), drop history rows that now fall inside it.
+  if (rawFrom) {
+    histTPH  = histTPH.filter(r => r.date < rawFrom);
+    histCSAT = histCSAT.filter(r => r.date < rawFrom);
+    histIQA  = histIQA.filter(r => r.date < rawFrom);
+  }
+  rawTPH       = tph.map(r => ({ ...r, date: isoDate(String(r.date||'')) })).concat(histTPH);
+  rawCSAT      = csat.map(r => ({ ...r, date: isoDate(String(r.date||'')) })).concat(histCSAT);
+  rawIQA       = iqa.map(r => ({ ...r, date: isoDate(String(r.date||'')) })).concat(histIQA);
   rawHierarchy = hierarchy;
   cachedRole   = role || 'viewer';
   cachedData   = rawTPH;
@@ -5008,7 +5167,7 @@ async function apiFetch(forceNetwork = false) {
     const cached = _lsLoad();
     if (cached) {
       // Always show cached data immediately — never block the UI on a network fetch
-      _applyRawData(cached.tph, cached.csat, cached.iqa, cached.hierarchy, cached.role);
+      _applyRawData(cached.tph, cached.csat, cached.iqa, cached.hierarchy, cached.role, cached.rawFrom, cached.agg);
       updateRoleUI();
       populateFilters();
       showLoading(false);
@@ -5508,6 +5667,10 @@ async function submitUpload(type) {
     let uploadRows = rows;
     let clientSkipped = 0;
     if (!didClear) {
+      // The in-memory window is now ~3 months. If the file reaches further back,
+      // load those older rows first so duplicates are still detected.
+      const _minDate = rows.map(r => r.date).filter(Boolean).sort()[0];
+      if (_minDate) { st.textContent = 'Checking older records…'; await ensureHistory(_minDate, todayStr()); }
       if (type === 'csat') {
         const existing = new Set(rawCSAT.map(r => String(r.ticket_id||'')).filter(Boolean));
         uploadRows = rows.filter(r => !existing.has(String(r.ticket_id||'')));
