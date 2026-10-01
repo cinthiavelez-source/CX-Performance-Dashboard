@@ -5079,6 +5079,15 @@ async function refreshHierarchy() {
 }
 
 // Internal: hit the GAS network and apply + save the result. Returns the data object or null.
+// Background refreshes replace the data in memory but used to leave the already-rendered tab
+// untouched (e.g. IQS stayed blank after the server finished rebuilding). Re-render the
+// visible tab once complete data (not a cold-cache placeholder) has been applied.
+function _rerenderAfterBackgroundLoad(data) {
+  if (!data || data._stale) return;
+  renderedTabs.clear();
+  try { navTo(currentPage); } catch (e) { console.warn('re-render failed', e); }
+}
+
 async function _fetchFromNetwork() {
   setSyncStatus('syncing');
   const _loadSub = document.getElementById('loading-sub');
@@ -5124,7 +5133,7 @@ async function _fetchFromNetwork() {
       const label = document.getElementById('sync-label');
       if (label) label.textContent = '🔄 Refreshing…';
       setSyncStatus('ok');
-      setTimeout(() => { _fetchFromNetwork().catch(() => {}); }, 35000);
+      setTimeout(() => { _fetchFromNetwork().then(_rerenderAfterBackgroundLoad).catch(() => {}); }, 35000);
     } else {
       updateSyncLabel();
       setSyncStatus('ok');
@@ -5185,7 +5194,7 @@ async function apiFetch(forceNetwork = false) {
       // Stale (different day or > 2h) — show data now, refresh silently in background
       setSyncStatus('syncing');
       updateSyncLabel();
-      _fetchFromNetwork().catch(() => setSyncStatus('ok')); // fire-and-forget
+      _fetchFromNetwork().then(_rerenderAfterBackgroundLoad).catch(() => setSyncStatus('ok')); // fire-and-forget
       return cached; // return immediately so the caller doesn't wait
     }
   }
@@ -5713,7 +5722,7 @@ async function submitUpload(type) {
     // The background refresh will update all other tabs when the user navigates to them.
     _lsClear();
     renderedTabs.clear(); // force tabs to re-render with fresh data
-    _fetchFromNetwork().catch(e => console.warn('Background refresh after upload failed:', e));
+    _fetchFromNetwork().then(_rerenderAfterBackgroundLoad).catch(e => console.warn('Background refresh after upload failed:', e));
 
   } catch(err) {
     st.textContent = '❌ ' + err.message;
