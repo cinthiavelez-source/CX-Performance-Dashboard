@@ -1889,8 +1889,17 @@ function getAllAgents() {
       .map(([email]) => email)
   );
 
+  // Only people whose latest Hierarchy_Log role is "Specialist" are counted anywhere in the
+  // dashboard (Supervisors, A.Managers, QA, trainers, blank roles, and people missing from
+  // the hierarchy are excluded from every view and KPI).
+  const latestRec = latestHierRecordByEmail();
+  const isSpecialist = email => {
+    const rec = latestRec[email];
+    return !!rec && normName(rec.role) === 'specialist';
+  };
+
   return Object.entries(byEmail)
-    .filter(([email]) => !inactiveEmails.has(email))
+    .filter(([email]) => !inactiveEmails.has(email) && isSpecialist(email))
     .map(([email, name]) => ({ email, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -2041,7 +2050,7 @@ function getActiveAMs() {
 }
 
 /**
- * Return specialists (role != Supervisor / AM) whose supervisor_name matches supName
+ * Return specialists (role = Specialist only) whose supervisor_name matches supName
  * as of `asOfDate` (YYYY-MM-DD, defaults to today).
  *
  * Strategy — start from latestHierRecordByEmail (the universe of known people):
@@ -2064,9 +2073,9 @@ function getSpecialistsUnderSupervisor(supName, asOfDate) {
   const seen         = {};
 
   Object.entries(latestHier).forEach(([e, latest]) => {
-    // Always skip management roles (based on latest record)
-    const r = normName(latest.role || '');
-    if (r === 'supervisor' || r === 'assistant manager' || r === 'a.manager' || r === 'a. manager' || r === 'am') return;
+    // Only the Specialist role counts (based on latest record) — Supervisors, A.Managers,
+    // QA, trainers and blank roles are all excluded.
+    if (normName(latest.role || '') !== 'specialist') return;
 
     // For current/future dates: require is_active on the latest record.
     // For historical dates: skip this check — a departed agent should still
