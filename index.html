@@ -1075,6 +1075,8 @@ let csatNameIndex = {}; // normName → [rows]  (CSAT name fallback)
 // groupKpiCache key: "email1,email2,...|start|end" (group aggregates, same lifecycle)
 let kpiCache = {};
 let groupKpiCache = {};
+let windowKpiCache = {};  // memo for assignment-window KPIs (see ASSIGNMENT WINDOWS)
+let _assignCache = {};    // memo for per-supervisor / per-AM assignment windows
 
 // ─── TAB RENDER CACHE ─────────────────────────────────────────
 // Tracks which tab pages have already been rendered in the current
@@ -1217,7 +1219,7 @@ function buildAgentMaps() {
 // Called once after every apiFetch().
 function buildIndexes() {
   tphIndex = {}; csatIndex = {}; iqaIndex = {}; csatNameIndex = {};
-  kpiCache = {}; groupKpiCache = {}; // clear memo caches whenever source data changes
+  kpiCache = {}; groupKpiCache = {}; windowKpiCache = {}; _assignCache = {}; // clear memo caches whenever source data changes
 
   rawTPH.forEach(r => {
     const e = (r.agent_email||'').toLowerCase().trim();
@@ -2329,22 +2331,25 @@ function escHtml(s) {
 // SUMMARY KPI CARDS
 // ═══════════════════════════════════════════════════════════
 
-function renderKPICards(containerId, agents) {
+function renderKPICards(containerId, agents, entriesFn) {
   const emails       = agents.map(a => a.email);
   const periods      = getActivePeriods();
   const latest       = periods[periods.length - 1];
-  const kpis         = computeGroupKPIs(emails, latest.start, latest.end);
+  // entriesFn(start,end) → assignment-window entries (Supervisor / A.Manager views): only the
+  // days each agent was actually assigned to the group count. Without it, plain email list.
+  const groupKPIs    = (st, en) => entriesFn ? computeWindowedGroupKPIs(entriesFn(st, en)) : computeGroupKPIs(emails, st, en);
+  const kpis         = groupKPIs(latest.start, latest.end);
 
   // Prior period for delta: one period before the latest
   let prior = null;
   if (periods.length >= 2) {
-    prior = computeGroupKPIs(emails, periods[periods.length - 2].start, periods[periods.length - 2].end);
+    prior = groupKPIs(periods[periods.length - 2].start, periods[periods.length - 2].end);
   } else {
     // If only 1 period shown, compute the preceding equivalent range
     const dur   = Math.max(1, Math.round((new Date(latest.end) - new Date(latest.start)) / 86400000));
     const pEnd  = addDays(latest.start, -1);
     const pStart= addDays(pEnd, -(dur - 1));
-    prior = computeGroupKPIs(emails, pStart, pEnd);
+    prior = groupKPIs(pStart, pEnd);
   }
 
   const dTPH  = prior ? fmtDelta(kpis.tph,     prior.tph,     false, 'tph') : '';
@@ -2733,6 +2738,122 @@ function toggleDrillDown(groupKey, btn, labelCollapse, labelExpand) {
   btn.textContent = shown ? (labelExpand || '▼ Details') : (labelCollapse || '▲ Hide');
 }
 
+// ═══════════════════════════════════════════════════════════
+// ASSIGNMENT WINDOWS — who counted for whom, and on which days
+//
+// An agent's Hierarchy_Log rows say "from → to, this supervisor / A.Manager".
+// Supervisor and A.Manager numbers must only use an agent's results on the days
+// the agent was actually assigned to that person. These helpers turn the log
+// into date windows and total only the rows that fall inside them.
+// ═══════════════════════════════════════════════════════════
+
+const EMPTY_KPI = { tph: null, ahtSecs: null, csat: null, iqa: null, totalTickets: 0 };
+
+function _mergeWindows(ws) {
+  ws.sort((a, b) => a[0].localeCompare(b[0]));
+  const out = [];
+  ws.forEach(w => {
+    const last = out[out.length - 1];
+    if (last && w[0] <= addDays(last[1], 1)) { if (w[1] > last[1]) last[1] = w[1]; }
+    else out.push([w[0], w[1]]);
+  });
+  return out;
+}
+
+/**
+ * Specialists (latest role = Specialist) with the date windows during which a Hierarchy_Log row
+ * matched `match` ({ supervisor_name, am_name } — either or both). Returns
+ * [{ email, name, windows: [[from,to], …] }]. A specialist's latest row that has expired but is
+ * still marked active stays open-ended (same gap tolerance as before).
+ */
+function assignedAgents(match) {
+  const supKey = match.supervisor_name ? normName(match.supervisor_name) : null;
+  const amKey  = match.am_name         ? normName(match.am_name)         : null;
+  const cacheKey = (supKey || '') + '||' + (amKey || '');
+  if (_assignCache[cacheKey]) return _assignCache[cacheKey];
+
+  const today  = todayStr();
+  const latest = latestHierRecordByEmail();
+  const byEmail = {};
+  rawHierarchy.forEach(h => {
+    const e = (h.agent_email || '').toLowerCase().trim();
+    if (e) (byEmail[e] = byEmail[e] || []).push(h);
+  });
+
+  const out = [];
+  Object.keys(byEmail).forEach(e => {
+    const lat = latest[e];
+    if (!lat || normName(lat.role) !== 'specialist') return;
+    const windows = [];
+    byEmail[e].forEach(h => {
+      if (supKey !== null && normName(h.supervisor_name) !== supKey) return;
+      if (amKey  !== null && normName(h.am_name)         !== amKey)  return;
+      const from = h.effective_from ? isoDate(String(h.effective_from)) : '2000-01-01';
+      let   to   = h.effective_to   ? isoDate(String(h.effective_to))   : '2099-12-31';
+      const isLatestRow = (h.id !== undefined && h.id !== '' && h.id === lat.id) || (from === lat.from && h.supervisor_name === lat.supervisor_name);
+      if (isLatestRow && hierIsActive(lat) && to < today) to = '2099-12-31';
+      windows.push([from, to]);
+    });
+    if (windows.length) out.push({ email: e, name: lat.agent_name || emailToName[e] || e, windows: _mergeWindows(windows) });
+  });
+  _assignCache[cacheKey] = out;
+  return out;
+}
+
+/** Cut every entry's windows down to [start,end]; drop entries with nothing left. */
+function clipEntries(entries, start, end) {
+  const out = [];
+  entries.forEach(en => {
+    const ws = [];
+    en.windows.forEach(([a, b]) => {
+      const f = a > start ? a : start, t = b < end ? b : end;
+      if (f <= t) ws.push([f, t]);
+    });
+    if (ws.length) out.push({ email: en.email, name: en.name, windows: ws });
+  });
+  return out;
+}
+
+/** Same formulas as computeGroupKPIs, but each agent only counts on the days inside their windows. */
+function computeWindowedGroupKPIs(entries) {
+  if (!entries || !entries.length) return EMPTY_KPI;
+  const key = entries.map(en => en.email + ':' + en.windows.map(w => w[0] + '~' + w[1]).join(',')).join('|');
+  if (windowKpiCache[key]) return windowKpiCache[key];
+
+  const inW = (d, ws) => { for (let i = 0; i < ws.length; i++) if (d >= ws[i][0] && d <= ws[i][1]) return true; return false; };
+  let totalTickets = 0, totalTimeSecs = 0, totalHandSecs = 0, good = 0, bad = 0, iqaSum = 0, iqaN = 0;
+
+  entries.forEach(({ email, windows }) => {
+    const nameKey = normName(emailToName[email] || '');
+    (tphIndex[email] || []).forEach(r => {
+      if (!inW(r.date, windows)) return;
+      totalTickets  += (+r.valid_tickets || 0);
+      totalTimeSecs += (+r.total_time_secs || 0);
+      totalHandSecs += (+r.total_handle_secs || 0);
+    });
+    const byEmail = (csatIndex[email] || []).filter(r => inW(r.date, windows));
+    const cRows   = byEmail.length ? byEmail : (nameKey ? (csatNameIndex[nameKey] || []).filter(r => inW(r.date, windows)) : []);
+    cRows.forEach(r => {
+      const sv = String(r.satisfaction).toLowerCase();
+      if (sv === 'good') good++; else if (sv === 'bad') bad++;
+    });
+    (iqaIndex[email] || []).forEach(r => {
+      if (!inW(r.date, windows)) return;
+      iqaSum += (+r.iqa_score || 0); iqaN++;
+    });
+  });
+
+  const result = {
+    tph:     totalTimeSecs > 0 ? totalTickets / (totalTimeSecs / 3600) : null,
+    ahtSecs: totalTickets  > 0 ? totalHandSecs / totalTickets          : null,
+    csat:    good + bad > 0 ? (good / (good + bad)) * 100 : null,
+    iqa:     iqaN > 0 ? iqaSum / iqaN : null,
+    totalTickets
+  };
+  windowKpiCache[key] = result;
+  return result;
+}
+
 function renderSupervisorView() {
   // ── 1. Get supervisors directly from hierarchy (role = "Supervisor") ──────
   let sups = getActiveSupervisors();
@@ -2764,27 +2885,34 @@ function renderSupervisorView() {
   // Each period column uses the hierarchy snapshot at that period's end date.
   // This ensures group KPIs are correct even when agents change supervisor mid-view
   // (e.g., moved from Ximena to Jose on a Sunday — Week 20 under Ximena, Week 22 under Jose).
+  // Each entry = { email, name, windows } → the agent only counts on the days they were
+  // assigned to this supervisor (Hierarchy_Log effective_from / effective_to), clipped to the period.
   const supRows = sups.map(sup => {
-    // agentsByPeriod[i] = agents under this supervisor at the end of period i
+    const assigned = assignedAgents({ supervisor_name: sup.name });
     const agentsByPeriod = periods.map(p => {
-      let a = getSpecialistsUnderSupervisor(sup.name, p.end);
+      let a = clipEntries(assigned, p.start, p.end);
       if (activeFilters.agent) a = a.filter(x => x.email === activeFilters.agent);
       return a;
     });
-    // agents = union across all periods (for drill-down display and count)
+    // agents = everyone assigned at some point in the shown periods (drill-down list)
     const agentEmailsSeen = new Set();
     const agentsUnion = [];
     agentsByPeriod.flat().forEach(a => {
-      if (!agentEmailsSeen.has(a.email)) { agentEmailsSeen.add(a.email); agentsUnion.push(a); }
+      if (!agentEmailsSeen.has(a.email)) { agentEmailsSeen.add(a.email); agentsUnion.push({ email: a.email, name: a.name }); }
     });
-    // agents for the most recent period (for the Agents count column)
+    // agents assigned during the most recent period (for the Agents count column)
     const agentsLatest = agentsByPeriod[agentsByPeriod.length - 1];
-    return { sup, agents: agentsUnion, agentsLatest, agentsByPeriod };
-  }).filter(r => !activeFilters.agent || r.agentsUnion?.length || r.agents.length);
+    return { sup, assigned, agents: agentsUnion, agentsLatest, agentsByPeriod };
+  }).filter(r => !activeFilters.agent || r.agents.length);
 
   // Aggregate all visible specialist emails for KPI cards (union across periods)
   const allSpecialistEmails = [...new Set(supRows.flatMap(r => r.agents.map(a => a.email)))];
-  renderKPICards('sup-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
+  renderKPICards('sup-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })),
+    (st, en) => supRows.flatMap(r => {
+      let a = clipEntries(r.assigned, st, en);
+      if (activeFilters.agent) a = a.filter(x => x.email === activeFilters.agent);
+      return a;
+    }));
 
   // ── Inject search box (no-op if already exists — preserves focus) ─────────
   const supSbEl = document.getElementById('supervisor-search-box');
@@ -2805,14 +2933,12 @@ function renderSupervisorView() {
   const latestSupP  = periods[latestSupPi];
 
   const rankedSupRows = visSupRows.filter(r => {
-    const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
-    const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
+    const g = computeWindowedGroupKPIs(r.agentsByPeriod[latestSupPi]);
     return g.tph !== null && g.ahtSecs !== null && g.csat !== null && g.iqa !== null;
   });
   const supRankMap = compositeRankMap(
     rankedSupRows.map(r => {
-      const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
-      const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
+      const g = computeWindowedGroupKPIs(r.agentsByPeriod[latestSupPi]);
       return { key: r.sup.email || r.sup.name, tph: g.tph, csat: g.csat, iqa: g.iqa };
     })
   );
@@ -2821,8 +2947,7 @@ function renderSupervisorView() {
   // ── Sort ──
   if (tabSort.supervisor.col) {
     visSupRows = sortKpiRows(visSupRows, 'supervisor', (r, col) => {
-      const emails = r.agentsByPeriod[latestSupPi].map(a => a.email);
-      const g = computeGroupKPIs(emails, latestSupP.start, latestSupP.end);
+      const g = computeWindowedGroupKPIs(r.agentsByPeriod[latestSupPi]);
       if (col === 'tph')  return g.tph;
       if (col === 'aht')  return g.ahtSecs;
       if (col === 'csat') return g.csat;
@@ -2831,9 +2956,8 @@ function renderSupervisorView() {
     });
   } else {
     visSupRows = [...visSupRows].sort((a, b) => {
-      const eA = r => r.agentsByPeriod[latestSupPi].map(x => x.email);
-      const gA = computeGroupKPIs(eA(a), latestSupP.start, latestSupP.end);
-      const gB = computeGroupKPIs(eA(b), latestSupP.start, latestSupP.end);
+      const gA = computeWindowedGroupKPIs(a.agentsByPeriod[latestSupPi]);
+      const gB = computeWindowedGroupKPIs(b.agentsByPeriod[latestSupPi]);
       const aHas = (gA.tph !== null || gA.csat !== null || gA.iqa !== null) ? 0 : 1;
       const bHas = (gB.tph !== null || gB.csat !== null || gB.iqa !== null) ? 0 : 1;
       if (aHas !== bHas) return aHas - bHas;
@@ -2869,8 +2993,7 @@ function renderSupervisorView() {
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${agentsLatest.length}</td>`;
     // ★ Per-period: each column uses the agents active under this supervisor during that week
     periods.forEach((p, pi) => {
-      const emails = agentsByPeriod[pi].map(a => a.email);
-      html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+      html += groupKpiCells(computeWindowedGroupKPIs(agentsByPeriod[pi]));
     });
     html += `<td style="text-align:center">
       <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Agents')">▼ Agents</button>
@@ -2884,7 +3007,11 @@ function renderSupervisorView() {
         <td class="sticky-col col-agent" style="padding-left:26px;font-weight:400;font-size:12px;color:#475CC7">${escHtml(agent.name || agent.email)}<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(agent.email)}</span>${grpTag ? '<br>' + grpTag : ''}</td>
         <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>
         <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
-      periods.forEach(p => { html += groupKpiCells(computeKPIs(agent.email, p.start, p.end)); });
+      // Only the days this agent was assigned to THIS supervisor inside each period
+      periods.forEach((p, pi) => {
+        const ent = agentsByPeriod[pi].find(x => x.email === agent.email);
+        html += groupKpiCells(ent ? computeWindowedGroupKPIs([ent]) : EMPTY_KPI);
+      });
       html += `<td></td></tr>`;
     });
   });
@@ -2895,8 +3022,7 @@ function renderSupervisorView() {
     <td></td>
     <td style="text-align:center;font-weight:700;color:#AA0061">${[...new Set(visSupRows.flatMap(r=>r.agentsLatest.map(a=>a.email)))].length}</td>`;
   periods.forEach((p, pi) => {
-    const emails = [...new Set(visSupRows.flatMap(r => r.agentsByPeriod[pi].map(a => a.email)))];
-    html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+    html += groupKpiCells(computeWindowedGroupKPIs(visSupRows.flatMap(r => r.agentsByPeriod[pi])));
   });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
@@ -2932,39 +3058,41 @@ function renderAMView() {
     return;
   }
 
-  // ── 3. Per-period hierarchy: AM → Supervisors → Agents ──────────────────────
-  // For each period, resolve the hierarchy snapshot at that period's end date.
-  // This means group KPIs for each column correctly reflect who was under whom
-  // during that specific week/month — essential when hierarchies change every 2-3 months.
+  // ── 3. AM → Supervisors → Agents, by assignment windows ─────────────────────
+  // An agent counts for an A.Manager (and for the supervisor under that A.Manager) only on the
+  // days a Hierarchy_Log row assigns them to BOTH — effective_from / effective_to — clipped to
+  // each period. Mid-period transfers therefore split the days between the old and new owner.
   const amRows = ams.map(am => {
-    // Build per-period supRows: for each period, which supervisors+agents?
-    const supRowsByPeriod = periods.map(p => {
-      let sups = getSupervisorsUnderAM(am.name, p.end);
-      if (activeFilters.supervisor) {
-        const f = activeFilters.supervisor;
-        sups = sups.filter(s => s.email === f || normName(s.name) === normName(f));
-      }
-      return sups.map(sup => {
-        let agents = getSpecialistsUnderSupervisor(sup.name, p.end);
-        if (activeFilters.agent) agents = agents.filter(a => a.email === activeFilters.agent);
-        return { sup, agents };
-      }).filter(r => !activeFilters.agent || r.agents.length);
-    });
-
-    // For display (drill-down): use the most recent period's structure
-    const supRowsLatest = supRowsByPeriod[supRowsByPeriod.length - 1];
-
-    // For each supervisor in the latest period, also store agentsByPeriod
-    const supRows = supRowsLatest.map(({ sup }) => {
-      const agentsByPeriod = supRowsByPeriod.map(periodSups => {
-        const found = periodSups.find(r => r.sup.email === sup.email || normName(r.sup.name) === normName(sup.name));
-        return found ? found.agents : [];
+    // Supervisors who reported to this AM at any point in the shown periods
+    const supMap = {};
+    periods.forEach(p => {
+      getSupervisorsUnderAM(am.name, p.end).forEach(s => {
+        const k = s.email || normName(s.name);
+        if (!supMap[k]) supMap[k] = s;
       });
-      const agentsUnion = [...new Map(agentsByPeriod.flat().map(a => [a.email, a])).values()];
-      return { sup, agents: agentsUnion, agentsByPeriod, agentsLatest: agentsByPeriod[agentsByPeriod.length-1] };
     });
+    let supList = Object.values(supMap);
+    if (activeFilters.supervisor) {
+      const f = activeFilters.supervisor;
+      supList = supList.filter(s => s.email === f || normName(s.name) === normName(f));
+    }
 
-    return { am, supRows, supRowsByPeriod };
+    const supRows = supList.map(sup => {
+      const assigned = assignedAgents({ am_name: am.name, supervisor_name: sup.name });
+      const agentsByPeriod = periods.map(p => {
+        let a = clipEntries(assigned, p.start, p.end);
+        if (activeFilters.agent) a = a.filter(x => x.email === activeFilters.agent);
+        return a;
+      });
+      const seenE = new Set();
+      const agentsUnion = [];
+      agentsByPeriod.flat().forEach(a => {
+        if (!seenE.has(a.email)) { seenE.add(a.email); agentsUnion.push({ email: a.email, name: a.name }); }
+      });
+      return { sup, assigned, agents: agentsUnion, agentsByPeriod, agentsLatest: agentsByPeriod[agentsByPeriod.length - 1] };
+    }).filter(r => !activeFilters.agent || r.agents.length);
+
+    return { am, supRows };
   }).filter(r => !activeFilters.supervisor || r.supRows.length);
 
   // KPI cards: union of all agents in the most recent period across all AMs
@@ -2972,7 +3100,12 @@ function renderAMView() {
   const allSpecialistEmails = [...new Set(
     amRows.flatMap(r => r.supRows.flatMap(s => s.agentsByPeriod[latestAmPi].map(a => a.email)))
   )];
-  renderKPICards('am-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })));
+  renderKPICards('am-kpi-cards', allSpecialistEmails.map(e => ({ email: e, name: emailToName[e] || e })),
+    (st, en) => amRows.flatMap(r => r.supRows.flatMap(sr => {
+      let a = clipEntries(sr.assigned, st, en);
+      if (activeFilters.agent) a = a.filter(x => x.email === activeFilters.agent);
+      return a;
+    })));
 
   // ── Inject search box (no-op if already exists — preserves focus) ─────────
   const amSbEl = document.getElementById('am-search-box');
@@ -2988,10 +3121,10 @@ function renderAMView() {
     : amRows;
 
   // ── Sort: by latest-period aggregated KPI (using period-accurate agent sets) ──
-  const getAmLatestEmails = r => r.supRows.flatMap(s => s.agentsByPeriod[latestAmPi].map(a => a.email));
+  const getAmLatestEntries = r => r.supRows.flatMap(s => s.agentsByPeriod[latestAmPi]);
   if (tabSort.am.col) {
     visAmRows = sortKpiRows(visAmRows, 'am', (r, col) => {
-      const g = computeGroupKPIs(getAmLatestEmails(r), periods[latestAmPi].start, periods[latestAmPi].end);
+      const g = computeWindowedGroupKPIs(getAmLatestEntries(r));
       if (col === 'tph')  return g.tph;
       if (col === 'aht')  return g.ahtSecs;
       if (col === 'csat') return g.csat;
@@ -3000,8 +3133,8 @@ function renderAMView() {
     });
   } else {
     visAmRows = [...visAmRows].sort((a, b) => {
-      const gA = computeGroupKPIs(getAmLatestEmails(a), periods[latestAmPi].start, periods[latestAmPi].end);
-      const gB = computeGroupKPIs(getAmLatestEmails(b), periods[latestAmPi].start, periods[latestAmPi].end);
+      const gA = computeWindowedGroupKPIs(getAmLatestEntries(a));
+      const gB = computeWindowedGroupKPIs(getAmLatestEntries(b));
       const aHas = (gA.tph !== null || gA.csat !== null || gA.iqa !== null) ? 0 : 1;
       const bHas = (gB.tph !== null || gB.csat !== null || gB.iqa !== null) ? 0 : 1;
       return aHas - bHas;
@@ -3035,8 +3168,7 @@ function renderAMView() {
       <td style="text-align:center;color:#64748B;font-size:12px;font-weight:600">${amLatestEmails.length}</td>`;
     // ★ Per-period group KPIs: each column uses agents active under this AM during that period
     periods.forEach((p, pi) => {
-      const emails = [...new Set(supRows.flatMap(s => s.agentsByPeriod[pi].map(a => a.email)))];
-      html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+      html += groupKpiCells(computeWindowedGroupKPIs(supRows.flatMap(s => s.agentsByPeriod[pi])));
     });
     html += `<td style="text-align:center">
       <button class="btn-expand" onclick="toggleDrillDown('${gKey}',this,'▲ Hide','▼ Supervisors')">▼ Supervisors</button>
@@ -3054,8 +3186,7 @@ function renderAMView() {
         <td style="text-align:center;color:#64748B;font-size:12px">${agentsLatest.length}</td>`;
       // Per-period supervisor group KPIs
       periods.forEach((p, pi) => {
-        const emails = agentsByPeriod[pi].map(a => a.email);
-        html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+        html += groupKpiCells(computeWindowedGroupKPIs(agentsByPeriod[pi]));
       });
       html += `<td style="text-align:center">
         <button class="btn-expand" onclick="toggleDrillDown('${supGKey}',this,'▲ Hide','▼ Agents')" style="font-size:10px;padding:2px 8px">▼ Agents</button>
@@ -3068,7 +3199,10 @@ function renderAMView() {
         html += `<tr class="drill-row" data-group="${supGKey}" style="display:none">
           <td class="sticky-col col-agent" style="padding-left:48px;font-weight:400;font-size:11px;color:#94A3B8">${escHtml(agent.name || agent.email)}<br><span style="font-size:10px;color:#94A3B8;font-weight:400">${escHtml(agent.email)}</span>${grpTag ? '<br>' + grpTag : ''}</td>
           <td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>`;
-        periods.forEach(p => { html += groupKpiCells(computeKPIs(agent.email, p.start, p.end)); });
+        periods.forEach((p, pi) => {
+          const ent = agentsByPeriod[pi].find(x => x.email === agent.email);
+          html += groupKpiCells(ent ? computeWindowedGroupKPIs([ent]) : EMPTY_KPI);
+        });
         html += `<td></td></tr>`;
       });
     });
@@ -3080,8 +3214,7 @@ function renderAMView() {
     <td class="sticky-col col-agent">TOTAL</td>
     <td style="text-align:center;font-weight:700;color:#AA0061">${visAmLatestEmails.length}</td>`;
   periods.forEach((p, pi) => {
-    const emails = [...new Set(visAmRows.flatMap(r => r.supRows.flatMap(s => s.agentsByPeriod[pi].map(a => a.email))))];
-    html += groupKpiCells(computeGroupKPIs(emails, p.start, p.end));
+    html += groupKpiCells(computeWindowedGroupKPIs(visAmRows.flatMap(r => r.supRows.flatMap(s => s.agentsByPeriod[pi]))));
   });
   html += `<td></td></tr></tfoot></table>`;
   wrap.innerHTML = html;
@@ -5022,7 +5155,7 @@ function updateSyncLabel() {
 
 async function manualRefresh() {
   _lsClear();           // force a real network call
-  kpiCache = {}; groupKpiCache = {};
+  kpiCache = {}; groupKpiCache = {}; windowKpiCache = {}; _assignCache = {};
   renderedTabs.clear(); // all tabs must re-render with fresh data
   await apiFetch(true); // forceNetwork = true
   navTo(currentPage);
