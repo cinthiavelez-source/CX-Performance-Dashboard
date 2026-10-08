@@ -1739,14 +1739,10 @@ function _histAddRange(from, to) {
   histRanges = merged;
 }
 
-async function _fetchRangeSheet(sheet, from, to) {
+async function _fetchRangeSheet(sheet, from, to, nocache) {
   const u   = currentUser;
-  const url = `${SCRIPT_URL}?action=range&sheet=${sheet}&from=${from}&to=${to}&email=${encodeURIComponent(u ? u.email : '')}`;
-  const res  = await fetch(url, { redirect: 'follow' });
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); }
-  catch (e) { throw new Error(`Server did not answer for ${sheet.toUpperCase()} ${from} → ${to} (timeout or not deployed). Try a shorter range.`); }
+  const url = `${SCRIPT_URL}?action=range&sheet=${sheet}&from=${from}&to=${to}&email=${encodeURIComponent(u ? u.email : '')}${nocache ? '&nocache=1' : ''}`;
+  const data = await fetchJsonWithRetry(url);
   if (data.error) throw new Error(data.error);
   return (data.rows || []).map(r => ({ ...r, date: isoDate(String(r.date || '')) }));
 }
@@ -5199,10 +5195,7 @@ async function refreshHierarchy() {
   try {
     const u = currentUser;
     const url = `${SCRIPT_URL}?action=getHierarchy&email=${encodeURIComponent(u?.email||'')}`;
-    const res  = await fetch(url, { redirect:'follow' });
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch(e) { throw new Error('Invalid response from server'); }
+    const data = await fetchJsonWithRetry(url);
     if (data.error) throw new Error(data.error);
     rawHierarchy = data.hierarchy || [];
     kpiCache     = {};          // hierarchy affects group KPIs — clear memo
@@ -5250,17 +5243,9 @@ async function _fetchFromNetwork(attempt = 0) {
   try {
     const u = currentUser;
     const url = u ? `${SCRIPT_URL}?email=${encodeURIComponent(u.email)}` : SCRIPT_URL;
-    const res  = await fetch(url, { redirect:'follow' });
+    const data = await fetchJsonWithRetry(url);
     clearInterval(_timer);
     if (_loadSub) _loadSub.textContent = 'Applying data…';
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch(e) {
-      if (text.includes('<!DOCTYPE') || text.includes('<html'))
-        throw new Error('Apps Script returned an HTML page — please re-deploy the web app (Extensions → Apps Script → Deploy → Manage Deployments → New version).');
-      throw new Error('Invalid server response: ' + text.slice(0, 200));
-    }
     if (data.error) throw new Error(data.error);
     if (data._warming) {
       // Server has no saved copy yet and is building one in the background — wait and retry.
@@ -5355,6 +5340,59 @@ async function apiFetch(forceNetwork = false) {
   return result;
 }
 
+// GET with automatic retries. Google occasionally answers a perfectly good request with a
+// generic error page (the reply is lost between its servers and the browser). A retry a few
+// seconds later almost always works, so retry quietly before showing an error.
+async function fetchJsonWithRetry(url, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res  = await fetch(url, { redirect: 'follow' });
+      const text = await res.text();
+      try { return JSON.parse(text); }
+      catch (e) {
+        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+          console.warn(`Google returned an HTML page (attempt ${i + 1}/${tries})`);
+          lastErr = new Error('Apps Script returned an HTML page — please re-deploy the web app (Extensions → Apps Script → Deploy → Manage Deployments → New version).');
+        } else {
+          lastErr = new Error('Invalid server response: ' + text.slice(0, 200));
+        }
+      }
+    } catch (netErr) { lastErr = netErr; }
+    if (i < tries - 1) await new Promise(r => setTimeout(r, 3000 * (i + 1)));
+  }
+  throw lastErr;
+}
+
+// After an upload batch got a lost reply: ask the sheet (uncached) what really arrived,
+// then resend ONLY the rows that are still missing. Never blindly re-sends the whole batch.
+async function verifyAndResendBatch(type, batch) {
+  const keyOf = r => type === 'csat' ? String(r.ticket_id || '')
+                   : type === 'tph'  ? (r.date + '||' + (r.agent_email || '').toLowerCase())
+                   :                   String(r.review_id || '');
+  await new Promise(r => setTimeout(r, 3000));
+  const dates = batch.map(r => r.date).filter(Boolean).sort();
+  const saved = [];
+  let a = dates[0];
+  const last = dates[dates.length - 1];
+  while (a <= last) {
+    const b = addDays(a, 44) < last ? addDays(a, 44) : last;
+    saved.push(...await _fetchRangeSheet(type, a, b, true));
+    a = addDays(b, 1);
+  }
+  const have    = new Set(saved.map(keyOf));
+  const missing = batch.filter(r => !have.has(keyOf(r)));
+  let inserted = batch.length - missing.length;
+  let updated = 0, unchanged = 0;
+  if (missing.length) {
+    const res = await apiPost({ action: 'uploadRows', sheetKey: type.toUpperCase(), rows: missing });
+    inserted  += res.inserted  || 0;
+    updated   += res.updated   || 0;
+    unchanged += res.unchanged || 0;
+  }
+  return { inserted, updated, unchanged, verified: true, resent: missing.length };
+}
+
 async function apiPost(body) {
   const u = currentUser;
   const res = await fetch(SCRIPT_URL, {
@@ -5372,7 +5410,9 @@ async function apiPost(body) {
     // needs to be re-deployed (Extensions > Apps Script > Deploy > Manage Deployments > New version)
     if (text.includes('<!DOCTYPE') || text.includes('<html')) {
       console.error('GAS HTML response (first 1000 chars):', text.slice(0, 1000));
-      throw new Error('Server returned an HTML page instead of JSON. Check the browser Console (F12) for the full GAS error text.');
+      const htmlErr = new Error('Server returned an HTML page instead of JSON. Check the browser Console (F12) for the full GAS error text.');
+      htmlErr.isHtml = true;   // reply was lost / Google error page — the write may still have succeeded
+      throw htmlErr;
     }
     console.error('GAS non-JSON response:', text.slice(0, 500));
     throw new Error('Invalid server response: ' + text.slice(0, 200));
@@ -5845,10 +5885,23 @@ async function submitUpload(type) {
     }
 
     const BATCH = 200;
-    let totalInserted = 0, totalUpdated = 0, totalUnchanged = 0;
+    let totalInserted = 0, totalUpdated = 0, totalUnchanged = 0, verifiedBatches = 0;
     for (let i = 0; i < uploadRows.length; i += BATCH) {
       const batch  = uploadRows.slice(i, i + BATCH);
-      const result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
+      let result;
+      try {
+        result = await apiPost({ action:'uploadRows', sheetKey: type.toUpperCase(), rows: batch });
+      } catch (err) {
+        if (!err.isHtml) throw err;
+        // Reply lost — the batch may already be saved. Verify against the sheet, resend only what's missing.
+        st.textContent = 'Server reply was lost — verifying what was saved…';
+        try {
+          result = await verifyAndResendBatch(type, batch);
+          verifiedBatches++;
+        } catch (vErr) {
+          throw new Error('Upload reply was lost and the check failed (' + vErr.message + '). Do not re-upload yet — refresh the dashboard and look at the latest dates first.');
+        }
+      }
       totalInserted  += result.inserted  || 0;
       totalUpdated   += result.updated   || 0;
       totalUnchanged += result.unchanged || 0;
@@ -5861,6 +5914,7 @@ async function submitUpload(type) {
     if (totalUpdated)   parts.push(`${totalUpdated} updated`);
     if (clientSkipped)  parts.push(`${clientSkipped} already exist`);
     if (totalUnchanged) parts.push(`${totalUnchanged} unchanged`);
+    if (verifiedBatches) parts.push(`${verifiedBatches} batch${verifiedBatches>1?'es':''} confirmed after a lost server reply`);
     const summary = parts.join(' · ') || '0 rows';
     st.textContent = `✅ ${summary}`;
     st.className = 'upload-status ok';
